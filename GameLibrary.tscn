@@ -1,0 +1,106 @@
+[gd_scene load_steps=6 format=3 uid="uid://jt4gvyeksu72"]
+
+[ext_resource type="Script" uid="uid://c2soo5ws2ui0k" path="res://GameLibrary.gd" id="1_fpd83"]
+[ext_resource type="Texture2D" uid="uid://crblctqw3aanx" path="res://Lifewood Pxl.png" id="2_7l7ej"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_a2m0j"]
+bg_color = Color(0.960784, 0.933333, 0.858824, 1)
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_fpd83"]
+color = Color(1, 0.701961, 0.278431, 1)
+thickness = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fpd83"]
+bg_color = Color(0.960784, 0.933333, 0.858824, 1)
+
+[node name="GameLibrary" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_fpd83")
+
+[node name="PanelContainer2" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 89.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="PanelContainer2"]
+layout_mode = 2
+texture = ExtResource("2_7l7ej")
+stretch_mode = 5
+
+[node name="PanelContainer" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 89.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_a2m0j")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer"]
+layout_mode = 2
+
+[node name="Sidebar" type="PanelContainer" parent="PanelContainer/HBoxContainer"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer/HBoxContainer/Sidebar"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="Label" type="Label" parent="PanelContainer/HBoxContainer/Sidebar/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_font_sizes/font_size = 24
+text = "REGIONS"
+
+[node name="Button_PH" type="Button" parent="PanelContainer/HBoxContainer/Sidebar/VBoxContainer"]
+layout_mode = 2
+text = "Philippines
+"
+
+[node name="HSeparator" type="HSeparator" parent="PanelContainer/HBoxContainer/Sidebar/VBoxContainer"]
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_fpd83")
+
+[node name="Button_Back" type="Button" parent="PanelContainer/HBoxContainer/Sidebar/VBoxContainer"]
+layout_mode = 2
+text = "Change Region"
+
+[node name="Button_Quit" type="Button" parent="PanelContainer/HBoxContainer/Sidebar/VBoxContainer"]
+layout_mode = 2
+text = "Quit"
+
+[node name="ContentArea" type="PanelContainer" parent="PanelContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_fpd83")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="PanelContainer/HBoxContainer/ContentArea"]
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="PanelContainer/HBoxContainer/ContentArea/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 20
+
+[node name="GridContainer" type="GridContainer" parent="PanelContainer/HBoxContainer/ContentArea/ScrollContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/h_separation = 15
+theme_override_constants/v_separation = 15
+columns = 3
+
+[connection signal="pressed" from="PanelContainer/HBoxContainer/Sidebar/VBoxContainer/Button_Back" to="." method="_on_button_back_pressed"]
+[connection signal="pressed" from="PanelContainer/HBoxContainer/Sidebar/VBoxContainer/Button_Quit" to="." method="_on_button_quit_pressed"]

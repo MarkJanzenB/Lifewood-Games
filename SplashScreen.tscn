@@ -1,0 +1,46 @@
+[gd_scene load_steps=3 format=3 uid="uid://cf6y1ee1p3fr0"]
+
+[ext_resource type="Script" uid="uid://mt2078fahvpp" path="res://splash_screen.gd" id="1_8lrbv"]
+[ext_resource type="Texture2D" uid="uid://crblctqw3aanx" path="res://Lifewood Pxl.png" id="1_xe5an"]
+
+[node name="SplashScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_8lrbv")
+
+[node name="PanelContainer" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="PanelContainer"]
+clip_contents = true
+layout_mode = 2
+
+[node name="GridContainer" type="GridContainer" parent="PanelContainer/CenterContainer"]
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="PanelContainer/CenterContainer/GridContainer"]
+layout_mode = 2
+texture = ExtResource("1_xe5an")
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="PanelContainer/CenterContainer/GridContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 48
+text = "Games"
+horizontal_alignment = 1
+
+[node name="Timer" type="Timer" parent="."]
+wait_time = 3.0
+one_shot = true
+autostart = true
+
+[connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]

@@ -1,0 +1,63 @@
+[gd_scene load_steps=3 format=3 uid="uid://carmhbp7nom0s"]
+
+[ext_resource type="Script" uid="uid://cpyxfq2hy025x" path="res://country_selection.gd" id="1_d3n3h"]
+[ext_resource type="Texture2D" uid="uid://crblctqw3aanx" path="res://Lifewood Pxl.png" id="2_fp481"]
+
+[node name="CountrySelection" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_d3n3h")
+
+[node name="PanelContainer" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="PanelContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer/CenterContainer"]
+layout_mode = 2
+
+[node name="Select" type="Label" parent="PanelContainer/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "Select Your Region"
+horizontal_alignment = 1
+
+[node name="Label" type="Label" parent="PanelContainer/CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+text = "(This will be your default country, you can change this later)"
+
+[node name="Button_PH" type="Button" parent="PanelContainer/CenterContainer/VBoxContainer"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Philippines
+"
+
+[node name="Button_Others" type="Button" parent="PanelContainer/CenterContainer/VBoxContainer"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+tooltip_text = "Feature coming soon..."
+disabled = true
+text = "Others"
+
+[node name="TextureRect" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 89.0
+grow_horizontal = 2
+texture = ExtResource("2_fp481")
+stretch_mode = 5
+
+[connection signal="pressed" from="PanelContainer/CenterContainer/VBoxContainer/Button_PH" to="." method="_on_button_ph_pressed"]
