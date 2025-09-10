@@ -20,9 +20,9 @@ const NoGamesMessage = preload("res://NoGamesMessage.tscn")
 # This is a list of all the games your launcher knows about.
 # The "folder" name MUST match the folder name in your "games" directory.
 var game_database = [
-	 {"title": "My First Game", "folder": "MyFirstGame"},
-	 {"title": "Epic Adventure", "folder": "EpicAdventure"},
-	 {"title": "Pixel Racer", "folder": "PixelRacer"},
+	 #{"title": "My First Game", "folder": "MyFirstGame"},
+	 #{"title": "Epic Adventure", "folder": "EpicAdventure"},
+	 #{"title": "Pixel Racer", "folder": "PixelRacer"},
 ]
 
 # The _ready() function is called once when the scene loads.
