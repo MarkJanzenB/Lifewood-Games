@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://carmhbp7nom0s"]
 
-[ext_resource type="Script" uid="uid://cpyxfq2hy025x" path="res://country_selection.gd" id="1_d3n3h"]
-[ext_resource type="Texture2D" uid="uid://crblctqw3aanx" path="res://Lifewood Pxl.png" id="2_fp481"]
+[ext_resource type="Script" uid="uid://cpyxfq2hy025x" path="res://Scripts/country_selection.gd" id="1_oprl4"]
+[ext_resource type="Texture2D" uid="uid://crblctqw3aanx" path="res://Assets/Lifewood Pxl.png" id="2_t82xx"]
 
 [node name="CountrySelection" type="Control"]
 layout_mode = 3
@@ -10,7 +10,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("1_d3n3h")
+script = ExtResource("1_oprl4")
 
 [node name="PanelContainer" type="PanelContainer" parent="."]
 layout_mode = 1
@@ -57,7 +57,7 @@ anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 89.0
 grow_horizontal = 2
-texture = ExtResource("2_fp481")
+texture = ExtResource("2_t82xx")
 stretch_mode = 5
 
 [connection signal="pressed" from="PanelContainer/CenterContainer/VBoxContainer/Button_PH" to="." method="_on_button_ph_pressed"]

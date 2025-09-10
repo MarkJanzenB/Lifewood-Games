@@ -13,11 +13,11 @@ config_version=5
 config/name="Lifewood games"
 run/main_scene="uid://cf6y1ee1p3fr0"
 config/features=PackedStringArray("4.4", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://Assets/icon.svg"
 
 [autoload]
 
-UserSettings="*res://UserSettings.gd"
+UserSettings="*res://Scripts/UserSettings.gd"
 
 [display]
 

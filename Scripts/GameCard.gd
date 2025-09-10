@@ -2,7 +2,7 @@
 # FINAL VERSION for EXE Distribution
 extends PanelContainer
 
-const PLACEHOLDER_ART = preload("res://placeholder_art.png")
+const PLACEHOLDER_ART = preload("res://Assets/placeholder_art.png")
 
 @onready var title_label: Label = $VBoxContainer/Label
 @onready var box_art_rect: TextureRect = $VBoxContainer/BoxArt
