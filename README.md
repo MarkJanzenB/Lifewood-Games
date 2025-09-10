@@ -99,7 +99,7 @@ This is the final step that makes the launcher recognize your game.
 
 After completing all steps, the structure for your game's integration should look like this:
 ```
-Lifewood-launcher/
+lifewood-games/
 ├── games/
 │   ├── EpicAdventure/
 │   │   ├── art.png                 <-- Your box art
@@ -113,7 +113,10 @@ Lifewood-launcher/
 │
 ├── Scenes/
 ├── Scripts/
+├── Assets/
+├── project.godot
 └── GamesList.json                  <-- The file you edited
+
 ```
 
 ### Step 6: Commit and Push Your Changes
