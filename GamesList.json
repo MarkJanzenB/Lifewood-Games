@@ -1,8 +1,8 @@
 {
   "games": [
 	{
-	  "title": "My First Game",
-	  "folder": "MyFirstGame"
+	  "title": "Rename your game here",
+	  "folder": "YourGameHere"
 	}
   ]
 }

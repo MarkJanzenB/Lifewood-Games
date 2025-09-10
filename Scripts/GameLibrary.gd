@@ -1,11 +1,9 @@
 # GameLibrary.gd
-# UPDATED for new directory structure.
+# FINAL VERSION - Reads EXTERNAL-ONLY GamesList.json
 extends Control
 
-# --- Updated Scene Preloads ---
 const GameCard = preload("res://Scenes/GameCard.tscn")
 const NoGamesMessage = preload("res://Scenes/NoGamesMessage.tscn")
-const GAMES_LIST_PATH = "res://GamesList.json"
 
 @onready var grid: GridContainer = $PanelContainer/HBoxContainer/ContentArea/ScrollContainer/MarginContainer/GridContainer
 @onready var hbox_container: HBoxContainer = $PanelContainer/HBoxContainer
@@ -19,25 +17,47 @@ func _ready():
 	update_library_view()
 
 func load_game_database_from_file():
-	print("Loading game list from: ", GAMES_LIST_PATH)
-	if not FileAccess.file_exists(GAMES_LIST_PATH):
-		print("ERROR: GamesList.json not found!")
+	# --- THIS IS THE NEW UNIFIED LOGIC ---
+	# 1. Determine the base directory.
+	var base_dir = ""
+	if OS.has_feature("export"):
+		# When exported, the base directory is where the .exe is.
+		base_dir = OS.get_executable_path().get_base_dir()
+	else:
+		# When running in the editor, the base directory is the project's root folder.
+		base_dir = ProjectSettings.globalize_path("res://")
+
+	# 2. Define the path to the external JSON file.
+	var games_list_path = base_dir.path_join("GamesList.json")
+	
+	print("Attempting to load external game list from: ", games_list_path)
+	
+	if not FileAccess.file_exists(games_list_path):
+		print("ERROR: External GamesList.json not found at the expected path!")
 		return
-	var file = FileAccess.open(GAMES_LIST_PATH, FileAccess.READ)
+
+	var file = FileAccess.open(games_list_path, FileAccess.READ)
 	var content = file.get_as_text()
 	var json = JSON.parse_string(content)
+	
 	if json == null:
-		print("ERROR: Failed to parse GamesList.json.")
+		print("ERROR: Failed to parse GamesList.json. Check for syntax errors.")
 		return
+
 	if json.has("games"):
 		game_database = json.games
-		print("Successfully loaded ", game_database.size(), " games.")
+		print("Successfully loaded ", game_database.size(), " games from external list.")
 	else:
-		print("ERROR: GamesList.json is missing 'games' array.")
+		print("ERROR: GamesList.json is missing the top-level 'games' array.")
 
+# The rest of the script remains exactly the same.
 func initialize_folders():
-	print("Checking for required folders...")
-	var exe_dir = OS.get_executable_path().get_base_dir()
+	var exe_dir = ""
+	if OS.has_feature("export"):
+		exe_dir = OS.get_executable_path().get_base_dir()
+	else:
+		exe_dir = ProjectSettings.globalize_path("res://")
+		
 	var games_dir_path = exe_dir.path_join("games")
 	if not DirAccess.dir_exists_absolute(games_dir_path):
 		DirAccess.make_dir_absolute(games_dir_path)
@@ -67,11 +87,9 @@ func update_library_view():
 			card.setup_card(game_data.title, game_data.folder)
 
 func _on_button_ph_pressed():
-	print("Philippines tab selected. Reloading games...")
 	update_library_view()
 
 func _on_button_back_pressed():
-	# --- Updated Scene Path ---
 	get_tree().change_scene_to_file("res://Scenes/CountrySelection.tscn")
 
 func _on_button_quit_pressed():
