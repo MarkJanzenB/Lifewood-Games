@@ -1,0 +1,16 @@
+{
+  "games": [
+	{
+	  "title": "My First Game",
+	  "folder": "MyFirstGame"
+	},
+	{
+	  "title": "Epic Adventure",
+	  "folder": "EpicAdventure"
+	},
+	{
+	  "title": "Pixel Racer",
+	  "folder": "PixelRacer"
+	}
+  ]
+}
