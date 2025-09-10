@@ -47,7 +47,7 @@ To ensure our main project remains stable, you will do all of your work in a ded
 1.  Make sure you have the latest version of the `main` branch. In GitHub Desktop, fetch the origin and pull the latest changes.
 2.  Create a new branch from `main`.
 3.  Name your branch using this exact format: **`Lifewood-{YourGameName}`**.
-	*   **Example:** If your game is named "Epic Adventure", your branch name will be `Lifewood-EpicAdventure`.
+    *   **Example:** If your game is named "Epic Adventure", your branch name will be `Lifewood-EpicAdventure`.
 4.  Publish the branch to GitHub immediately so we know you are working on it. You will now be working in this branch for all the following steps.
 
 ### Step 2: Create Your Game's Folders
