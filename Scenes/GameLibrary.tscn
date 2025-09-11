@@ -115,7 +115,7 @@ theme_override_constants/v_separation = 15
 columns = 3
 
 [node name="AddGameDialog" type="FileDialog" parent="."]
-title = "Select Game Folder to Add"
+title = "Open a Game Directory"
 ok_button_text = "Select Current Folder"
 file_mode = 2
 access = 2
