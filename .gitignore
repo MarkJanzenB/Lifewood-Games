@@ -8,7 +8,7 @@ export_presets.cfg
 !.gitattributes
 !.gitignore
 !README.md
-
+README.md
 # Imported translations (optional)
 *.translation
 
