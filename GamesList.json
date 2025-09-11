@@ -1,0 +1,9 @@
+{
+	"games": [
+		{
+			"executable": "YoutubeDownloader.exe",
+			"folder": "D:/Lifewood Projects/GameDev/games/bin/games/youtubedownloader",
+			"title": "youtubedownloader"
+		}
+	]
+}

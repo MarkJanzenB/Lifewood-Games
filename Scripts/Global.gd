@@ -12,23 +12,34 @@ var _original_window_size: Vector2i
 var _original_window_position: Vector2i
 
 func _enter_tree():
+	# --- NEW, ROBUST SINGLE INSTANCE LOCK ---
+	# Declare the 'file' variable ONCE at the top of the function.
+	var file: FileAccess 
+	
 	if FileAccess.file_exists(LOCK_FILE_PATH):
-		var file = FileAccess.open(LOCK_FILE_PATH, FileAccess.READ)
+		# A lock file exists, so we must investigate.
+		# Now we just ASSIGN to 'file', we don't declare it with 'var'.
+		file = FileAccess.open(LOCK_FILE_PATH, FileAccess.READ)
 		var locked_pid = file.get_as_text().to_int()
 		file.close()
+		
 		if OS.is_process_running(locked_pid):
 			OS.alert("Lifewood Game Collection is already running.", "Launcher Active")
 			get_tree().quit()
 			return
 		else:
-			print("Found stale lock file. Overwriting.")
+			print("Found stale lock file from a crashed instance. Overwriting.")
 	
 	var own_pid = OS.get_process_id()
-	var file = FileAccess.open(LOCK_FILE_PATH, FileAccess.WRITE)
+	
+	# Here too, we just ASSIGN to 'file'.
+	file = FileAccess.open(LOCK_FILE_PATH, FileAccess.WRITE)
 	file.store_string(str(own_pid))
 	file.close()
 	print("Launcher started with PID: ", own_pid, ". Lock file created.")
-
+	
+	
+	
 # --- This is the new, refactored monitoring function ---
 func monitor_game_process(pid: int):
 	if pid == 0:
