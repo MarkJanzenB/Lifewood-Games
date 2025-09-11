@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://cf6y1ee1p3fr0"]
 
 [ext_resource type="Script" uid="uid://mt2078fahvpp" path="res://Scripts/splash_screen.gd" id="1_lus2m"]
-[ext_resource type="Texture2D" uid="uid://crblctqw3aanx" path="res://Assets/Lifewood Pxl.png" id="2_pufkq"]
+[ext_resource type="Texture2D" uid="uid://biv2go1bvmimk" path="res://Assets/Lifewood Logo.png" id="2_lus2m"]
 
 [node name="SplashScreen" type="Control"]
 layout_mode = 3
@@ -29,7 +29,7 @@ layout_mode = 2
 
 [node name="TextureRect" type="TextureRect" parent="PanelContainer/CenterContainer/GridContainer"]
 layout_mode = 2
-texture = ExtResource("2_pufkq")
+texture = ExtResource("2_lus2m")
 stretch_mode = 5
 
 [node name="Label" type="Label" parent="PanelContainer/CenterContainer/GridContainer"]

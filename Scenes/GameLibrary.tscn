@@ -1,7 +1,7 @@
 [gd_scene load_steps=6 format=3 uid="uid://jt4gvyeksu72"]
 
 [ext_resource type="Script" uid="uid://c2soo5ws2ui0k" path="res://Scripts/GameLibrary.gd" id="1_fpd83"]
-[ext_resource type="Texture2D" uid="uid://crblctqw3aanx" path="res://Assets/Lifewood Pxl.png" id="2_7l7ej"]
+[ext_resource type="Texture2D" uid="uid://biv2go1bvmimk" path="res://Assets/Lifewood Logo.png" id="2_js1da"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_a2m0j"]
 bg_color = Color(0.960784, 0.933333, 0.858824, 1)
@@ -31,7 +31,7 @@ grow_horizontal = 2
 
 [node name="Logo" type="TextureRect" parent="PanelContainer2"]
 layout_mode = 2
-texture = ExtResource("2_7l7ej")
+texture = ExtResource("2_js1da")
 stretch_mode = 5
 
 [node name="PanelContainer" type="PanelContainer" parent="."]
