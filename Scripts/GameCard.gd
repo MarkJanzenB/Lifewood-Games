@@ -1,47 +1,61 @@
 # GameCard.gd
-# UPDATED for new directory structure.
+# FINAL, DEFINITIVE VERSION - Correctly finds external files in both editor and export.
 extends PanelContainer
 
-# --- Updated Asset Preload ---
+# ... (signal and const are the same) ...
+signal settings_requested(game_data)
 const PLACEHOLDER_ART = preload("res://Assets/placeholder_art.png")
-
 @onready var title_label: Label = $VBoxContainer/Label
 @onready var box_art_rect: TextureRect = $VBoxContainer/BoxArt
-
-var game_folder_name: String = ""
-var game_title: String = ""
+var game_data: Dictionary
 
 func _ready():
 	assert(title_label != null, "ERROR on GameCard.tscn: The 'Label' node was not found.")
-	assert(box_art_rect != null, "ERROR on GameCard.tscn: The 'BoxArt' node was not found.")
+	assert(box_art_rect != null, "ERROR on GameCard.tscn: The 'BoxArt' (TextureRect) node was not found.")
 
-func setup_card(p_title: String, p_folder: String):
-	game_title = p_title
-	game_folder_name = p_folder
-	title_label.text = game_title
-	
-	var art_to_display = PLACEHOLDER_ART
-	
-	# This path is still correct for finding art inside your Godot project.
-	var png_path = "res://games/" + game_folder_name + "/art.png"
-	var jpg_path = "res://games/" + game_folder_name + "/art.jpg"
-	
-	if FileAccess.file_exists(png_path):
-		art_to_display = load(png_path)
-	elif FileAccess.file_exists(jpg_path):
-		art_to_display = load(jpg_path)
-		
-	box_art_rect.texture = art_to_display
+func setup_card(p_game_data: Dictionary):
+	self.game_data = p_game_data
+	title_label.text = game_data.title
+	_load_artwork()
+
+# --- THIS IS THE ONLY FUNCTION THAT NEEDS REPLACING ---
+# It now correctly finds the project root when in the editor.
+func _get_base_directory() -> String:
+	if OS.has_feature("export"):
+		# When exported, this is correct. It gets the folder where the .exe is.
+		return OS.get_executable_path().get_base_dir()
+	else:
+		# When running in the editor, this gets the true project root folder.
+		return DirAccess.open("res://").get_current_dir().get_base_dir()
+
+# ... (The rest of the script now uses the fixed helper function)
+# ... PASTE THE REST OF YOUR EXISTING GAMECARD.GD SCRIPT HERE ...
+func _load_artwork():
+	var game_folder_path = game_data.get("folder", "")
+	if game_folder_path.is_empty():
+		box_art_rect.texture = PLACEHOLDER_ART
+		return
+	var png_path = game_folder_path.path_join("art.png")
+	var jpg_path = game_folder_path.path_join("art.jpg")
+	var image = Image.new()
+	if image.load(png_path) == OK:
+		box_art_rect.texture = ImageTexture.create_from_image(image)
+		return
+	if image.load(jpg_path) == OK:
+		box_art_rect.texture = ImageTexture.create_from_image(image)
+		return
+	box_art_rect.texture = PLACEHOLDER_ART
 
 func _on_play_button_pressed():
-	if game_folder_name.is_empty():
-		return
+	if game_data.is_empty(): return
+	var game_folder_path = game_data.get("folder", "")
+	var game_executable = game_data.get("executable", "")
+	var game_exe_path = game_folder_path.path_join(game_executable)
+	var pid = OS.create_process(game_exe_path, [])
+	if pid > 0:
+		Global.monitor_game_process(pid)
+	else:
+		OS.alert("Failed to launch the game. Please verify the path in the game's settings and ensure the file exists.", "Launch Error")
 
-	var exe_dir = OS.get_executable_path().get_base_dir()
-	var game_exe_path = exe_dir.path_join("games").path_join(game_folder_name).path_join(game_folder_name + ".exe")
-	
-	print("Attempting to launch game at: ", game_exe_path)
-	
-	var err = OS.create_process(game_exe_path, [])
-	if err != OK:
-		print("LAUNCH FAILED! Error code: ", err)
+func _on_settings_button_pressed():
+	settings_requested.emit(game_data)

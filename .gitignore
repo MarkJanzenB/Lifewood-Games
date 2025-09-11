@@ -1,3 +1,17 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+.vscode/
+
+# Godot-specific ignores
+addons/
+export_presets.cfg
+!.gitattributes
+!.gitignore
+!README.md
+README.md
+# Imported translations (optional)
+*.translation
+
+# Mono-specific ignores (if you were using C#)
+.mono/
