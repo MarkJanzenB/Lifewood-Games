@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://dp3aq41tvp667"]
+[gd_scene load_steps=4 format=3 uid="uid://dp3aq41tvp667"]
 
 [ext_resource type="Script" uid="uid://cfu6ypsq130mw" path="res://Scripts/GameCard.gd" id="1_q834y"]
+[ext_resource type="Texture2D" uid="uid://dx7gdgtgjwtw7" path="res://Assets/gear_icon.png" id="2_2io08"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_a2m0j"]
 bg_color = Color(0.976471, 0.968627, 0.968627, 1)
@@ -36,11 +37,22 @@ size_flags_vertical = 8
 text = "Game Title"
 horizontal_alignment = 1
 
-[node name="CenterContainer" type="CenterContainer" parent="VBoxContainer"]
-clip_contents = true
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
+alignment = 1
 
-[node name="PlayButton" type="Button" parent="VBoxContainer/CenterContainer"]
+[node name="PlayButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
+mouse_default_cursor_shape = 2
 text = "PLAY"
+
+[node name="SettingsButton" type="TextureButton" parent="."]
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("2_2io08")
+
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/PlayButton" to="." method="_on_play_button_pressed"]
+[connection signal="pressed" from="SettingsButton" to="." method="_on_settings_button_pressed"]

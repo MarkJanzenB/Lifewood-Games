@@ -1,8 +1,9 @@
 {
-  "games": [
-	{
-	  "title": "Rename your game here",
-	  "folder": "YourGameHere"
-	}
-  ]
+	"games": [
+		{
+			"executable": "YoutubeDownloader.exe",
+			"folder": "D:/Lifewood Projects/GameDev/lifewood-games/games/test",
+			"title": "YoutubeDownloader"
+		}
+	]
 }

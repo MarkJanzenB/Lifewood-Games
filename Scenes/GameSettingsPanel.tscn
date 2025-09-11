@@ -1,0 +1,133 @@
+[gd_scene load_steps=6 format=3 uid="uid://b7kbb5amfttk"]
+
+[ext_resource type="Script" uid="uid://c6fnjax8g4ckm" path="res://Scenes/GameSettingsPanel.gd" id="1_b3pv5"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ulcvb"]
+bg_color = Color(0.976471, 0.968627, 0.968627, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_b3pv5"]
+bg_color = Color(0.953215, 0.41243, 0.312396, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_h6bht"]
+bg_color = Color(0.682171, 0.199192, 0.114573, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fa0pp"]
+bg_color = Color(0.862324, 0.28056, 0.181217, 1)
+
+[node name="GameSettingsPanel" type="PanelContainer"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -80.0
+offset_top = -122.0
+offset_right = 80.0
+offset_bottom = 122.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBoxFlat_ulcvb")
+script = ExtResource("1_b3pv5")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+clip_children = 1
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label3" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Game Name:"
+
+[node name="TitleLineEdit" type="LineEdit" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Game Folder:"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="FolderLineEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+
+[node name="FolderBrowseButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+mouse_default_cursor_shape = 2
+text = "..."
+
+[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Executable File:"
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ExecutableLineEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/HBoxContainer3"]
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+
+[node name="ExecutableBrowseButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer3"]
+layout_mode = 2
+mouse_default_cursor_shape = 2
+text = "..."
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="SaveButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+mouse_default_cursor_shape = 2
+text = "Save"
+
+[node name="CancelButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_styles/hover = SubResource("StyleBoxFlat_b3pv5")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_h6bht")
+theme_override_styles/normal = SubResource("StyleBoxFlat_fa0pp")
+text = "Cancel"
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="FolderDialog" type="FileDialog" parent="."]
+auto_translate_mode = 1
+title = "Open a Directory"
+ok_button_text = "Select Current Folder"
+file_mode = 2
+access = 2
+
+[node name="FileDialog" type="FileDialog" parent="."]
+title = "Open File(s)"
+ok_button_text = "Open"
+file_mode = 1
+access = 2
+
+[connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer2/FolderBrowseButton" to="." method="_on_folder_browse_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer3/ExecutableBrowseButton" to="." method="_on_executable_browse_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/CancelButton" to="." method="_on_cancel_button_pressed"]
+[connection signal="dir_selected" from="FolderDialog" to="." method="_on_folder_dialog_dir_selected"]
+[connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
