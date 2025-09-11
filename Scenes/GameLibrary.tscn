@@ -123,4 +123,5 @@ access = 2
 [connection signal="pressed" from="PanelContainer/HBoxContainer/Sidebar/VBoxContainer2/AddGameButton" to="." method="_on_add_game_button_pressed"]
 [connection signal="pressed" from="PanelContainer/HBoxContainer/Sidebar/VBoxContainer/Button_Back" to="." method="_on_button_back_pressed"]
 [connection signal="pressed" from="PanelContainer/HBoxContainer/Sidebar/VBoxContainer/Button_Quit" to="." method="_on_button_quit_pressed"]
+[connection signal="canceled" from="AddGameDialog" to="." method="_on_add_game_dialog_canceled"]
 [connection signal="dir_selected" from="AddGameDialog" to="." method="_on_add_game_dialog_dir_selected"]
