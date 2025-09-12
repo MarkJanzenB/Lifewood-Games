@@ -41,15 +41,35 @@ shape = SubResource("RectangleShape2D_rwgxs")
 position = Vector2(960, 1073.5)
 shape = SubResource("RectangleShape2D_4wyf3")
 
-[node name="player" parent="." instance=ExtResource("1_nnsk1")]
-position = Vector2(107, 66)
+[node name="Seeker" parent="." instance=ExtResource("1_nnsk1")]
+position = Vector2(469, 147)
+is_main_player = true
 
 [node name="Obstacle2" parent="." instance=ExtResource("2_rwgxs")]
-position = Vector2(450, 206)
+position = Vector2(814, 213)
 
 [node name="Obstacle" parent="." instance=ExtResource("2_rwgxs")]
-position = Vector2(252, 296)
+position = Vector2(481, 227)
+rotation = -0.470676
 
 [node name="CanvasModulate" type="CanvasModulate" parent="."]
 scale = Vector2(0.988908, 0.855109)
 color = Color(0.817358, 0.867702, 0.919727, 1)
+
+[node name="Obstacle4" parent="." instance=ExtResource("2_rwgxs")]
+position = Vector2(857, 394)
+scale = Vector2(1, 1)
+
+[node name="Obstacle3" parent="." instance=ExtResource("2_rwgxs")]
+position = Vector2(643, 369)
+rotation = 0.785397
+
+[node name="Hider" parent="." instance=ExtResource("1_nnsk1")]
+visible = false
+position = Vector2(529, 127)
+
+[node name="Camera2D" parent="Hider" index="2"]
+visible = false
+enabled = false
+
+[editable path="Hider"]

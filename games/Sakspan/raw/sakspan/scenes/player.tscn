@@ -251,16 +251,13 @@ animations = [{
 "loop": true,
 "name": &"idle",
 "speed": 7.0
-}, {
-"frames": [],
-"loop": true,
-"name": &"new_animation",
-"speed": 5.0
 }]
 
-[node name="player" type="CharacterBody2D"]
+[node name="player" type="CharacterBody2D" groups=["hider"]]
+collision_mask = 3
 script = ExtResource("1_tuyoq")
-walk_speed = 150.0
+walk_speed = 100.0
+run_speed = 250.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 scale = Vector2(0.489603, 0.459455)
@@ -268,7 +265,7 @@ shape = SubResource("CapsuleShape2D_tuyoq")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SpriteFrames_ibah8")
-animation = &"new_animation"
+animation = &"idle"
 
 [node name="Camera2D" type="Camera2D" parent="."]
 zoom = Vector2(0.6, 0.6)
@@ -276,17 +273,17 @@ zoom = Vector2(0.6, 0.6)
 [node name="VisionCone" type="Area2D" parent="."]
 position = Vector2(0, 2.38419e-07)
 scale = Vector2(1.01585, 1.01537)
+collision_layer = 0
 
 [node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="VisionCone"]
-position = Vector2(0, 1.96972)
+position = Vector2(-5.4357, 16.0533)
 scale = Vector2(3.5563, 1.72284)
-polygon = PackedVector2Array(0, -1, 190, -176, 190, 150)
+polygon = PackedVector2Array(0.830412, -9.14641, 190.164, -177.212, 190.164, 160.634)
 
 [node name="PointLight2D" type="PointLight2D" parent="VisionCone"]
-position = Vector2(9.16795e-10, -2.38419e-07)
-rotation = 0.00274636
+position = Vector2(-0.513709, -0.689394)
+rotation = 0.000824005
 scale = Vector2(5.2468, -2.27107)
-color = Color(0.854677, 0.840033, 0.999999, 0.478431)
 energy = 2.0
 shadow_enabled = true
 texture = ExtResource("7_fjrip")

@@ -1,42 +1,58 @@
-# player.gd (Stable Version - Dash Mechanic Removed)
+# player.gd (Final Version - With LOS Memory)
+# This script uses a frame-by-frame comparison to ensure hiders are correctly hidden.
 
 extends CharacterBody2D
 
-# --- Variables ---
+# --- EXPORTED VARIABLES ---
 @export var walk_speed: float = 200.0
 @export var run_speed: float = 350.0
+@export var is_main_player: bool = false 
 
+# --- NODE REFERENCES ---
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var vision_cone: Area2D = $VisionCone
+@onready var vision_light: PointLight2D = $VisionCone/PointLight2D
 
-# --- Game Loop ---
+# --- STATE VARIABLES ---
+var hiders_in_cone: Array = []
+# --- THE NEW "MEMORY" ---
+# This list stores who was visible in the previous frame.
+var previously_visible_hiders: Array = []
+
+
+func _ready() -> void:
+	if not is_main_player:
+		vision_light.visible = false
+		vision_cone.monitoring = false
+
 func _physics_process(delta: float) -> void:
-	# Handle normal walking and running movement
+	if not is_main_player:
+		return
+
+	handle_movement()
+	handle_visuals()
+	update_hiders_in_cone()
+	check_line_of_sight()
+
+
+# --- HELPER FUNCTIONS ---
+
+func handle_movement() -> void:
 	var input_direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var current_speed = run_speed if Input.is_action_pressed("run") else walk_speed
 	velocity = input_direction * current_speed
 	move_and_slide()
-	
-	# Handle all visual updates like animations and aiming
-	handle_visuals()
-
-# --- Helper Functions ---
 
 func handle_visuals() -> void:
 	var mouse_position = get_global_mouse_position()
-
-	# --- 1. Horizontal Aiming (Flipping) ---
 	animated_sprite.flip_h = (mouse_position.x < global_position.x)
-	
-	# --- 2. Rotate Vision Cone ---
 	vision_cone.look_at(mouse_position)
 	
-	# --- 3. Animation Logic ---
 	var is_moving = velocity.length() > 0
 	var is_running = Input.is_action_pressed("run")
 	var is_aiming_up = (mouse_position.y < global_position.y)
+	
 	var anim_to_play = ""
-
 	if not is_moving:
 		anim_to_play = "back_idle" if is_aiming_up else "idle"
 	else:
@@ -46,3 +62,42 @@ func handle_visuals() -> void:
 			anim_to_play = "front_run" if is_running else "front_walk"
 			
 	animated_sprite.play(anim_to_play)
+
+func update_hiders_in_cone() -> void:
+	var overlapping_bodies = vision_cone.get_overlapping_bodies()
+	hiders_in_cone.clear()
+
+	for body in overlapping_bodies:
+		if body.is_in_group("hider") and body != self:
+			hiders_in_cone.append(body)
+
+
+# --- THE NEW, SMARTER LINE-OF-SIGHT FUNCTION ---
+func check_line_of_sight() -> void:
+	# This temporary list will store everyone we can see THIS frame.
+	var currently_visible_hiders: Array = []
+	
+	var space_state = get_world_2d().direct_space_state
+
+	# Step 1: Check everyone in the cone and build a list of who is visible right now.
+	for hider in hiders_in_cone:
+		var query = PhysicsRayQueryParameters2D.create(global_position, hider.global_position, 2)
+		var result = space_state.intersect_ray(query)
+		
+		if result.is_empty():
+			# Clear line of sight. Make them visible and add them to our "visible this frame" list.
+			hider.visible = true
+			currently_visible_hiders.append(hider)
+		else:
+			# Blocked by a wall. Make them invisible.
+			hider.visible = false
+
+	# Step 2: Compare our "memory" to the new list.
+	# This loop finds anyone who was visible last frame but is NOT on the new list.
+	# This handles the "looking away" case.
+	for hider in previously_visible_hiders:
+		if not hider in currently_visible_hiders:
+			hider.visible = false
+			
+	# Step 3: Update our "memory" for the next frame.
+	previously_visible_hiders = currently_visible_hiders

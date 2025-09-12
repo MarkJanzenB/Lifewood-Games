@@ -9,6 +9,8 @@ size = Vector2(275.776, 173.369)
 polygon = PackedVector2Array(-64, -55, 64, -55, 64, 74, -64, 74)
 
 [node name="Obstacle" type="StaticBody2D"]
+collision_layer = 2
+collision_mask = 0
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 texture = ExtResource("1_bqhqs")
