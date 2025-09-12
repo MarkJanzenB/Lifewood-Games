@@ -1,6 +1,6 @@
 [gd_scene load_steps=39 format=3 uid="uid://b75j5af55anqv"]
 
-[ext_resource type="Script" uid="uid://dbipxepmrkfqw" path="res://player.gd" id="1_tuyoq"]
+[ext_resource type="Script" uid="uid://dbipxepmrkfqw" path="res://scripts/player.gd" id="1_tuyoq"]
 [ext_resource type="Texture2D" uid="uid://c0xrcda5p33ew" path="res://sprites/1 Pink_Monster/Pink_Monster_Climb_4.png" id="2_fjrip"]
 [ext_resource type="Texture2D" uid="uid://dtyeh4v1tvyao" path="res://sprites/1 Pink_Monster/Pink_Monster_Death_8.png" id="3_smehm"]
 [ext_resource type="Texture2D" uid="uid://dfxv2cpvvx01i" path="res://sprites/1 Pink_Monster/Pink_Monster_Run_6.png" id="4_ur7pv"]
@@ -261,6 +261,6 @@ shape = SubResource("CapsuleShape2D_tuyoq")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SpriteFrames_ibah8")
-animation = &"front_run"
+animation = &"back_walk"
 
 [node name="Camera2D" type="Camera2D" parent="."]

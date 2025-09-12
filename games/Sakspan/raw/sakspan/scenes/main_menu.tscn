@@ -1,6 +1,6 @@
 [gd_scene load_steps=8 format=3 uid="uid://c4fm2uo7j8goi"]
 
-[ext_resource type="Texture2D" uid="uid://bujo8uoi70ibi" path="res://main_menu_background.png" id="1_7vrkn"]
+[ext_resource type="Texture2D" uid="uid://bujo8uoi70ibi" path="res://assets/main_menu_background.png" id="1_7vrkn"]
 [ext_resource type="FontFile" uid="uid://byyyct4p7i5hn" path="res://fonts/SpaceNova-6Rpd1.otf" id="2_fu7sn"]
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_jix8l"]
