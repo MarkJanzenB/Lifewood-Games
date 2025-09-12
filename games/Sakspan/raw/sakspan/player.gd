@@ -1,126 +1,64 @@
+# player.gd (Corrected: Animation is based on Aiming Direction)
+
 extends CharacterBody2D
 
-# -------------------------------  
-# 1️⃣ Player Movement & Speed
-const SPEED = 100
+# --- Variables ---
+@export var walk_speed: float = 200.0
+@export var run_speed: float = 350.0
 
-# -------------------------------  
-# 2️⃣ Vision Settings
-const VISION_ANGLE = 45            # degrees for vision cone
-const VISION_DISTANCE = 100        # reduced distance
-const VISION_COLOR = Color(0.5, 1, 0.5, 0.3)  # light green with transparency
-const ARC_SEGMENTS = 20            # smoothness of semi-circle
+@onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 
-# -------------------------------  
-# 3️⃣ Player State
-var current_dir = "down"
 
-# -------------------------------  
-# 4️⃣ Animation Mapping
-var anim_map = {
-	"up": {"walk": "back_walk", "idle": "back_idle"},
-	"down": {"walk": "front_walk", "idle": "idle"},
-	"left": {"walk": "front_walk", "idle": "idle"},
-	"right": {"walk": "front_walk", "idle": "idle"},
-}
+# --- Game Loop ---
+func _physics_process(delta: float) -> void:
+	handle_movement()
+	handle_animation()
 
-# -------------------------------  
-# 5️⃣ Vision Cone Node
-var vision_cone: Polygon2D
 
-# -------------------------------  
-# 6️⃣ Ready Function
-func _ready():
-	# Create the vision cone dynamically
-	vision_cone = Polygon2D.new()
-	vision_cone.color = VISION_COLOR
-	add_child(vision_cone)
+# --- Helper Functions ---
 
-# -------------------------------  
-# 7️⃣ Physics Process
-func _physics_process(delta):
-	player_movement(delta)
-	face_mouse()
-	update_vision_cone()
-	check_vision()
-
-# -------------------------------  
-# 8️⃣ Player Movement Function
-func player_movement(delta):
-	var input_vector = Vector2(
-		Input.get_action_strength("move_right") - Input.get_action_strength("move_left"),
-		Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
-	)
+func handle_movement() -> void:
+	var input_direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var current_speed = run_speed if Input.is_action_pressed("run") else walk_speed
 	
-	if input_vector != Vector2.ZERO:
-		input_vector = input_vector.normalized()
-		velocity = input_vector * SPEED
-		play_anim("walk")
-	else:
-		velocity = Vector2.ZERO
-		play_anim("idle")
-	
+	velocity = input_direction * current_speed
 	move_and_slide()
 
-# -------------------------------  
-# 9️⃣ Face Mouse Function
-func face_mouse():
-	var sprite = $AnimatedSprite2D
-	if not sprite:
-		return
-	
-	var mouse_pos = get_global_mouse_position()
-	var dir = (mouse_pos - global_position).normalized()
-	sprite.flip_h = dir.x < 0
-	# rotation = dir.angle() # Optional
 
-# -------------------------------  
-# 10️⃣ Play Animation Function
-func play_anim(state):
-	var sprite = $AnimatedSprite2D
-	if not sprite:
+func handle_animation() -> void:
+	var mouse_position = get_global_mouse_position()
+
+	# --- 1. Horizontal Aiming (Flipping) ---
+	# This part remains the same. The character always flips to face the cursor's L/R position.
+	animated_sprite.flip_h = (mouse_position.x < global_position.x)
+
+	# --- 2. Action Animations ---
+	if Input.is_action_just_pressed("jump"):
+		animated_sprite.play("jump") # Make sure you have a "jump" animation
 		return
 
-	if velocity.y < 0:
-		sprite.play(anim_map["up"][state])
-	elif velocity.y > 0:
-		sprite.play(anim_map["down"][state])
-	elif velocity.x < 0:
-		sprite.play(anim_map["left"][state])
-	else:
-		sprite.play(anim_map["right"][state])
+	# --- 3. CORE LOGIC: Aiming-Based Directional Animation ---
+	var is_moving = velocity.length() > 0
+	var is_running = Input.is_action_pressed("run")
+	
+	# Determine if the player is aiming "up" (cursor is above the character)
+	var is_aiming_up = (mouse_position.y < global_position.y)
+	
+	var anim_to_play = ""
 
-# -------------------------------  
-# 11️⃣ Vision Cone (Semi-circle)
-func update_vision_cone():
-	var mouse_pos = get_global_mouse_position()
-	var dir = (mouse_pos - global_position).normalized()
-	var half_angle = deg_to_rad(VISION_ANGLE / 2)
-	
-	var points = [Vector2.ZERO]  # start at player center
-	for i in range(ARC_SEGMENTS + 1):
-		var t = float(i) / ARC_SEGMENTS
-		var angle = lerp(-half_angle, half_angle, t)
-		var point = dir.rotated(angle) * VISION_DISTANCE
-		points.append(point)
-	
-	vision_cone.polygon = points
-
-# -------------------------------  
-# 12️⃣ Vision Detection
-func check_vision():
-	var mouse_pos = get_global_mouse_position()
-	var forward = (mouse_pos - global_position).normalized()
-	var objects_in_range = get_tree().get_nodes_in_group("detectable")
-	
-	for obj in objects_in_range:
-		if not obj:
-			continue
-		var to_obj = (obj.global_position - global_position)
-		var distance = to_obj.length()
-		var angle = rad_to_deg(forward.angle_to(to_obj.normalized()))
-		
-		if distance <= VISION_DISTANCE and abs(angle) <= VISION_ANGLE/2:
-			obj.visible = true
+	if not is_moving:
+		# --- IDLE STATE ---
+		# Use back_idle if aiming up, otherwise use the normal (front) idle.
+		if is_aiming_up:
+			anim_to_play = "back_idle"
 		else:
-			obj.visible = false
+			anim_to_play = "idle"
+	else:
+		# --- MOVING STATE ---
+		# Choose walk/run animations based on where the player is aiming.
+		if is_aiming_up:
+			anim_to_play = "back_run" if is_running else "back_walk"
+		else:
+			anim_to_play = "front_run" if is_running else "front_walk"
+			
+	animated_sprite.play(anim_to_play)

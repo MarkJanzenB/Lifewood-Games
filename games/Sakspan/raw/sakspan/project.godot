@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Sakspan"
-run/main_scene="uid://b75j5af55anqv"
+run/main_scene="uid://cpao8wuy2gp86"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.svg"
 

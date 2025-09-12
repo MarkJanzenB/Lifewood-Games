@@ -1,4 +1,4 @@
-[gd_scene load_steps=38 format=3 uid="uid://b75j5af55anqv"]
+[gd_scene load_steps=39 format=3 uid="uid://b75j5af55anqv"]
 
 [ext_resource type="Script" uid="uid://dbipxepmrkfqw" path="res://player.gd" id="1_tuyoq"]
 [ext_resource type="Texture2D" uid="uid://c0xrcda5p33ew" path="res://sprites/1 Pink_Monster/Pink_Monster_Climb_4.png" id="2_fjrip"]
@@ -6,6 +6,8 @@
 [ext_resource type="Texture2D" uid="uid://dfxv2cpvvx01i" path="res://sprites/1 Pink_Monster/Pink_Monster_Run_6.png" id="4_ur7pv"]
 [ext_resource type="Texture2D" uid="uid://xbrehj5mhye6" path="res://sprites/1 Pink_Monster/Pink_Monster_Walk_6.png" id="5_y4r1p"]
 [ext_resource type="Texture2D" uid="uid://d2q7hv3fet7qf" path="res://sprites/1 Pink_Monster/Pink_Monster_Idle_4.png" id="6_d2wvv"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_tuyoq"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_ivps1"]
 atlas = ExtResource("2_fjrip")
@@ -254,8 +256,11 @@ animations = [{
 script = ExtResource("1_tuyoq")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+scale = Vector2(0.489603, 0.459455)
+shape = SubResource("CapsuleShape2D_tuyoq")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SpriteFrames_ibah8")
-animation = &"back_idle"
-frame_progress = 0.977187
+animation = &"front_run"
+
+[node name="Camera2D" type="Camera2D" parent="."]
