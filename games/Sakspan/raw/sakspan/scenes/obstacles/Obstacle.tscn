@@ -1,0 +1,24 @@
+[gd_scene load_steps=4 format=3 uid="uid://bxhfocxnpf5sb"]
+
+[ext_resource type="Texture2D" uid="uid://cgij355rxhcpe" path="res://icon.svg" id="1_bqhqs"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_admj0"]
+size = Vector2(275.776, 173.369)
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_bqhqs"]
+polygon = PackedVector2Array(-64, -55, 64, -55, 64, 74, -64, 74)
+
+[node name="Obstacle" type="StaticBody2D"]
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("1_bqhqs")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, 0.500002)
+rotation = 3.14159
+scale = Vector2(0.464144, 0.744076)
+shape = SubResource("RectangleShape2D_admj0")
+
+[node name="LightOccluder2D" type="LightOccluder2D" parent="."]
+position = Vector2(0, -9)
+occluder = SubResource("OccluderPolygon2D_bqhqs")

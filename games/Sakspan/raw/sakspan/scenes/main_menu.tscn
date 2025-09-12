@@ -1,10 +1,10 @@
 [gd_scene load_steps=8 format=3 uid="uid://c4fm2uo7j8goi"]
 
-[ext_resource type="Texture2D" uid="uid://bujo8uoi70ibi" path="res://assets/main_menu_background.png" id="1_7vrkn"]
-[ext_resource type="FontFile" uid="uid://byyyct4p7i5hn" path="res://fonts/SpaceNova-6Rpd1.otf" id="2_fu7sn"]
+[ext_resource type="Texture2D" uid="uid://bujo8uoi70ibi" path="res://assets/main_menu_background.png" id="1_ekxnf"]
+[ext_resource type="FontFile" uid="uid://byyyct4p7i5hn" path="res://fonts/SpaceNova-6Rpd1.otf" id="2_bqqt6"]
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_jix8l"]
-texture = ExtResource("1_7vrkn")
+texture = ExtResource("1_ekxnf")
 modulate_color = Color(0.727428, 0.727428, 0.727428, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_glbon"]
@@ -70,7 +70,7 @@ metadata/_edit_use_anchors_ = true
 [node name="Button" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_fonts/font = ExtResource("2_fu7sn")
+theme_override_fonts/font = ExtResource("2_bqqt6")
 theme_override_font_sizes/font_size = 30
 theme_override_styles/normal = SubResource("StyleBoxFlat_glbon")
 text = "START GAME"
@@ -78,7 +78,7 @@ text = "START GAME"
 [node name="Button2" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_fonts/font = ExtResource("2_fu7sn")
+theme_override_fonts/font = ExtResource("2_bqqt6")
 theme_override_font_sizes/font_size = 30
 theme_override_styles/normal = SubResource("StyleBoxFlat_nlkkf")
 text = "SETTING"
@@ -86,7 +86,7 @@ text = "SETTING"
 [node name="Button3" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_fonts/font = ExtResource("2_fu7sn")
+theme_override_fonts/font = ExtResource("2_bqqt6")
 theme_override_font_sizes/font_size = 30
 theme_override_styles/normal = SubResource("StyleBoxFlat_qe12f")
 text = "QUIT"
@@ -104,7 +104,7 @@ offset_right = 300.5
 offset_bottom = 53.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_fonts/font = ExtResource("2_fu7sn")
+theme_override_fonts/font = ExtResource("2_bqqt6")
 theme_override_font_sizes/font_size = 100
 theme_override_styles/normal = SubResource("StyleBoxEmpty_8qtwp")
 text = "SAKSPAN"
