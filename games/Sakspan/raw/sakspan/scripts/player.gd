@@ -1,12 +1,19 @@
-# player.gd (Final Version - With LOS Memory)
-# This script uses a frame-by-frame comparison to ensure hiders are correctly hidden.
+# player.gd (Final, Reorganized Version)
 
+class_name Player
 extends CharacterBody2D
+
+# --- ENUM DEFINITION (MOVED TO THE TOP) ---
+# Enums must be declared before they are used in variables.
+enum PlayerRole { HIDER, SEEKER }
 
 # --- EXPORTED VARIABLES ---
 @export var walk_speed: float = 200.0
 @export var run_speed: float = 350.0
-@export var is_main_player: bool = false 
+@export var is_main_player: bool = false
+# This now correctly uses the enum we defined above.
+@export var role: PlayerRole = PlayerRole.HIDER
+@export var player_name: String = "Player"
 
 # --- NODE REFERENCES ---
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
@@ -15,9 +22,8 @@ extends CharacterBody2D
 
 # --- STATE VARIABLES ---
 var hiders_in_cone: Array = []
-# --- THE NEW "MEMORY" ---
-# This list stores who was visible in the previous frame.
 var previously_visible_hiders: Array = []
+var visible_targets: Array = []
 
 
 func _ready() -> void:
@@ -33,7 +39,6 @@ func _physics_process(delta: float) -> void:
 	handle_visuals()
 	update_hiders_in_cone()
 	check_line_of_sight()
-
 
 # --- HELPER FUNCTIONS ---
 
@@ -71,33 +76,37 @@ func update_hiders_in_cone() -> void:
 		if body.is_in_group("hider") and body != self:
 			hiders_in_cone.append(body)
 
-
-# --- THE NEW, SMARTER LINE-OF-SIGHT FUNCTION ---
 func check_line_of_sight() -> void:
-	# This temporary list will store everyone we can see THIS frame.
 	var currently_visible_hiders: Array = []
-	
 	var space_state = get_world_2d().direct_space_state
 
-	# Step 1: Check everyone in the cone and build a list of who is visible right now.
 	for hider in hiders_in_cone:
 		var query = PhysicsRayQueryParameters2D.create(global_position, hider.global_position, 2)
 		var result = space_state.intersect_ray(query)
 		
 		if result.is_empty():
-			# Clear line of sight. Make them visible and add them to our "visible this frame" list.
 			hider.visible = true
 			currently_visible_hiders.append(hider)
 		else:
-			# Blocked by a wall. Make them invisible.
 			hider.visible = false
 
-	# Step 2: Compare our "memory" to the new list.
-	# This loop finds anyone who was visible last frame but is NOT on the new list.
-	# This handles the "looking away" case.
 	for hider in previously_visible_hiders:
 		if not hider in currently_visible_hiders:
 			hider.visible = false
 			
-	# Step 3: Update our "memory" for the next frame.
 	previously_visible_hiders = currently_visible_hiders
+	visible_targets = currently_visible_hiders
+
+# --- INPUT HANDLING ---
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not is_main_player or self.role != PlayerRole.SEEKER:
+		return
+
+	if event.is_action_pressed("ui_accept") and event is InputEventMouseButton:
+		for target in visible_targets:
+			var target_shape = target.get_node("CollisionShape2D")
+			if target_shape and target_shape.shape.get_rect().has_point(target.to_local(event.position)):
+				print("CLICKED ON A VISIBLE HIDER: ", target.player_name)
+				target.queue_free()
+				return

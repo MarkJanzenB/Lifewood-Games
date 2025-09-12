@@ -258,6 +258,7 @@ collision_mask = 3
 script = ExtResource("1_tuyoq")
 walk_speed = 100.0
 run_speed = 250.0
+is_main_player = null
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 scale = Vector2(0.489603, 0.459455)
@@ -266,7 +267,7 @@ shape = SubResource("CapsuleShape2D_tuyoq")
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SpriteFrames_ibah8")
 animation = &"idle"
-frame_progress = 0.326085
+frame_progress = 0.950968
 
 [node name="Camera2D" type="Camera2D" parent="."]
 zoom = Vector2(0.6, 0.6)
