@@ -21,7 +21,6 @@ size = Vector2(1920, 13)
 custom_minimum_size = Vector2(1920, 1080)
 offset_right = 40.0
 offset_bottom = 40.0
-mouse_filter = 2
 color = Color(0.509286, 0.509286, 0.509286, 1)
 
 [node name="walls" type="StaticBody2D" parent="."]
@@ -47,6 +46,7 @@ position = Vector2(455, 110)
 is_main_player = true
 role = 1
 player_name = "seeker_1"
+ammo = null
 
 [node name="Obstacle2" parent="." instance=ExtResource("2_rwgxs")]
 position = Vector2(814, 213)
@@ -69,6 +69,10 @@ rotation = 0.785397
 [node name="Hider" parent="." groups=["hider"] instance=ExtResource("1_nnsk1")]
 visible = false
 position = Vector2(529, 127)
+is_main_player = null
+role = null
+player_name = null
+ammo = null
 
 [node name="Camera2D" parent="Hider" index="2"]
 visible = false

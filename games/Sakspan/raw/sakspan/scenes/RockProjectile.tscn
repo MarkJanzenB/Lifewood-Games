@@ -1,0 +1,18 @@
+[gd_scene load_steps=4 format=3 uid="uid://cdmdl43ffakku"]
+
+[ext_resource type="Script" uid="uid://ct75tv1xnaomv" path="res://scripts/rock_projectile.gd" id="1_3lw5f"]
+[ext_resource type="Texture2D" uid="uid://mtxa24s5pas" path="res://sprites/Pink_Monster/Rock2.png" id="2_m3nsj"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_2j2yv"]
+radius = 7.0
+
+[node name="RockProjectile" type="Area2D"]
+script = ExtResource("1_3lw5f")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_m3nsj")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_2j2yv")
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]

@@ -6,6 +6,7 @@ extends CharacterBody2D
 # --- ENUM DEFINITION (MOVED TO THE TOP) ---
 # Enums must be declared before they are used in variables.
 enum PlayerRole { HIDER, SEEKER }
+const ROCK_PROJECTILE_SCENE = preload("res://scenes/RockProjectile.tscn") # Make sure the path is correct!
 
 # --- EXPORTED VARIABLES ---
 @export var walk_speed: float = 200.0
@@ -14,11 +15,12 @@ enum PlayerRole { HIDER, SEEKER }
 # This now correctly uses the enum we defined above.
 @export var role: PlayerRole = PlayerRole.HIDER
 @export var player_name: String = "Player"
-
+@export var ammo: int = 0
 # --- NODE REFERENCES ---
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var vision_cone: Area2D = $VisionCone
 @onready var vision_light: PointLight2D = $VisionCone/PointLight2D
+@onready var melee_range: Area2D = $MeleeRange
 
 # --- STATE VARIABLES ---
 var hiders_in_cone: Array = []
@@ -26,11 +28,27 @@ var previously_visible_hiders: Array = []
 var visible_targets: Array = []
 
 
+
 func _ready() -> void:
 	if not is_main_player:
+		set_physics_process(false)
+		set_process_unhandled_input(false)
 		vision_light.visible = false
 		vision_cone.monitoring = false
+		melee_range.monitoring = false
 
+	if role == PlayerRole.SEEKER:
+		melee_range.monitoring = false
+	elif role == PlayerRole.HIDER:
+		vision_light.energy = 0.5
+
+
+# (This is the updated eliminate function in player.gd)
+func eliminate():
+	print(player_name, " has been eliminated!")
+	# Tell the GameManager that an elimination has occurred.
+	GameManager.on_player_eliminated()
+	queue_free()
 func _physics_process(delta: float) -> void:
 	if not is_main_player:
 		return
@@ -39,7 +57,8 @@ func _physics_process(delta: float) -> void:
 	handle_visuals()
 	update_hiders_in_cone()
 	check_line_of_sight()
-
+func set_ammo(new_ammo_count: int) -> void:
+	ammo = new_ammo_count
 # --- HELPER FUNCTIONS ---
 
 func handle_movement() -> void:
@@ -98,15 +117,57 @@ func check_line_of_sight() -> void:
 	visible_targets = currently_visible_hiders
 
 # --- INPUT HANDLING ---
+# --- INPUT HANDLING (FINAL, BULLETPROOF VERSION) ---
 
-func _unhandled_input(event: InputEvent) -> void:
-	if not is_main_player or self.role != PlayerRole.SEEKER:
-		return
+# --- INPUT HANDLING (FINAL, BULLETPROOF VERSION 2.0) ---
 
-	if event.is_action_pressed("ui_accept") and event is InputEventMouseButton:
-		for target in visible_targets:
+func _input(event: InputEvent) -> void:
+	if not is_main_player: return
+	if not (event.is_action_pressed("ui_accept") and event is InputEventMouseButton): return
+
+	if role == PlayerRole.SEEKER:
+		if ammo <= 0: return
+
+		var space_state = get_world_2d().direct_space_state
+		var mouse_position_in_world = get_global_mouse_position()
+
+		var query = PhysicsPointQueryParameters2D.new()
+		query.position = mouse_position_in_world
+		query.collision_mask = 1
+		query.exclude = [self]
+		# This is the fix: It stops the click from hitting the VisionCone or MeleeRange.
+		query.collide_with_areas = false
+		
+		var results = space_state.intersect_point(query)
+
+		if not results.is_empty():
+			var clicked_node = results[0].collider
+			
+			if visible_targets.has(clicked_node):
+				print("SUCCESSFUL HIT ON: ", clicked_node.player_name)
+				
+				animated_sprite.play("seeker_bang")
+				
+				var rock = ROCK_PROJECTILE_SCENE.instantiate()
+				rock.direction = (mouse_position_in_world - global_position).normalized()
+				rock.global_position = global_position
+				rock.rotation = rock.direction.angle()
+				
+				get_tree().get_root().add_child(rock)
+				
+				ammo -= 1
+				print("Fired! Ammo remaining: ", ammo)
+				return
+
+	if role == PlayerRole.HIDER:
+		# (The Hider's logic does not need to change)
+		var nearby_players = melee_range.get_overlapping_bodies()
+		for target in nearby_players:
+			if target == self: continue
+
 			var target_shape = target.get_node("CollisionShape2D")
 			if target_shape and target_shape.shape.get_rect().has_point(target.to_local(event.position)):
-				print("CLICKED ON A VISIBLE HIDER: ", target.player_name)
-				target.queue_free()
+				animated_sprite.play("hider_sak")
+				print(player_name, " successfully SAK'D ", target.player_name)
+				target.eliminate()
 				return

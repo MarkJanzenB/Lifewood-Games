@@ -332,10 +332,14 @@ input_pickable = true
 script = ExtResource("1_tuyoq")
 walk_speed = 100.0
 run_speed = 250.0
+is_main_player = null
+role = null
+player_name = null
+ammo = null
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(-1, 4)
-scale = Vector2(0.342196, 0.398465)
+scale = Vector2(0.489603, 0.459455)
 shape = SubResource("CapsuleShape2D_tuyoq")
 debug_color = Color(1, 1, 1, 0.42)
 
