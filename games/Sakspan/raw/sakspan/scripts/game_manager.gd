@@ -1,5 +1,15 @@
-# game_manager.gd (New Win Condition Logic)
 extends Node
+
+# --- Global Game State and Settings ---
+# Declare the game_settings dictionary to store lobby and game-specific data
+var game_settings: Dictionary = {}
+
+# Define the GameState enum
+enum GameState { NONE, MAIN_MENU, MULTIPLAYER_MENU, LOBBY, IN_GAME, OPTIONS }
+# Declare the current_state variable to track the game's current mode
+var current_state: GameState = GameState.NONE
+# --- End Global Game State and Settings ---
+
 
 func _ready():
 	await get_tree().create_timer(0.01).timeout

@@ -1,0 +1,170 @@
+[gd_scene load_steps=7 format=3 uid="uid://ch8h5ies5ipb3"]
+
+[ext_resource type="Script" uid="uid://b8ixxyclfbdr4" path="res://scripts/create_lobby_menu.gd" id="1_iwjdh"]
+[ext_resource type="Texture2D" uid="uid://e2bp0cqg5js8" path="res://scenes/UI/Create_Lobby/create_lobby_background.jpg" id="2_r2xja"]
+[ext_resource type="FontFile" uid="uid://bdhbu2neft0s3" path="res://fonts/Free Royalty.ttf" id="3_fkl4k"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_s6gl7"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ba68s"]
+bg_color = Color(0, 0, 0, 0.588235)
+border_width_left = 20
+border_width_top = 20
+border_width_right = 20
+border_width_bottom = 20
+border_color = Color(0, 0, 0, 0.588235)
+border_blend = true
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fhrpi"]
+bg_color = Color(0, 0, 0, 0.588235)
+border_width_left = 20
+border_width_top = 20
+border_width_right = 20
+border_width_bottom = 20
+border_color = Color(0, 0, 0, 0.588235)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[node name="create_lobby_menu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_iwjdh")
+
+[node name="create_lobby_background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_r2xja")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="FormPanel" type="PanelContainer" parent="."]
+custom_minimum_size = Vector2(400, 350)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -462.0
+offset_bottom = 28.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(1.66921, 0.9532)
+theme_override_styles/panel = SubResource("StyleBoxFlat_s6gl7")
+
+[node name="FormMargin" type="MarginContainer" parent="FormPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="FormVBox" type="VBoxContainer" parent="FormPanel/FormMargin"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 30
+
+[node name="TitleLabel" type="Label" parent="FormPanel/FormMargin/FormVBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 50
+text = "CREATE LOBBY"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="FormPanel/FormMargin/FormVBox"]
+layout_mode = 2
+
+[node name="LobbyNameHBox" type="HBoxContainer" parent="FormPanel/FormMargin/FormVBox"]
+layout_mode = 2
+
+[node name="LobbyNameLabel" type="Label" parent="FormPanel/FormMargin/FormVBox/LobbyNameHBox"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 20
+text = "Lobby Name:"
+horizontal_alignment = 2
+
+[node name="LobbyNameLineEdit" type="LineEdit" parent="FormPanel/FormMargin/FormVBox/LobbyNameHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 20
+placeholder_text = "Enter lobby name"
+
+[node name="MaxPlayersHBox" type="HBoxContainer" parent="FormPanel/FormMargin/FormVBox"]
+layout_mode = 2
+
+[node name="MaxPlayersLabel" type="Label" parent="FormPanel/FormMargin/FormVBox/MaxPlayersHBox"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 20
+text = "Max Players:"
+horizontal_alignment = 2
+
+[node name="MaxPlayersOptionButton" type="OptionButton" parent="FormPanel/FormMargin/FormVBox/MaxPlayersHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 20
+
+[node name="GameTimerHBox" type="HBoxContainer" parent="FormPanel/FormMargin/FormVBox"]
+layout_mode = 2
+
+[node name="GameTimerLabel" type="Label" parent="FormPanel/FormMargin/FormVBox/GameTimerHBox"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 20
+text = "Game Timer:"
+horizontal_alignment = 2
+
+[node name="GameTimerOptionButton" type="OptionButton" parent="FormPanel/FormMargin/FormVBox/GameTimerHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Spacer" type="VSeparator" parent="FormPanel/FormMargin/FormVBox"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+
+[node name="create_lobby_button" type="Button" parent="FormPanel/FormMargin/FormVBox"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_hover_color = Color(0, 0.439216, 0, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(0, 0.439216, 0, 1)
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 20
+theme_override_styles/hover = SubResource("StyleBoxFlat_ba68s")
+theme_override_styles/normal = SubResource("StyleBoxFlat_fhrpi")
+text = "CREATE LOBBY"
+
+[node name="back_button" type="Button" parent="FormPanel/FormMargin/FormVBox"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_hover_color = Color(0, 0.439216, 0, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(0, 0.439216, 0, 1)
+theme_override_fonts/font = ExtResource("3_fkl4k")
+theme_override_font_sizes/font_size = 20
+theme_override_styles/hover = SubResource("StyleBoxFlat_ba68s")
+theme_override_styles/normal = SubResource("StyleBoxFlat_fhrpi")
+text = "BACK"

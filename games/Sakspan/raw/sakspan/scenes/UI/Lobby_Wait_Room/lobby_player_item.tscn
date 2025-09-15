@@ -1,0 +1,25 @@
+[gd_scene load_steps=2 format=3 uid="uid://hw6ldi5yqf8a"]
+
+[ext_resource type="Script" uid="uid://btfnmianlnqcr" path="res://scripts/lobby_player_item.gd" id="1_a5jbt"]
+
+[node name="LobbyPlayerItem" type="PanelContainer"]
+script = ExtResource("1_a5jbt")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="CharacterIcon" type="TextureRect" parent="HBoxContainer"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="PlayerNameLabel" type="Label" parent="HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Player"
+
+[node name="ReadyStatusLabel" type="Label" parent="HBoxContainer"]
+layout_mode = 2
+text = "Choosing..."
+horizontal_alignment = 2

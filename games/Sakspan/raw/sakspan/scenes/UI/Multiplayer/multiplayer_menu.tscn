@@ -1,0 +1,98 @@
+[gd_scene load_steps=8 format=3 uid="uid://dx0etdlxkhgug"]
+
+[ext_resource type="Script" uid="uid://ccbnh6hilovpq" path="res://scripts/multiplayer_menu.gd" id="1_50ogh"]
+[ext_resource type="Texture2D" uid="uid://6145b4wqjsut" path="res://scenes/UI/Multiplayer/multiplayer_menu_background.jpg" id="2_n7gj2"]
+[ext_resource type="FontFile" uid="uid://5mu6qad8821h" path="res://fonts/Free Royalty.otf" id="3_0fr1y"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qmag2"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_2u85q"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ltb6y"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ico33"]
+bg_color = Color(0, 0, 0, 0.588235)
+border_width_left = 20
+border_width_top = 20
+border_width_right = 20
+border_width_bottom = 20
+border_color = Color(0, 0, 0, 0.588235)
+border_blend = true
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[node name="multiplayer_menu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_50ogh")
+
+[node name="multiplayer_menu_background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_n7gj2")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="button_holder" type="VBoxContainer" parent="CenterContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="create_lobby_button" type="Button" parent="CenterContainer/button_holder"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+tooltip_text = "able to create lobby, where fellow players can join"
+theme_override_colors/font_hover_color = Color(0, 0.439216, 0, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(0, 0.443137, 0, 1)
+theme_override_fonts/font = ExtResource("3_0fr1y")
+theme_override_font_sizes/font_size = 30
+theme_override_styles/focus = SubResource("StyleBoxFlat_qmag2")
+theme_override_styles/hover = SubResource("StyleBoxFlat_2u85q")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_ltb6y")
+theme_override_styles/normal = SubResource("StyleBoxFlat_ico33")
+text = "Create Lobby"
+
+[node name="join_lobby_button" type="Button" parent="CenterContainer/button_holder"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+tooltip_text = "Join existing lobbies"
+theme_override_colors/font_hover_color = Color(0, 0.439216, 0, 1)
+theme_override_colors/icon_hover_pressed_color = Color(0, 0.439216, 0, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("3_0fr1y")
+theme_override_font_sizes/font_size = 30
+theme_override_styles/normal = SubResource("StyleBoxFlat_ico33")
+text = "Join"
+
+[node name="back_button" type="Button" parent="CenterContainer/button_holder"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+tooltip_text = "Are you sure?"
+theme_override_colors/font_hover_color = Color(0, 0.439216, 0, 1)
+theme_override_colors/icon_hover_pressed_color = Color(0, 0.439216, 0, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("3_0fr1y")
+theme_override_font_sizes/font_size = 30
+theme_override_styles/normal = SubResource("StyleBoxFlat_ico33")
+text = "Back"

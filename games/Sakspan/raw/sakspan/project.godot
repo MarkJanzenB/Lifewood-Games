@@ -18,13 +18,15 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameManager="*res://scripts/game_manager.gd"
+NetworkManager="*res://scripts/global/NetworkManager.gd"
+SceneChanger="*res://scripts/global/SceneChanger.gd"
 
 [display]
 
 window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_height=729
 window/stretch/mode="canvas_items"
-window/stretch/scale=4.0
+window/vsync/vsync_mode=0
 
 [input]
 
