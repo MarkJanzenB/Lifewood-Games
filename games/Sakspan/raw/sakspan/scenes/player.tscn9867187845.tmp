@@ -379,6 +379,10 @@ input_pickable = true
 script = ExtResource("1_tuyoq")
 walk_speed = 100.0
 run_speed = 250.0
+is_main_player = null
+role = null
+player_name = null
+ammo = null
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(1.19209e-07, 5)
@@ -391,7 +395,7 @@ sprite_frames = SubResource("SpriteFrames_ibah8")
 animation = &"front_backward_walk"
 
 [node name="Camera2D" type="Camera2D" parent="."]
-zoom = Vector2(0.5, 0.5)
+zoom = Vector2(0.6, 0.6)
 
 [node name="VisionCone" type="Area2D" parent="."]
 position = Vector2(0, 2.38419e-07)
@@ -407,7 +411,7 @@ polygon = PackedVector2Array(0.830412, -9.14641, 190.164, -177.212, 190.164, 160
 position = Vector2(-0.513709, -0.689394)
 rotation = 0.000824005
 scale = Vector2(5.2468, -2.27107)
-color = Color(1, 1, 0.458824, 0.196078)
+color = Color(1, 1, 0.34902, 1)
 energy = 2.0
 shadow_enabled = true
 texture = ExtResource("7_fjrip")

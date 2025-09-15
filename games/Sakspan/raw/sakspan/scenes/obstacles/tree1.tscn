@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3 uid="uid://37dudwsdkboa"]
+
+[ext_resource type="Texture2D" uid="uid://c2krsvpgcrd0p" path="res://assets/tree1.png" id="1_qoej0"]
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_vvkj6"]
+polygon = PackedVector2Array(-92, 364, -92, 159, -52, 87, -11, 59, 33, 46, 78, 62, 115, 89, 167, 160, 175, 285, 175, 590, 198, 592, 200, 674, 216, 677, 223, 728, 318, 735, 418, 758, 404, 804, 172, 829, 245, 911, 203, 929, 118, 874, 52, 858, 20, 816, -67, 903, -108, 893, -61, 808, -270, 864, -309, 832, -277, 801, -167, 772, -113, 716, -90, 705)
+
+[node name="Tree" type="StaticBody2D"]
+scale = Vector2(0.17685, 0.17685)
+
+[node name="Tree1" type="Sprite2D" parent="."]
+scale = Vector2(0.828027, 0.828027)
+texture = ExtResource("1_qoej0")
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="."]
+visibility_layer = 0
+polygon = PackedVector2Array(-111, 711, -161, 770, -272, 799, -307, 834, -274, 862, -163, 834, -64, 813, -111, 893, -71, 902, 21, 815, 54, 857, 120, 876, 198, 931, 249, 926, 216, 869, 162, 827, 398, 801, 417, 758, 323, 735, 226, 723, 221, 685)
+
+[node name="LightOccluder2D" type="LightOccluder2D" parent="."]
+occluder = SubResource("OccluderPolygon2D_vvkj6")
