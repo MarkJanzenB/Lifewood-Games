@@ -74,4 +74,5 @@ position = Vector2(529, 127)
 visible = false
 enabled = false
 
+[editable path="Seeker"]
 [editable path="Hider"]
