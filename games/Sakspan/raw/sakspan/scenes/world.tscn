@@ -57,8 +57,7 @@ _spawnable_scenes = PackedStringArray("uid://b75j5af55anqv")
 spawn_path = NodePath("..")
 
 [node name="CanvasModulate" type="CanvasModulate" parent="."]
-scale = Vector2(0.988908, 0.855109)
-color = Color(0.817358, 0.867702, 0.919727, 1)
+color = Color(0.1, 0.1, 0.1, 1)
 
 [node name="Obstacle" parent="." instance=ExtResource("2_rwgxs")]
 position = Vector2(122, -124)

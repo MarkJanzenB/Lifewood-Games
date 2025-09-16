@@ -385,6 +385,7 @@ shape = SubResource("CapsuleShape2D_tuyoq")
 debug_color = Color(1, 1, 1, 0.42)
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+light_mask = 2
 sprite_frames = SubResource("SpriteFrames_ibah8")
 animation = &"front_backward_walk"
 
@@ -402,14 +403,12 @@ scale = Vector2(3.5563, 1.72284)
 polygon = PackedVector2Array(0.830412, -9.14641, 190.164, -177.212, 190.164, 160.634)
 
 [node name="PointLight2D" type="PointLight2D" parent="VisionCone"]
-position = Vector2(-0.513709, -0.689394)
-rotation = 0.000824005
-scale = Vector2(5.2468, -2.27107)
-color = Color(1, 1, 0.458824, 0.196078)
-energy = 2.0
+position = Vector2(100, 0)
+color = Color(1, 1, 1, 0.8)
+energy = 1.5
 shadow_enabled = true
 texture = ExtResource("7_fjrip")
-metadata/_edit_group_ = true
+texture_scale = 3.0
 
 [node name="MeleeRange" type="Area2D" parent="."]
 position = Vector2(0, 5)
