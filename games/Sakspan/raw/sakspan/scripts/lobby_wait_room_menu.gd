@@ -349,23 +349,9 @@ func _initialize_lobby(info: Dictionary, host: bool):
 
 # Compose lobby title with host IP so others can join
 func _compose_lobby_title(name: String) -> String:
-	# Prefer the host's IP from synced lobby data when available
-	var ip := String(lobby_data.get("host_ip", ""))
-	if ip.is_empty():
-		# Fallback: find a likely LAN IPv4 from this device
-		for a in IP.get_local_addresses():
-			if a.begins_with("192.168.") or a.begins_with("10."):
-				ip = a
-				break
-			if a.begins_with("172."):
-				var parts = a.split(".")
-				if parts.size() >= 2:
-					var second = int(parts[1])
-					if second >= 16 and second <= 31:
-						ip = a
-						break
-	if ip.is_empty():
+	var room_code := String(lobby_data.get("room_code", ""))
+	if room_code.is_empty():
 		return "Lobby: %s" % name
-	return "Lobby: %s    IP: %s" % [name, ip]
+	return "Lobby: %s    Code: %s" % [name, room_code]
 
 # Removed _get_lan_ipv4 helper; composed inline above to avoid missing symbol issues.

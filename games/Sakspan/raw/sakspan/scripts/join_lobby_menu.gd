@@ -5,8 +5,6 @@ extends Control
 @onready var refresh_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/RefreshButton
 @onready var join_selected_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/JoinSelectedButton
 @onready var back_button: Button = $PanelContainer/MarginContainer/VBoxContainer/BackButton
-@onready var manual_ip_field: LineEdit = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/ManualIPLineEdit
-@onready var join_ip_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/JoinIPButton
 
 # A dictionary to store found lobbies, keyed by their IP address
 var _found_lobbies: Dictionary = {}
@@ -21,10 +19,6 @@ func _ready():
 	lobby_list.item_selected.connect(_on_lobby_list_item_selected)
 	# Double-click/Enter on a lobby row to join
 	lobby_list.item_activated.connect(func(): _on_join_selected_button_pressed())
-	if join_ip_button:
-		join_ip_button.pressed.connect(_on_join_ip_button_pressed)
-	if manual_ip_field:
-		manual_ip_field.text_submitted.connect(func(_text): _on_join_ip_button_pressed())
 
 	# SAFETY: Ensure we are not accidentally still hosting from a prior scene
 	multiplayer.multiplayer_peer = null
@@ -67,25 +61,16 @@ func _on_join_selected_button_pressed():
 	if not selected_item: return
 
 	var ip_to_join = selected_item.get_metadata(0)
-	var player_name = "Joiner" # TODO: Get from global settings
+	var room_name = selected_item.get_text(0)
+	var room_code = selected_item.get_text(1)
+	var player_name = "Player" + str(randi_range(1000, 9999)) # Generate random name
 	
+	print("[JoinLobby] Joining room '%s' (Code: %s) at %s" % [room_name, room_code, ip_to_join])
 	NetworkManager.join_lobby(player_name, ip_to_join)
 	join_selected_button.disabled = true
 	join_selected_button.text = "CONNECTING..."
-	manual_ip_field.editable = false
 	refresh_button.disabled = true
 
-func _on_join_ip_button_pressed():
-	if not manual_ip_field: return
-	var ip := manual_ip_field.text.strip_edges()
-	if ip.is_empty():
-		manual_ip_field.placeholder_text = "Enter a valid IP"
-		return
-	print("[JoinLobby] Joining IP entered: ", ip)
-	NetworkManager.join_lobby("Joiner", ip)
-	if join_selected_button:
-		join_selected_button.disabled = true
-		join_selected_button.text = "CONNECTING..."
 
 func _on_back_button_pressed():
 	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
@@ -139,16 +124,26 @@ func _update_lobby_list_ui():
 	for ip in _found_lobbies:
 		var info: Dictionary = _found_lobbies[ip]
 		var item = lobby_list.create_item(root)
-		item.set_text(0, String(info.get("name", "Unknown Lobby")))
-		item.set_text(1, "%d/%d" % [int(info.get("current_players", 0)), int(info.get("max_players", 0))])
-		# item.set_text(2, String(info.get("timer", ""))) # Add this back if you send timer info
-		item.set_text(3, "Waiting") # Or get real status from broadcast
+		item.set_text(0, String(info.get("name", "Unknown Room")))
+		item.set_text(1, String(info.get("room_code", "N/A")))
+		item.set_text(2, "%d/%d" % [int(info.get("current_players", 0)), int(info.get("max_players", 0))])
+		item.set_text(3, String(info.get("timer", "5 minutes")))
+		
+		# Set status with color coding
+		var status = String(info.get("status", "waiting"))
+		item.set_text(4, status.capitalize())
+		if status == "full":
+			item.set_custom_color(4, Color.RED)
+		else:
+			item.set_custom_color(4, Color.GREEN)
+		
 		item.set_metadata(0, ip) # Store the IP address
 
 func _configure_lobby_list_columns():
-	lobby_list.set_columns(4)
-	lobby_list.set_column_title(0, "Lobby Name")
-	lobby_list.set_column_title(1, "Players")
-	lobby_list.set_column_title(2, "Timer")
-	lobby_list.set_column_title(3, "Status")
+	lobby_list.set_columns(5)
+	lobby_list.set_column_title(0, "Room Name")
+	lobby_list.set_column_title(1, "Room Code")
+	lobby_list.set_column_title(2, "Players")
+	lobby_list.set_column_title(3, "Timer")
+	lobby_list.set_column_title(4, "Status")
 	lobby_list.hide_root = true

@@ -90,18 +90,6 @@ theme_override_font_sizes/font_size = 30
 disabled = true
 text = "JOIN"
 
-[node name="ManualIPLineEdit" type="LineEdit" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-placeholder_text = "Enter host IP (e.g., 192.168.1.10)"
-
-[node name="JoinIPButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 2
-theme_override_fonts/font = ExtResource("2_rkjtl")
-theme_override_font_sizes/font_size = 30
-text = "JOIN IP"
-
 [node name="BackButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
 custom_minimum_size = Vector2(200, 50)
 layout_mode = 2

@@ -38,17 +38,16 @@ func _populate_options():
 
 func _on_create_button_pressed():
 	# Get player name from a global setting or another input field
-	var player_name = "HostPlayer" 
+	var player_name = "Host" + str(randi_range(1000, 9999))
 	var lobby_name = lobby_name_line_edit.text
 	if lobby_name.is_empty():
-		lobby_name = player_name + "'s Game" # Default name
+		lobby_name = player_name + "'s Room" # Default name
 		
 	# Get the selected values from the dropdowns
 	var max_players = int(max_players_option.get_item_text(max_players_option.selected))
-	# FIX: Get the selected timer setting
 	var timer_setting = game_timer_option.get_item_text(game_timer_option.selected)
 	
-	# FIX: Pass the new timer_setting to the NetworkManager
+	print("[CreateLobby] Creating room '%s' with %d max players" % [lobby_name, max_players])
 	NetworkManager.create_lobby(player_name, lobby_name, max_players, timer_setting)
 
 func _on_back_button_pressed():

@@ -53,6 +53,8 @@ position = Vector2(948, 981)
 shape = SubResource("RectangleShape2D_nnsk1")
 
 [node name="PlayerSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("uid://b75j5af55anqv")
+spawn_path = NodePath("..")
 
 [node name="CanvasModulate" type="CanvasModulate" parent="."]
 scale = Vector2(0.988908, 0.855109)
