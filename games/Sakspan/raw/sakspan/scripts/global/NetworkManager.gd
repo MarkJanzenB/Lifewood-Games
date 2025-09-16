@@ -85,6 +85,9 @@ func join_lobby(player_name: String, ip: String):
 		return
 	multiplayer.multiplayer_peer = peer
 	emit_signal("connection_succeeded")
+	# Proactively register and request a state resync in case the initial request RPC was missed
+	rpc_id(1, "_rpc_register_player", my_name)
+	request_players_resync()
 
 func leave_lobby():
 	players.clear()
@@ -176,6 +179,15 @@ func _rpc_register_player(player_name: String):
 func _rpc_sync_player_data(new_player_data: Dictionary):
 	players = new_player_data
 	emit_signal("player_list_changed", players)
+
+@rpc("any_peer", "call_local")
+func _rpc_request_players_resync():
+	# Called by a client; server responds with full player data
+	if multiplayer.is_server():
+		rpc("_rpc_sync_player_data", players)
+
+func request_players_resync():
+	rpc_id(1, "_rpc_request_players_resync")
 
 @rpc("reliable")
 func _rpc_sync_lobby_data(lobby_data: Dictionary):
