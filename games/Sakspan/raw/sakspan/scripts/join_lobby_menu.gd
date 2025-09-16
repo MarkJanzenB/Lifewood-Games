@@ -5,6 +5,8 @@ extends Control
 @onready var refresh_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/RefreshButton
 @onready var join_selected_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/JoinSelectedButton
 @onready var back_button: Button = $PanelContainer/MarginContainer/VBoxContainer/BackButton
+@onready var room_code_line_edit: LineEdit = $PanelContainer/MarginContainer/VBoxContainer/CodeJoinHBox/RoomCodeLineEdit
+@onready var join_with_code_button: Button = $PanelContainer/MarginContainer/VBoxContainer/CodeJoinHBox/JoinWithCodeButton
 
 # A dictionary to store found lobbies, keyed by their IP address
 var _found_lobbies: Dictionary = {}
@@ -19,6 +21,7 @@ func _ready():
 	lobby_list.item_selected.connect(_on_lobby_list_item_selected)
 	# Double-click/Enter on a lobby row to join
 	lobby_list.item_activated.connect(func(): _on_join_selected_button_pressed())
+	join_with_code_button.pressed.connect(_on_join_with_code_button_pressed)
 
 	# SAFETY: Ensure we are not accidentally still hosting from a prior scene
 	multiplayer.multiplayer_peer = null
@@ -71,6 +74,16 @@ func _on_join_selected_button_pressed():
 	join_selected_button.text = "CONNECTING..."
 	refresh_button.disabled = true
 
+
+func _on_join_with_code_button_pressed():
+	var code = room_code_line_edit.text.strip_edges().to_upper()
+	if code.length() != 6:
+		print("[JoinLobby] Invalid room code format.")
+		# Optionally, provide visual feedback to the user here
+		return
+	
+	print("[JoinLobby] Searching for lobby with code: ", code)
+	NetworkManager.find_lobby_by_code(code)
 
 func _on_back_button_pressed():
 	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")

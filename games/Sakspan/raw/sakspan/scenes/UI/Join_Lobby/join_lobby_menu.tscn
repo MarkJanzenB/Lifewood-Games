@@ -61,6 +61,22 @@ columns = 4
 column_titles_visible = true
 select_mode = 1
 
+[node name="CodeJoinHBox" type="HBoxContainer" parent="PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="RoomCodeLineEdit" type="LineEdit" parent="PanelContainer/MarginContainer/VBoxContainer/CodeJoinHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_fonts/font = ExtResource("2_rkjtl")
+theme_override_font_sizes/font_size = 30
+placeholder_text = "Enter Room Code"
+
+[node name="JoinWithCodeButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer/CodeJoinHBox"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_rkjtl")
+theme_override_font_sizes/font_size = 30
+text = "JOIN WITH CODE"
+
 [node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 

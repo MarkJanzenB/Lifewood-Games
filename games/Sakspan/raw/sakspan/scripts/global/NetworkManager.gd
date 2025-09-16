@@ -48,7 +48,26 @@ func _process(_delta):
 			var json_string = packet_data.get_string_from_utf8()
 			var parsed = JSON.parse_string(json_string)
 			
-			if typeof(parsed) == TYPE_DICTIONARY and parsed.get("identifier") == GAME_IDENTIFIER:
+				if typeof(parsed) == TYPE_DICTIONARY and parsed.get("identifier") == GAME_IDENTIFIER:
+				# --- HOST: Handle a client's request to find a lobby by code ---
+				if multiplayer.is_server() and parsed.get("request_type") == "find_lobby":
+					if parsed.get("room_code") == room_code:
+						print("[NetworkManager] Received find request for my room code. Responding to ", sender_ip)
+						_send_direct_lobby_info(sender_ip)
+					return # Don't process our own requests
+
+				# --- CLIENT: Handle a direct response from a host ---
+				if not multiplayer.is_server() and parsed.get("request_type") == "lobby_response":
+					parsed["ip"] = sender_ip
+					print("[NetworkManager] Received direct lobby response from ", sender_ip)
+					emit_signal("lobby_found", parsed)
+					return
+
+				# --- CLIENT: Handle a general broadcast from a host ---
+				if not multiplayer.is_server() and parsed.has("room_code"):
+					parsed["ip"] = sender_ip
+					#print("[NetworkManager] Received lobby broadcast from ", sender_ip, ": ", parsed)
+					emit_signal("lobby_found", parsed)
 				parsed["ip"] = sender_ip
 				print("[NetworkManager] Received lobby broadcast from ", sender_ip, ": ", parsed)
 				emit_signal("lobby_found", parsed)
@@ -195,10 +214,41 @@ func _generate_room_code() -> String:
 	return code
 
 # Find lobby by room code (for future room code joining feature)
-func find_lobby_by_room_code(code: String) -> Dictionary:
-	# This could be enhanced to search through discovered lobbies
-	# For now, it's a placeholder for future functionality
-	return {}
+func find_lobby_by_code(code: String):
+	if not is_instance_valid(_udp_send):
+		# Ensure the sender socket is ready
+		_udp_send = PacketPeerUDP.new()
+		if _udp_send.bind(0) != OK:
+			push_warning("[NetworkManager] UDP find request sender failed to bind.")
+			_udp_send = null
+			return
+	
+	var request_data = {
+		"identifier": GAME_IDENTIFIER,
+		"request_type": "find_lobby",
+		"room_code": code
+	}
+	var packet = JSON.stringify(request_data).to_utf8_buffer()
+	_udp_send.set_broadcast_enabled(true)
+	_udp_send.set_dest_address("255.255.255.255", BROADCAST_PORT)
+	if _udp_send.put_packet(packet) != OK:
+		push_warning("[NetworkManager] Failed to send find_lobby request packet.")
+
+# Host sends its lobby info directly to a specific IP
+func _send_direct_lobby_info(recipient_ip: String):
+	if not multiplayer.is_server(): return
+
+	var data = my_lobby_data.duplicate()
+	data["identifier"] = GAME_IDENTIFIER
+	data["request_type"] = "lobby_response" # Mark this as a direct response
+	data["current_players"] = players.size()
+	data["timestamp"] = Time.get_ticks_msec()
+	data["host_ip"] = my_lobby_data.get("host_ip", _get_lan_ipv4())
+
+	var packet = JSON.stringify(data).to_utf8_buffer()
+	_udp_send.set_dest_address(recipient_ip, BROADCAST_PORT)
+	if _udp_send.put_packet(packet) != OK:
+		push_warning("[NetworkManager] Failed to send direct lobby info to %s" % recipient_ip)
 
 func request_char_selection(char_index: int):
 	rpc_id(1, "_rpc_request_char_selection", multiplayer.get_unique_id(), char_index)
