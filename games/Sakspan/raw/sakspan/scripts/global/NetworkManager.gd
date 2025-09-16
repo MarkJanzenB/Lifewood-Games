@@ -153,14 +153,20 @@ func request_char_selection(char_index: int):
 
 func start_game():
 	if multiplayer.is_server():
-		# Assign roles randomly: exactly 1 seeker, others hiders
-		var ids: Array = players.keys()
+		# Assign roles randomly: exactly 1 seeker, others hiders (system-decided)
+		# Prefer ready players; if none are ready, include everyone.
+		var ids: Array = []
+		for id in players.keys():
+			if bool(players[id].get("ready", false)):
+				ids.append(id)
+		if ids.is_empty():
+			ids = players.keys()
 		if ids.size() > 0:
+			randomize()
 			var seeker_index := int(randi() % ids.size())
 			var seeker_id := int(ids[seeker_index])
-			for id in ids:
-				var role := "seeker" if int(id) == seeker_id else "hider"
-				players[int(id)]["role"] = role
+			for id in players.keys():
+				players[int(id)]["role"] = "seeker" if int(id) == seeker_id else "hider"
 			# Sync updated players with roles to all peers
 			rpc("_rpc_sync_player_data", players)
 		# Stop LAN broadcast and start the game for everyone
@@ -168,6 +174,30 @@ func start_game():
 		rpc("_rpc_start_game")
 		# Also execute locally on the host so it transitions too
 		_rpc_start_game()
+
+# Host-only helpers to assign seeker explicitly before start
+func host_assign_seeker(seeker_id: int):
+	if not multiplayer.is_server():
+		return
+	var ids: Array = players.keys()
+	for id in ids:
+		players[int(id)]["role"] = "seeker" if int(id) == int(seeker_id) else "hider"
+	rpc("_rpc_sync_player_data", players)
+	emit_signal("player_list_changed", players)
+
+func host_assign_random_seeker():
+	if not multiplayer.is_server():
+		return
+	var ids: Array = players.keys()
+	if ids.is_empty():
+		return
+	randomize()
+	var seeker_index := int(randi() % ids.size())
+	var seeker_id := int(ids[seeker_index])
+	for id in ids:
+		players[int(id)]["role"] = "seeker" if int(id) == seeker_id else "hider"
+	rpc("_rpc_sync_player_data", players)
+	emit_signal("player_list_changed", players)
 
 func _send_broadcast():
 	if not _is_broadcasting or not multiplayer.is_server(): stop_lan_discovery(); return
