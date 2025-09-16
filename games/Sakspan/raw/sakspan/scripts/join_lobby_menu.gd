@@ -22,6 +22,10 @@ func _ready():
 	if join_ip_button:
 		join_ip_button.pressed.connect(_on_join_ip_button_pressed)
 
+	# SAFETY: Ensure we are not accidentally still hosting from a prior scene
+	multiplayer.multiplayer_peer = null
+	NetworkManager.stop_lan_discovery()
+
 	NetworkManager.connection_succeeded.connect(_on_connection_succeeded)
 	NetworkManager.connection_failed.connect(_on_connection_failed)
 	# The new signal for LAN discovery

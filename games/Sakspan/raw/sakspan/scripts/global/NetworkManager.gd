@@ -52,6 +52,10 @@ func _process(_delta):
 func create_lobby(player_name: String, lobby_name: String, max_players: int, timer_setting: String):
 	# Set local player name and cap max players to 5 (min 2)
 	my_name = player_name
+	# SAFETY: Tear down any existing peer (e.g., from a previous client session)
+	if multiplayer.multiplayer_peer != null:
+		print("[NetworkManager] Clearing existing peer before creating server")
+		multiplayer.multiplayer_peer = null
 	var capped_max: int = int(clamp(max_players, 2, 5))
 	var peer = ENetMultiplayerPeer.new()
 	if peer.create_server(DEFAULT_PORT, capped_max) != OK:
@@ -69,6 +73,11 @@ func create_lobby(player_name: String, lobby_name: String, max_players: int, tim
 func join_lobby(player_name: String, ip: String):
 	# Set local player name before connecting so registration sends the right name
 	my_name = player_name
+	# SAFETY: If we were acting as server, stop and clear before joining
+	if multiplayer.is_server() or multiplayer.multiplayer_peer != null:
+		print("[NetworkManager] Clearing existing peer before joining server at ", ip)
+		stop_lan_discovery()
+		multiplayer.multiplayer_peer = null
 	var peer = ENetMultiplayerPeer.new()
 	if peer.create_client(ip, DEFAULT_PORT) != OK:
 		print("Failed to connect.")
