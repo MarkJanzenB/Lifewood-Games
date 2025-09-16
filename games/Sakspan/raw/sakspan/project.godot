@@ -11,20 +11,21 @@ config_version=5
 [application]
 
 config/name="Sakspan"
-run/main_scene="uid://cpao8wuy2gp86"
+run/main_scene="uid://bwtsnnsbqns54"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]
 
 GameManager="*res://scenes/GameManager.tscn"
+NetworkManager="*res://scripts/global/NetworkManager.gd"
+SceneChanger="*res://scripts/global/SceneChanger.gd"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
-window/stretch/scale=4.0
 
 [input]
 

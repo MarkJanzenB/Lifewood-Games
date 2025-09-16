@@ -1,9 +1,10 @@
-[gd_scene load_steps=7 format=3 uid="uid://cpao8wuy2gp86"]
+[gd_scene load_steps=8 format=3 uid="uid://cpao8wuy2gp86"]
 
 [ext_resource type="Texture2D" uid="uid://vgcncyviyo34" path="res://tilesets/earth/grass.png" id="1_4wyf3"]
 [ext_resource type="PackedScene" uid="uid://b75j5af55anqv" path="res://scenes/player.tscn" id="1_nnsk1"]
 [ext_resource type="PackedScene" uid="uid://bxhfocxnpf5sb" path="res://scenes/obstacles/Obstacle.tscn" id="2_rwgxs"]
 [ext_resource type="PackedScene" uid="uid://37dudwsdkboa" path="res://scenes/obstacles/tree1.tscn" id="4_k0juu"]
+[ext_resource type="PackedScene" uid="uid://c7s3d55ma5x4d" path="res://scenes/GameUI.tscn" id="5_71j4m"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_e5uuo"]
 size = Vector2(8.5, 864)
@@ -52,10 +53,8 @@ shape = SubResource("RectangleShape2D_nnsk1")
 
 [node name="Seeker" parent="." groups=["seeker"] instance=ExtResource("1_nnsk1")]
 position = Vector2(39, -323)
-is_main_player = true
-role = 1
 player_name = "seeker_1"
-ammo = 0
+is_main_player = true
 
 [node name="CanvasModulate" type="CanvasModulate" parent="."]
 scale = Vector2(0.988908, 0.855109)
@@ -63,13 +62,8 @@ color = Color(0.817358, 0.867702, 0.919727, 1)
 
 [node name="Hider" parent="." groups=["hider"] instance=ExtResource("1_nnsk1")]
 position = Vector2(-103, -335)
-is_main_player = false
-role = 0
-player_name = "Player"
-ammo = 0
 
 [node name="Camera2D" parent="Hider" index="2"]
-visible = false
 enabled = false
 
 [node name="Obstacle" parent="." instance=ExtResource("2_rwgxs")]
@@ -91,6 +85,8 @@ scale = Vector2(0.157657, 0.157657)
 [node name="Tree3" parent="." instance=ExtResource("4_k0juu")]
 position = Vector2(-372, -3)
 scale = Vector2(0.157657, 0.157657)
+
+[node name="GameUI" parent="." instance=ExtResource("5_71j4m")]
 
 [editable path="Seeker"]
 [editable path="Hider"]

@@ -8,17 +8,16 @@ signal game_state_changed(new_state: GameState)
 enum GameState { WAITING_TO_START, HIDER_HEADSTART, GAME_START_COUNTDOWN, IN_PROGRESS, FINISHED }
 var current_state: GameState = GameState.WAITING_TO_START
 
-@onready var game_ui: GameUI = $GameUI
-@onready var game_over_ui: GameOverUI
+# --- NEW UI REFERENCE ---
+# This variable will be set by the GameUI scene itself when it loads.
+var game_ui_instance: GameUI = null
+
+# Timers are created in code to be self-contained.
 @onready var main_timer: Timer = Timer.new()
 @onready var ammo_cooldown_timer: Timer = Timer.new()
 @onready var sak_delay_timer: Timer = Timer.new()
 
 func _ready():
-	var game_over_scene = load("res://scenes/GameOverUI.tscn").instantiate()
-	add_child(game_over_scene)
-	game_over_ui = game_over_scene
-	
 	add_child(main_timer)
 	add_child(ammo_cooldown_timer)
 	add_child(sak_delay_timer)
@@ -36,13 +35,6 @@ func _ready():
 	initialize_game()
 
 func initialize_game():
-	var players = get_tree().get_nodes_in_group("hider") + get_tree().get_nodes_in_group("seeker")
-	for p in players:
-		var player_instance = p as PlayerCharacter
-		if player_instance and player_instance.is_main_player:
-			game_ui.initialize(player_instance)
-			break
-			
 	var all_hiders = get_tree().get_nodes_in_group("hider")
 	var all_seekers = get_tree().get_nodes_in_group("seeker")
 	if all_seekers.is_empty(): return
@@ -64,38 +56,45 @@ func change_state(new_state: GameState):
 	emit_signal("game_state_changed", new_state)
 	print("Game state changed to: ", GameState.keys()[new_state])
 
+	if not is_instance_valid(game_ui_instance): return # Safety check
+
 	match new_state:
 		GameState.HIDER_HEADSTART:
-			game_ui.update_status("Hiders, GO! Seeker is frozen.", true)
+			game_ui_instance.update_status("Hiders, GO! Seeker is frozen.", true)
 			main_timer.start(5.0)
 		GameState.GAME_START_COUNTDOWN:
-			game_ui.update_status("", false)
-			game_ui.update_countdown("10", true)
+			game_ui_instance.update_status("", false)
+			game_ui_instance.update_countdown("10", true)
 			main_timer.start(10.0)
 		GameState.IN_PROGRESS:
-			game_ui.update_status("The Hunt is On!", true)
-			game_ui.update_countdown("GO!", false)
+			game_ui_instance.update_status("The Hunt is On!", true)
+			game_ui_instance.update_countdown("GO!", false)
 			sak_delay_timer.start(3.0)
 		GameState.FINISHED:
 			ammo_cooldown_timer.stop()
 
 func _process(delta: float):
+	if not is_instance_valid(game_ui_instance): return # Safety check
+	
 	if current_state == GameState.GAME_START_COUNTDOWN:
-		game_ui.update_countdown(str(ceil(main_timer.time_left)), true)
+		game_ui_instance.update_countdown(str(ceil(main_timer.time_left)), true)
 	update_ui()
 
 func update_ui():
+	if not is_instance_valid(game_ui_instance): return # Safety check
+	
 	var living_hiders_count = get_tree().get_nodes_in_group("hider").filter(func(hider): return (hider as PlayerCharacter).current_state == PlayerCharacter.PlayerState.ALIVE).size()
-	game_ui.update_hiders_left(living_hiders_count)
+	game_ui_instance.update_hiders_left(living_hiders_count)
 	
 	var seekers = get_tree().get_nodes_in_group("seeker")
 	if not seekers.is_empty():
 		var seeker = seekers[0] as PlayerCharacter
 		if seeker:
-			game_ui.update_ammo(seeker.ammo)
+			game_ui_instance.update_ammo(seeker.ammo)
 
 func on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerCharacter):
-	# This function now only handles the kill feed. The win check is separate.
+	if not is_instance_valid(game_ui_instance): return # Safety check
+	
 	var message = ""
 	if attacker.role == PlayerCharacter.PlayerRole.SEEKER:
 		message = attacker.player_name + " bonked " + eliminated_player.player_name
@@ -105,10 +104,10 @@ func on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerCh
 		else:
 			message = attacker.player_name + " accidentally bonked " + eliminated_player.player_name
 	
-	game_ui.show_kill_feed(message)
+	game_ui_instance.show_kill_feed(message)
 
 func check_win_conditions():
-	await get_tree().process_frame # Wait one frame to ensure nodes are updated
+	await get_tree().process_frame
 	
 	var all_hiders = get_tree().get_nodes_in_group("hider")
 	var all_seekers = get_tree().get_nodes_in_group("seeker")
@@ -134,15 +133,8 @@ func check_win_conditions():
 		print(winning_text)
 		change_state(GameState.FINISHED)
 		
-		var players = all_hiders + all_seekers
-		for p in players:
-			var player_instance = p as PlayerCharacter
-			if player_instance and player_instance.is_main_player:
-				var did_i_win = (player_instance.role == PlayerCharacter.PlayerRole.SEEKER and seekers_win) or \
-								(player_instance.role == PlayerCharacter.PlayerRole.HIDER and not seekers_win)
-				game_over_ui.show_screen(player_instance, did_i_win, winning_text)
-				get_tree().paused = true
-				break
+		# We will add the game over screen logic here in a future step.
+		get_tree().paused = true
 
 # --- SIGNAL HANDLERS ---
 
