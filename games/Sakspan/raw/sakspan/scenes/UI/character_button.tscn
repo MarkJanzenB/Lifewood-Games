@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://drnmo1to31uh8"]
+[gd_scene load_steps=2 format=3 uid="uid://byvjhavj4yd0c"]
 
-[ext_resource type="Script" uid="uid://fse2at6k0xd" path="res://scenes/UI/character_button.gd" id="1_boxxn"]
+[ext_resource type="Script" uid="uid://fse2at6k0xd" path="res://scripts/character_button.gd" id="1_boxxn"]
 
 [node name="Character_Button" type="TextureButton"]
 anchors_preset = 15

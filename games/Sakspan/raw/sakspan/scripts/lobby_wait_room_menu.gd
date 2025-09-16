@@ -1,175 +1,203 @@
-# File: LobbyUI.gd (or your lobby script name)
-# This script is attached to your root "PanelContainer" node.
+# lobby_wait_room_menu.gd
 extends Control
 
-# --- SCENE REFERENCES (PATHS) ---
-# These paths are based on your screenshot. Double-check them if you have issues.
-@onready var lobby_name_label: Label = $HBoxContainer/LobbyNameLab
-@onready var players_count_label: Label = $HBoxContainer/PlayersCountLabe
-@onready var player_list_container: VBoxContainer = $ScrollContainer/PlayerListContai
-@onready var character_grid: GridContainer = $CharacterGrid
-@onready var lock_in_button: Button = $LockInButton
-@onready var start_game_button: Button = $StartGameButton
-@onready var leave_lobby_button: Button = $LeaveLobbyButto
-
-# --- RESOURCES ---
-# [!!! IMPORTANT: YOU MUST FIX THIS LINE !!!]
-# In the Godot editor, find your "CharacterButton.tscn" file in the FileSystem panel.
-# Drag that file and drop it between the parentheses of preload() below.
-const CharacterButtonScene = preload("res://scenes/UI/character_button.tscn")
-
-# Make sure these paths to your character images are correct.
-const CHARACTER_ICONS := [
-	preload("res://scenes/UI/Lobby_Wait_Room/pink_char.png"),
-	preload("res://scenes/UI/Lobby_Wait_Room/red_char.png"),
+# --- EXPORT VARIABLES ---
+@export var lobby_player_item_scene: PackedScene
+@export var character_sprites: Array[Texture2D] = [
 	preload("res://scenes/UI/Lobby_Wait_Room/blue_char.png"),
 	preload("res://scenes/UI/Lobby_Wait_Room/green_char.png"),
+	preload("res://scenes/UI/Lobby_Wait_Room/pink_char.png"),
+	preload("res://scenes/UI/Lobby_Wait_Room/red_char.png"),
 	preload("res://scenes/UI/Lobby_Wait_Room/yellow_char.png"),
 ]
 
-# --- LOBBY STATE VARIABLES ---
-var selected_char_index: int = -1
-var locked_in: bool = false
-var is_host: bool = false
-var lobby_data: Dictionary = {}
+# --- NODE REFERENCES ---
+@onready var lobby_name_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/LobbyNameLabel
+@onready var game_timer_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/GameTimerLabel
+@onready var players_count_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/PlayersCountLabel
+@onready var player_list_container: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/PlayerListContainer
+@onready var character_grid: GridContainer = $PanelContainer/MarginContainer/VBoxContainer/CharacterGrid
+@onready var lock_in_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LockInButton
+@onready var start_game_button: Button = $PanelContainer/MarginContainer/VBoxContainer/StartGameButton
+@onready var leave_lobby_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LeaveLobbyButton
 
+# --- STATE VARIABLES ---
+var _is_host: bool = false
+var _lobby_data: Dictionary = {}
+var _players_in_lobby: Dictionary = {} # { peer_id: { name, is_host, ready, char_index } }
+var _my_peer_id: int
+var _my_temp_selection_index: int = -1
 
-# --- GODOT FUNCTIONS ---
 func _ready():
 	_check_ui_nodes()
-	NetworkManager.player_list_changed.connect(_on_player_list_changed)
-	NetworkManager.game_started.connect(_on_game_started)
-	
-	start_game_button.pressed.connect(_on_start_game_button_pressed)
-	lock_in_button.pressed.connect(_on_lock_in_button_pressed)
-	leave_lobby_button.pressed.connect(_on_leave_lobby_button_pressed)
+	if Engine.has_singleton("NetworkManager") or ("NetworkManager" in ProjectSettings.get_setting("autoloads")):
+		# Access autoloaded NetworkManager directly
+		_lobby_data = NetworkManager.my_lobby_data if NetworkManager.my_lobby_data != null else {}
+		_players_in_lobby = NetworkManager.players if NetworkManager.players != null else {}
+		NetworkManager.player_list_changed.connect(_on_player_list_changed)
+		if NetworkManager.has_signal("game_started"):
+			NetworkManager.game_started.connect(_on_game_started)
+	if start_game_button:
+		start_game_button.pressed.connect(_on_start_game_button_pressed)
+	if lock_in_button:
+		lock_in_button.pressed.connect(_on_lock_in_button_pressed)
+	if leave_lobby_button:
+		leave_lobby_button.pressed.connect(_on_leave_lobby_button_pressed)
 
-	lobby_data = NetworkManager.my_lobby_data
-	is_host = multiplayer.is_server()
-	lobby_name_label.text = "Lobby: " + lobby_data.get("name", "Unnamed Lobby")
-	
+	# Load lobby data from NetworkManager
+	_lobby_data = NetworkManager.my_lobby_data
+	_is_host = multiplayer.is_server()
+	_update_lobby_header()
 	_update_player_list(NetworkManager.players)
 	_setup_character_grid()
 	_update_start_game_button()
 
-
-# --- SETUP AND CHECKS ---
-func _check_ui_nodes():
-	if not lobby_name_label: push_warning("[LobbyWaitRoom] LobbyNameLabel not found.")
-	if not players_count_label: push_warning("[LobbyWaitRoom] PlayersCountLabel not found.")
-	if not player_list_container: push_warning("[LobbyWaitRoom] PlayerListContainer not found.")
-	if not character_grid: push_warning("[LobbyWaitRoom] CharacterGrid not found.")
-	if not lock_in_button: push_warning("[LobbyWaitRoom] LockInButton not found.")
-	if not start_game_button: push_warning("[LobbyWaitRoom] StartGameButton not found.")
-	if not leave_lobby_button: push_warning("[LobbyWaitRoom] LeaveLobbyButton not found.")
-
-# This function now correctly uses your custom CharacterButton scene.
-func _setup_character_grid():
-	if not character_grid: return
-	for child in character_grid.get_children():
-		child.queue_free()
-		
-	for i in range(CHARACTER_ICONS.size()):
-		var btn = CharacterButtonScene.instance()
-		btn.set_character(CHARACTER_ICONS[i], i)
-		btn.character_selected.connect(_on_character_selected)
-		character_grid.add_child(btn)
-
-
-# --- UI UPDATE AND SIGNAL HANDLER FUNCTIONS ---
-func _on_character_selected(idx: int):
-	if locked_in: return
-	selected_char_index = idx
-	_update_character_grid_highlight()
-
-# This function now correctly uses the custom "set_selected" method on your buttons.
-func _update_character_grid_highlight():
-	if not character_grid: return
-	for i in range(character_grid.get_child_count()):
-		# The "as CharacterButton" cast now works because of "class_name".
-		var btn = character_grid.get_child(i) as CharacterButton
-		if btn:
-			btn.set_selected(i == selected_char_index)
-
-func _update_character_grid_lock(players: Dictionary):
-	if not character_grid: return
-	var picked = []
-	for id in players:
-		var idx = players[id].char_index
-		if idx >= 0:
-			picked.append(idx)
-			
-	var my_id: int = multiplayer.get_unique_id()
-	var my_char: int = -1
-	if players.has(my_id):
-		my_char = int(players[my_id].get("char_index", -1))
-		
-	for i in range(character_grid.get_child_count()):
-		var btn = character_grid.get_child(i)
-		btn.disabled = (i in picked and i != my_char)
+func _update_lobby_header():
+	if lobby_name_label:
+		lobby_name_label.text = "Lobby: " + _lobby_data.get("name", "Unnamed Lobby")
+	if $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/GameTimerLabel:
+		$PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/GameTimerLabel.text = "Timer: " + str(_lobby_data.get("timer", "-"))
+	if players_count_label:
+		players_count_label.text = "Players: %d/%d" % [_players_in_lobby.size(), int(_lobby_data.get("max_players", 5))]
 
 func _update_player_list(players: Dictionary):
-	if not player_list_container: return
-	for c in player_list_container.get_children(): c.queue_free()
-	
-	var count = 0
-	for id in players:
-		var p = players[id]
-		var label = Label.new()
-		var p_name: String = p.get("name", "Player %s" % str(id))
-		var p_char: int = int(p.get("char_index", -1))
-		var p_is_host: bool = bool(p.get("is_host", false))
-		var char_text = " (Picking...)"
-		if p_char >= 0:
-			char_text = " (Ready)"
-			
-		var host_text = " (Host)" if p_is_host else ""
-		label.text = "%s%s%s" % [p_name, host_text, char_text]
-		player_list_container.add_child(label)
-		count += 1
-		
-	if players_count_label:
-		players_count_label.text = "Players: %d/%d" % [count, lobby_data.get("max_players", 5)]
+	for child in player_list_container.get_children():
+		child.queue_free()
+
+	for p_id in players.keys():
+		var player_data: Dictionary = players[p_id]
+		if lobby_player_item_scene == null:
+			continue
+		var player_item: Node = lobby_player_item_scene.instantiate()
+		player_list_container.add_child(player_item)
+		var char_texture: Texture2D = null
+		var idx: int = int(player_data.get("char_index", -1))
+		if idx >= 0 and idx < character_sprites.size():
+			char_texture = character_sprites[idx]
+		if player_item.has_method("update_display"):
+			player_item.call("update_display", player_data, char_texture)
+
+func _setup_character_grid():
+	for i in range(character_sprites.size()):
+		var button: TextureButton = TextureButton.new()
+		button.texture_normal = character_sprites[i]
+		button.custom_minimum_size = Vector2(80, 80)
+		button.pressed.connect(_on_char_button_pressed.bind(i))
+		character_grid.add_child(button)
+
+func _update_character_grid_lock(players: Dictionary):
+	var taken_char_indices: Array[int] = []
+	for p_id in players.keys():
+		var char_idx: int = int(players[p_id].get("char_index", -1))
+		if char_idx != -1:
+			taken_char_indices.append(char_idx)
+
+	for i in range(character_grid.get_child_count()):
+		var button: TextureButton = character_grid.get_child(i) as TextureButton
+		if button:
+			button.disabled = i in taken_char_indices
+			button.modulate = Color(1, 1, 1, 1)
+			if i == _my_temp_selection_index:
+				button.modulate = Color(1.0, 0.84, 0.0)
 
 func _update_start_game_button():
-	if not start_game_button: return
-	start_game_button.disabled = true
-	if is_host:
-		var players = NetworkManager.players
-		var ready_count = 0
-		for id in players:
-			if players[id].char_index >= 0:
-				ready_count += 1
-		if players.size() >= 2 and ready_count == players.size():
-			start_game_button.disabled = false
-	else:
-		start_game_button.disabled = true
+	if _is_host:
+		var all_ready: bool = true
+		if _players_in_lobby.is_empty():
+			all_ready = false
+		for p_id in _players_in_lobby.keys():
+			if not bool(_players_in_lobby[p_id].get("ready", false)):
+				all_ready = false
+				break
+		start_game_button.disabled = not all_ready or _players_in_lobby.size() < 2
 
+func _on_char_button_pressed(char_index: int) -> void:
+	_my_temp_selection_index = char_index
+	_update_character_grid_lock(_players_in_lobby)
 
-# --- BUTTON PRESS AND NETWORKING ---
-func _on_lock_in_button_pressed():
-	if selected_char_index == -1 or locked_in: return
-	NetworkManager.request_char_selection(selected_char_index)
-	locked_in = true
-	lock_in_button.disabled = true
-	for i in range(character_grid.get_child_count()):
-		var btn = character_grid.get_child(i)
-		if i != selected_char_index:
-			btn.disabled = true
+func _on_lock_in_button_pressed() -> void:
+	if _my_temp_selection_index == -1:
+		return
+	# Delegate to NetworkManager which enforces unique selection and syncs
+	if NetworkManager and NetworkManager.has_method("request_char_selection"):
+		NetworkManager.request_char_selection(_my_temp_selection_index)
 
-func _on_player_list_changed(players: Dictionary):
-	_update_player_list(players)
-	_update_start_game_button()
-	if not locked_in:
-		_update_character_grid_lock(players)
-
-func _on_start_game_button_pressed():
-	if is_host:
+func _on_start_game_button_pressed() -> void:
+	if not _is_host:
+		return
+	if NetworkManager and NetworkManager.has_method("start_game"):
 		NetworkManager.start_game()
 
-func _on_game_started(_player_data):
-	get_tree().change_scene_to_file("res://scenes/game.tscn")
+func _on_leave_lobby_button_pressed() -> void:
+	multiplayer.multiplayer_peer = null
+	var sc: Node = get_node_or_null("/root/SceneChanger")
+	if sc:
+		sc.call("change_scene_to_file", "res://scenes/UI/multiplayer_menu.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/UI/multiplayer_menu.tscn")
 
-func _on_leave_lobby_button_pressed():
-	NetworkManager.leave_lobby()
-	get_tree().change_scene_to_file("res://scenes/UI/multiplayer_menu.tscn")
+func _on_player_list_changed(new_players: Dictionary) -> void:
+	_players_in_lobby = new_players.duplicate(true)
+	_update_lobby_header()
+	_update_player_list(new_players)
+	_update_start_game_button()
+	_update_character_grid_lock(new_players)
+
+func _on_game_started(player_data: Dictionary) -> void:
+	# Transition to the actual game scene if available
+	var sc: Node = get_node_or_null("/root/SceneChanger")
+	if sc:
+		sc.call("change_scene_to_file", "res://scenes/game/game_scene.tscn", {"players": player_data})
+	else:
+		get_tree().change_scene_to_file("res://scenes/game/game_scene.tscn")
+
+func _update_ui() -> void:
+	lobby_name_label.text = "Lobby: " + str(_lobby_data.get("name", "[Name]"))
+	game_timer_label.text = "Timer: " + str(_lobby_data.get("timer", "[Timer]"))
+	players_count_label.text = "Players: %d/%d" % [_players_in_lobby.size(), int(_lobby_data.get("max_players", 0))]
+
+	var taken_char_indices: Array[int] = []
+	for p_id in _players_in_lobby.keys():
+		var char_idx: int = int(_players_in_lobby[p_id].get("char_index", -1))
+		if char_idx != -1:
+			taken_char_indices.append(char_idx)
+
+	for i in range(character_grid.get_child_count()):
+		var button: TextureButton = character_grid.get_child(i) as TextureButton
+		if button:
+			button.disabled = i in taken_char_indices
+			button.modulate = Color(1, 1, 1, 1)
+			if i == _my_temp_selection_index:
+				button.modulate = Color(1.0, 0.84, 0.0)
+
+	for child in player_list_container.get_children():
+		child.queue_free()
+
+	for p_id in _players_in_lobby.keys():
+		var player_data: Dictionary = _players_in_lobby[p_id]
+		if lobby_player_item_scene == null:
+			continue
+		var player_item: Node = lobby_player_item_scene.instantiate()
+		player_list_container.add_child(player_item)
+		var char_texture: Texture2D = null
+		var idx: int = int(player_data.get("char_index", -1))
+		if idx >= 0 and idx < character_sprites.size():
+			char_texture = character_sprites[idx]
+		if player_item.has_method("update_display"):
+			player_item.call("update_display", player_data, char_texture)
+
+	var self_is_ready: bool = false
+	if _players_in_lobby.has(_my_peer_id):
+		self_is_ready = bool(_players_in_lobby[_my_peer_id].get("ready", false))
+	lock_in_button.disabled = self_is_ready or _my_temp_selection_index == -1
+	lock_in_button.text = self_is_ready ? "LOCKED IN" : "LOCK IN"
+
+	if _is_host:
+		var all_ready: bool = true
+		if _players_in_lobby.is_empty():
+			all_ready = false
+		for p_id in _players_in_lobby.keys():
+			if not bool(_players_in_lobby[p_id].get("ready", false)):
+				all_ready = false
+				break
+		start_game_button.disabled = not all_ready or _players_in_lobby.size() < 2
