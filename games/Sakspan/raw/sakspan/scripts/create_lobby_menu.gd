@@ -10,7 +10,7 @@ extends Control
 @onready var back_button: Button = $FormPanel/FormMargin/FormVBox/back_button
 
 # --- CONSTANTS FOR CHOICES ---
-const MAX_PLAYER_CHOICES = [2, 3, 4, 5, 6, 8]
+const MAX_PLAYER_CHOICES = [2, 3, 4, 5]
 const TIMER_CHOICES = ["2 minutes", "5 minutes", "10 minutes"]
 
 func _ready():
@@ -55,4 +55,5 @@ func _on_back_button_pressed():
 	SceneChanger.change_scene_to_file("res://scenes/UI/multiplayer_menu.tscn")
 
 func _on_connection_succeeded():
-	SceneChanger.change_scene_to_file("res://scenes/UI/lobby_wait_room_menu.tscn")
+	var init := {"lobby_info": NetworkManager.my_lobby_data, "is_host": true}
+	SceneChanger.change_scene_to_file("res://scenes/UI/Lobby_Wait_Room/lobby_wait_room_menu.tscn", init)

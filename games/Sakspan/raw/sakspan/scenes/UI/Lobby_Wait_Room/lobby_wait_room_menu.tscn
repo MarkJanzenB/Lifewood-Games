@@ -72,7 +72,7 @@ layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_fonts/font = ExtResource("2_ju8rw")
 theme_override_font_sizes/font_size = 20
-text = "Timer: 5 min"
+text = "Timer                        "
 horizontal_alignment = 2
 
 [node name="PlayersCountLabel" type="Label" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
@@ -80,7 +80,7 @@ layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_fonts/font = ExtResource("2_ju8rw")
 theme_override_font_sizes/font_size = 20
-text = "Players: 3/5"
+text = "Players                "
 
 [node name="HSeparator2" type="HSeparator" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2

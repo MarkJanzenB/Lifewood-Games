@@ -16,10 +16,10 @@ var players: Dictionary = {}
 var my_name: String = "Player" + str(randi_range(1000, 9999))
 var my_lobby_data: Dictionary = {}
 
-private var _udp_peer = PacketPeerUDP.new()
-private var _broadcast_timer = Timer.new()
-private var _is_broadcasting = false
-private var _is_listening = false
+var _udp_peer = PacketPeerUDP.new()
+var _broadcast_timer = Timer.new()
+var _is_broadcasting = false
+var _is_listening = false
 
 func _ready():
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -34,27 +34,38 @@ func _process(_delta):
 	# GODOT 4.1.1 UDP LISTENING METHOD
 	if _udp_peer.is_listening() and _udp_peer.get_packet_count() > 0:
 		while _udp_peer.get_packet_count() > 0:
-			var packet_info = _udp_peer.get_received_packet()
-			var json_string = packet_info.data.get_string_from_utf8()
+			# For receiving, get_packet() returns a PackedByteArray
+			var packet_data = _udp_peer.get_packet()
+			var sender_ip = _udp_peer.get_packet_ip()
+			# var sender_port = _udp_peer.get_packet_port() # If needed
+			
+			var json_string = packet_data.get_string_from_utf8()
 			var parsed = JSON.parse_string(json_string)
 			
 			if typeof(parsed) == TYPE_DICTIONARY and parsed.get("identifier") == GAME_IDENTIFIER:
-				parsed["ip"] = packet_info.sender_ip
+				parsed["ip"] = sender_ip
 				emit_signal("lobby_found", parsed)
 
-func create_lobby(lobby_name: String, max_players: int, timer_setting: String):
+func create_lobby(player_name: String, lobby_name: String, max_players: int, timer_setting: String):
+	# Set local player name and cap max players to 5 (min 2)
+	my_name = player_name
+	var capped_max: int = int(clamp(max_players, 2, 5))
 	var peer = ENetMultiplayerPeer.new()
-	if peer.create_server(DEFAULT_PORT, max_players) != OK:
+	if peer.create_server(DEFAULT_PORT, capped_max) != OK:
 		print("Failed to create server.")
 		return
 	multiplayer.multiplayer_peer = peer
 	players[1] = {"name": my_name, "is_host": true, "ready": false, "char_index": -1}
-	my_lobby_data = {"name": lobby_name, "max_players": max_players, "timer": timer_setting}
+	my_lobby_data = {"name": lobby_name, "max_players": capped_max, "timer": timer_setting}
 	start_broadcasting()
+	# Also push lobby metadata to any already connected peers (none typically at creation)
+	rpc("_rpc_sync_lobby_data", my_lobby_data)
 	emit_signal("player_list_changed", players)
 	emit_signal("connection_succeeded")
 
-func join_lobby(ip: String):
+func join_lobby(player_name: String, ip: String):
+	# Set local player name before connecting so registration sends the right name
+	my_name = player_name
 	var peer = ENetMultiplayerPeer.new()
 	if peer.create_client(ip, DEFAULT_PORT) != OK:
 		print("Failed to connect.")
@@ -78,7 +89,8 @@ func start_broadcasting():
 
 func start_listening_for_lobbies():
 	if _is_listening: return
-	if _udp_peer.listen(BROADCAST_PORT) != OK:
+	# Corrected: Use bind() instead of listen() for PacketPeerUDP to start listening.
+	if _udp_peer.bind(BROADCAST_PORT) != OK:
 		print("Error starting UDP listener.")
 		return
 	_is_listening = true
@@ -105,10 +117,13 @@ func _send_broadcast():
 	var packet = JSON.stringify(data).to_utf8_buffer()
 	
 	# GODOT 4.1.1 UDP SENDING METHOD
-	_udp_peer.send_packet(packet, "255.255.255.255", BROADCAST_PORT)
+	# Corrected: Set the destination address and port before calling put_packet().
+	_udp_peer.set_dest_address("255.255.255.255", BROADCAST_PORT)
+	_udp_peer.put_packet(packet)
 
 func _on_peer_connected(id: int):
-	if multiplayer.is_server(): rpc_id(id, "_rpc_request_info")
+	if multiplayer.is_server():
+		rpc_id(id, "_rpc_request_info")
 
 func _on_peer_disconnected(id: int):
 	if multiplayer.is_server():
@@ -124,12 +139,18 @@ func _rpc_register_player(player_name: String):
 	if multiplayer.is_server():
 		var peer_id = multiplayer.get_remote_sender_id()
 		players[peer_id] = {"name": player_name, "is_host": false, "ready": false, "char_index": -1}
+		# Send full lobby metadata and then current players
+		rpc_id(peer_id, "_rpc_sync_lobby_data", my_lobby_data)
 		rpc("_rpc_sync_player_data", players)
 
 @rpc("reliable")
 func _rpc_sync_player_data(new_player_data: Dictionary):
 	players = new_player_data
 	emit_signal("player_list_changed", players)
+
+@rpc("reliable")
+func _rpc_sync_lobby_data(lobby_data: Dictionary):
+	my_lobby_data = lobby_data
 
 @rpc("any_peer", "call_local")
 func _rpc_request_char_selection(peer_id: int, char_index: int):

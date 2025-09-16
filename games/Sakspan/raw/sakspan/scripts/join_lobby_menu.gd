@@ -9,6 +9,7 @@ extends Control
 # A dictionary to store found lobbies, keyed by their IP address
 var _found_lobbies: Dictionary = {}
 var _cleanup_timer := Timer.new()
+var _selected_lobby_info: Dictionary = {}
 
 func _ready():
 	# --- Connect Signals ---
@@ -63,6 +64,10 @@ func _on_back_button_pressed():
 
 func _on_lobby_list_item_selected():
 	join_selected_button.disabled = lobby_list.get_selected() == null
+	if lobby_list.get_selected() != null:
+		var ip = lobby_list.get_selected().get_metadata(0)
+		if _found_lobbies.has(ip):
+			_selected_lobby_info = _found_lobbies[ip]
 
 # --- NetworkManager Signal Handlers ---
 
@@ -74,7 +79,8 @@ func _on_lobby_found(info: Dictionary):
 	_update_lobby_list_ui()
 
 func _on_connection_succeeded():
-	SceneChanger.change_scene_to_file("res://scenes/UI/lobby_wait_room_menu.tscn")
+	var init := {"lobby_info": _selected_lobby_info, "is_host": false}
+	SceneChanger.change_scene_to_file("res://scenes/UI/Lobby_Wait_Room/lobby_wait_room_menu.tscn", init)
 
 func _on_connection_failed():
 	print("Connection Failed!")
