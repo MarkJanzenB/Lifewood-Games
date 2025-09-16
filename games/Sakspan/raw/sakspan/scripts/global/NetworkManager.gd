@@ -84,10 +84,9 @@ func join_lobby(player_name: String, ip: String):
 		emit_signal("connection_failed")
 		return
 	multiplayer.multiplayer_peer = peer
-	emit_signal("connection_succeeded")
-	# Proactively register and request a state resync in case the initial request RPC was missed
-	rpc_id(1, "_rpc_register_player", my_name)
-	request_players_resync()
+	# Defer success until the low-level connection succeeds
+	if not multiplayer.connected_to_server.is_connected(_on_connected_to_server):
+		multiplayer.connected_to_server.connect(_on_connected_to_server)
 
 func leave_lobby():
 	players.clear()
@@ -101,6 +100,16 @@ func start_broadcasting():
 	_udp_send.set_broadcast_enabled(true)
 	_broadcast_timer.start()
 	_send_broadcast()
+
+func _on_connected_to_server():
+	print("[NetworkManager] Low-level connected to server. My client id=", multiplayer.get_unique_id())
+	# Ensure we act purely as client from now on
+	stop_lan_discovery()
+	# Notify UI flow now that transport is ready
+	emit_signal("connection_succeeded")
+	# Register and request a fresh players list from the host
+	rpc_id(1, "_rpc_register_player", my_name)
+	request_players_resync()
 
 func start_listening_for_lobbies():
 	if _is_listening: return
@@ -128,6 +137,17 @@ func request_char_selection(char_index: int):
 
 func start_game():
 	if multiplayer.is_server():
+		# Assign roles randomly: exactly 1 seeker, others hiders
+		var ids: Array = players.keys()
+		if ids.size() > 0:
+			var seeker_index := int(randi() % ids.size())
+			var seeker_id := int(ids[seeker_index])
+			for id in ids:
+				var role := "seeker" if int(id) == seeker_id else "hider"
+				players[int(id)]["role"] = role
+			# Sync updated players with roles to all peers
+			rpc("_rpc_sync_player_data", players)
+		# Stop LAN broadcast and start the game for everyone
 		stop_lan_discovery()
 		rpc("_rpc_start_game")
 		# Also execute locally on the host so it transitions too

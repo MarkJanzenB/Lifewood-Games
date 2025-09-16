@@ -11,6 +11,7 @@ extends Control
 @onready var lock_in_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LockInButton
 @onready var start_game_button: Button = $PanelContainer/MarginContainer/VBoxContainer/StartGameButton
 @onready var leave_lobby_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LeaveLobbyButton
+var _heartbeat_timer := Timer.new()
 
 # --- RESOURCES ---
 # [!!! IMPORTANT: YOU MUST FIX THIS LINE !!!]
@@ -45,6 +46,7 @@ var _my_temp_selection_index: int = -1
 
 func _ready():
 	_check_ui_nodes()
+	_resolve_nodes_if_missing()
 	if Engine.has_singleton("NetworkManager"):
 		# Access autoloaded NetworkManager directly
 		_lobby_data = NetworkManager.my_lobby_data if NetworkManager.my_lobby_data != null else {}
@@ -81,6 +83,14 @@ func _ready():
 	_setup_character_grid()
 	_update_start_game_button()
 
+	# Heartbeat refresh in case signals are missed; keeps UI in sync
+	_heartbeat_timer.wait_time = 1.0
+	_heartbeat_timer.timeout.connect(func():
+		_update_player_list(NetworkManager.players)
+		_update_start_game_button())
+	add_child(_heartbeat_timer)
+	_heartbeat_timer.start()
+
 
 # --- SETUP AND CHECKS ---
 func _check_ui_nodes():
@@ -91,6 +101,31 @@ func _check_ui_nodes():
 	if not lock_in_button: push_warning("[LobbyWaitRoom] LockInButton not found.")
 	if not start_game_button: push_warning("[LobbyWaitRoom] StartGameButton not found.")
 	if not leave_lobby_button: push_warning("[LobbyWaitRoom] LeaveLobbyButton not found.")
+
+func _resolve_nodes_if_missing():
+	# Fallback: try to find nodes by name anywhere under this scene if direct paths changed
+	if not players_count_label:
+		players_count_label = _find_node_by_name(self, "PlayersCountLabel") as Label
+	if not lobby_name_label:
+		lobby_name_label = _find_node_by_name(self, "LobbyNameLabel") as Label
+	if not player_list_container:
+		player_list_container = _find_node_by_name(self, "PlayerListContainer") as VBoxContainer
+	if not character_grid:
+		character_grid = _find_node_by_name(self, "CharacterGrid") as GridContainer
+	if not lock_in_button:
+		lock_in_button = _find_node_by_name(self, "LockInButton") as Button
+	if not start_game_button:
+		start_game_button = _find_node_by_name(self, "StartGameButton") as Button
+	if not leave_lobby_button:
+		leave_lobby_button = _find_node_by_name(self, "LeaveLobbyButton") as Button
+
+func _find_node_by_name(root: Node, target: String) -> Node:
+	if root.name == target:
+		return root
+	for child in root.get_children():
+		var n = _find_node_by_name(child, target)
+		if n: return n
+	return null
 
 # This function now correctly uses your custom CharacterButton scene.
 func _setup_character_grid():
@@ -125,6 +160,7 @@ func _on_character_selected(idx: int):
 	if selection_label:
 		var cname: String = CHARACTER_NAMES[idx] if (idx >= 0 and idx < CHARACTER_NAMES.size()) else "#%d" % idx
 		selection_label.text = "You selected: %s (not locked in)" % cname
+	print("[LobbyWaitRoom] Selected character index=", idx)
 
 # This function now correctly uses the custom "set_selected" method on your buttons.
 func _update_character_grid_highlight():
@@ -207,6 +243,7 @@ func _on_lock_in_button_pressed():
 			var btn = character_grid.get_child(i)
 			if i != selected_char_index:
 				btn.disabled = true
+		print("[LobbyWaitRoom] Lock in sent for index=", selected_char_index)
 	else:
 		# Unlock request
 		NetworkManager.request_unlock()
@@ -216,6 +253,7 @@ func _on_lock_in_button_pressed():
 			var btn = character_grid.get_child(i)
 			btn.disabled = false
 		_update_character_grid_highlight()
+		print("[LobbyWaitRoom] Unlock requested")
 
 	_update_start_game_button()
 
@@ -242,9 +280,14 @@ func _update_selection_label_from_players(players: Dictionary):
 
 func _on_start_game_button_pressed():
 	if is_host:
+		print("[LobbyWaitRoom] Start Game pressed by host. Sending RPC...")
 		NetworkManager.start_game()
+		# Fallback: if for any reason the RPC/signal is delayed, transition locally too
+		# (clients will still switch on game_started)
+		SceneChanger.change_scene_to_file("res://scenes/world.tscn")
 
 func _on_game_started(_player_data):
+	print("[LobbyWaitRoom] game_started received. Loading world.tscn...")
 	SceneChanger.change_scene_to_file("res://scenes/world.tscn")
 
 func _on_leave_lobby_button_pressed():

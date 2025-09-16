@@ -62,6 +62,34 @@ func initialize_game():
 			cam2.enabled = true
 		if is_instance_valid(game_ui_instance):
 			game_ui_instance.initialize(main_pc)
+		# Ensure local movement is enabled for the main player
+		main_pc.set_physics_process(true)
+		if main_pc.has_method("enable_input"):
+			main_pc.enable_input(true)
+
+		# Apply chosen character to the local main player (based on lobby selection)
+		var my_id := multiplayer.get_unique_id()
+		if Engine.has_singleton("NetworkManager") and NetworkManager.players.has(my_id):
+			var chosen_idx := int(NetworkManager.players[my_id].get("char_index", -1))
+			if chosen_idx >= 0:
+				if main_pc.has_method("apply_character_index"):
+					main_pc.apply_character_index(chosen_idx)
+				else:
+					# Fallback: try to set a Sprite2D texture if present
+					var sprite: Sprite2D = main_pc.get_node_or_null("Sprite2D")
+					if sprite == null:
+						sprite = main_pc.get_node_or_null("Sprite")
+					if sprite:
+						var tex_paths := [
+							"res://scenes/UI/Lobby_Wait_Room/pink_char.png",
+							"res://scenes/UI/Lobby_Wait_Room/red_char.png",
+							"res://scenes/UI/Lobby_Wait_Room/blue_char.png",
+							"res://scenes/UI/Lobby_Wait_Room/green_char.png",
+							"res://scenes/UI/Lobby_Wait_Room/yellow_char.png",
+						]
+						if chosen_idx >= 0 and chosen_idx < tex_paths.size():
+							var tex := load(tex_paths[chosen_idx])
+							if tex: sprite.texture = tex
 
 	# Give ammo to the seeker based on hiders present (server authoritative)
 	if not all_seekers.is_empty():
