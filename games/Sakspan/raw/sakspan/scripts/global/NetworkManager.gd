@@ -20,8 +20,8 @@ var my_name: String = "Player" + str(randi_range(1000, 9999))
 var my_lobby_data: Dictionary = {}
 var room_code: String = ""
 
-var _udp_send := PacketPeerUDP.new()
-var _udp_recv := PacketPeerUDP.new()
+var _udp_send: PacketPeerUDP
+var _udp_recv: PacketPeerUDP
 var _broadcast_timer = Timer.new()
 var _is_broadcasting = false
 var _is_listening = false
@@ -126,9 +126,11 @@ func leave_lobby():
 
 func start_broadcasting():
 	if _is_broadcasting: return
+	_udp_send = PacketPeerUDP.new()
 	# Bind the sending socket to an ephemeral port (port 0)
 	if _udp_send.bind(0) != OK:
 		push_warning("[NetworkManager] UDP broadcast sender failed to bind.")
+		_udp_send = null # Clear the invalid peer
 		return
 	_is_broadcasting = true
 	_udp_send.set_broadcast_enabled(true)
@@ -147,10 +149,11 @@ func _on_connected_to_server():
 
 func start_listening_for_lobbies():
 	if _is_listening: return
-	# Corrected: Use bind() instead of listen() for PacketPeerUDP to start listening.
+	_udp_recv = PacketPeerUDP.new()
 	var bind_status := _udp_recv.bind(BROADCAST_PORT, "0.0.0.0")
 	if bind_status != OK:
 		push_warning("[NetworkManager] Error starting UDP listener on port %d. Status: %d" % [BROADCAST_PORT, bind_status])
+		_udp_recv = null # Clear the invalid peer
 		return
 	_is_listening = true
 	# Ensure processing is enabled to poll UDP packets.
@@ -158,8 +161,12 @@ func start_listening_for_lobbies():
 
 func stop_lan_discovery():
 	_broadcast_timer.stop()
-	_udp_send.close()
-	_udp_recv.close()
+	if is_instance_valid(_udp_send):
+		_udp_send.close()
+		_udp_send = null
+	if is_instance_valid(_udp_recv):
+		_udp_recv.close()
+		_udp_recv = null
 	_is_broadcasting = false
 	_is_listening = false
 	# Disable processing if neither broadcasting nor listening to save cycles.
