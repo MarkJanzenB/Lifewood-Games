@@ -45,11 +45,15 @@ var _my_peer_id: int
 var _my_temp_selection_index: int = -1
 
 func _ready():
-	if Engine.has_singleton("GameManager"):
-		GameManager.reset_to_lobby()
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager and game_manager.has_method("reset_to_lobby"):
+		game_manager.reset_to_lobby()
+	
 	_check_ui_nodes()
 	_resolve_nodes_if_missing()
-	if Engine.has_singleton("NetworkManager"):
+	
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
 		# Access autoloaded NetworkManager directly
 		_lobby_data = NetworkManager.my_lobby_data if NetworkManager.my_lobby_data != null else {}
 		_players_in_lobby = NetworkManager.players if NetworkManager.players != null else {}
@@ -318,9 +322,6 @@ func _on_start_game_button_pressed():
 	if is_host:
 		print("[LobbyWaitRoom] Start Game pressed by host. Sending RPC...")
 		NetworkManager.start_game()
-		# Fallback: if for any reason the RPC/signal is delayed, transition locally too
-		# (clients will still switch on game_started)
-		SceneChanger.change_scene_to_file("res://scenes/world.tscn")
 
 func _on_game_started(_player_data):
 	print("[LobbyWaitRoom] game_started received. Loading world.tscn...")

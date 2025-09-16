@@ -18,8 +18,10 @@ const ROCK_PROJECTILE_SCENE = preload("res://scenes/RockProjectile.tscn")
 @onready var muzzle: Marker2D = $Muzzle
 @onready var camera: Camera2D = $Camera2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
+@onready var sync: MultiplayerSynchronizer = $MultiplayerSynchronizer
 
 var role: PlayerRole
+var _sync_position: Vector2
 var current_state: PlayerState = PlayerState.ALIVE
 var ammo: int = 0
 var hiders_in_cone: Array = []
@@ -32,17 +34,17 @@ var can_move: bool = false
 var can_attack: bool = false
 var walk_speed: float = 200.0
 var run_speed: float = 350.0
-var _net_sync_timer := Timer.new()
 
-@rpc("unreliable")
-func _rpc_sync_state(pos: Vector2):
-	# Apply state received from the authority
-	if not is_multiplayer_authority():
-		global_position = pos
+# Collision layers:
+# 1 - Default (players, obstacles)
+# 2 - Vision (for line of sight checks)
+# 3 - Ghosts (visible to all players)
+# 4 - Obstacles
 
 func _ready():
 	await get_tree().process_frame
 	GameManager.game_state_changed.connect(_on_game_state_changed)
+	
 	# Only the authority processes input and physics for this player
 	if not is_multiplayer_authority():
 		set_physics_process(false)
@@ -51,11 +53,11 @@ func _ready():
 		vision_light.visible = false
 		vision_cone.monitoring = false
 		melee_range.monitoring = false
-	# Networking: start a lightweight sync timer from the authority peer
-	add_child(_net_sync_timer)
-	_net_sync_timer.wait_time = 0.05
-	_net_sync_timer.timeout.connect(_on_net_sync_timeout)
-	_net_sync_timer.start()
+	
+	# Setup MultiplayerSynchronizer
+	sync.replication_config = null  # Will be set in editor
+	sync.visibility_update_mode = MultiplayerSynchronizer.VISIBILITY_PROCESS_PHYSICS
+	sync.visibility_public = true
 
 func assign_role(new_role: PlayerRole):
 	self.role = new_role
@@ -75,11 +77,16 @@ func _physics_process(delta: float):
 		return
 	if not is_main_player:
 		return
+		
 	handle_movement()
 	if current_state == PlayerState.GHOST: return
 	handle_visuals()
 	update_all_players_in_cone()
 	check_line_of_sight()
+	
+	# Update sync position for replication
+	if is_multiplayer_authority():
+		_sync_position = global_position
 
 func _input(event: InputEvent) -> void:
 	if is_dying or current_state == PlayerState.GHOST: return
@@ -194,36 +201,41 @@ func check_line_of_sight() -> void:
 			player.visible = true
 			currently_visible_players.append(player)
 			if player.is_main_player and player.role == PlayerRole.HIDER:
-				if is_instance_valid(GameManager.game_ui_instance):
-					GameManager.game_ui_instance.show_spotted(true)
+				var game_manager = get_node_or_null("/root/GameManager")
+				if game_manager and is_instance_valid(game_manager.game_ui_instance):
+					game_manager.game_ui_instance.show_spotted(true)
 		else:
 			player.visible = false
 	for player in previously_visible_hiders:
 		if not player in currently_visible_players:
 			player.visible = false
 			if player.is_main_player and player.role == PlayerRole.HIDER:
-				if is_instance_valid(GameManager.game_ui_instance):
-					GameManager.game_ui_instance.show_spotted(false)
+				var game_manager = get_node_or_null("/root/GameManager")
+				if game_manager and is_instance_valid(game_manager.game_ui_instance):
+					game_manager.game_ui_instance.show_spotted(false)
 	previously_visible_hiders = currently_visible_players
 	if role == PlayerRole.SEEKER:
 		visible_targets = currently_visible_players
 
 func _on_game_state_changed(new_state: int) -> void:
+	var game_manager = get_node_or_null("/root/GameManager")
+	if not game_manager:
+		return
+		
 	match new_state:
-		GameManager.GameState.HIDER_HEADSTART:
+		game_manager.GameState.HIDER_HEADSTART:
 			if role == PlayerRole.HIDER:
 				can_move = true
 			elif role == PlayerRole.SEEKER:
 				can_move = false  # Explicitly freeze seekers during head start
 			can_attack = false  # No one can attack during head start
-		GameManager.GameState.GAME_START_COUNTDOWN:
+		game_manager.GameState.GAME_START_COUNTDOWN:
 			can_move = false
 			can_attack = false
-		GameManager.GameState.IN_PROGRESS:
+		game_manager.GameState.IN_PROGRESS:
 			can_move = true
-			if role == PlayerRole.SEEKER:
-				can_attack = true
-		_:
+			can_attack = (role == PlayerRole.SEEKER)  # Only seekers can attack
+		game_manager.GameState.GAME_OVER:
 			can_move = false
 			can_attack = false
 
@@ -248,8 +260,3 @@ func _on_animated_sprite_2d_frame_changed() -> void:
 				print(player_name, " successfully SAK'D ", target_for_sak.player_name)
 				target_for_sak.eliminate(self)
 				target_for_sak = null
-
-func _on_net_sync_timeout():
-	# Only the authority sends its position to others
-	if is_multiplayer_authority():
-		_rpc_sync_state.rpc(global_position)

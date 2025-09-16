@@ -15,10 +15,10 @@ extends CanvasLayer
 var local_player_role: PlayerCharacter.PlayerRole
 
 func _ready():
-	# --- THE FIX ---
-	# Register this UI instance with the global GameManager.
-	if Engine.has_singleton("GameManager"):
-		GameManager.game_ui_instance = self
+	# Register this UI instance with the global GameManager
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager and game_manager.has_method("register_game_ui"):
+		game_manager.register_game_ui(self)
 		
 	add_child(spotted_timer)
 	spotted_timer.wait_time = 2.0
@@ -87,6 +87,7 @@ func fade_out_label(label_node: Label, text: String):
 			tween.tween_property(label_node, "modulate:a", 0, 1.0)
 
 func _exit_tree():
-	# Deregister when this HUD is removed to prevent stale references.
-	if Engine.has_singleton("GameManager") and GameManager.game_ui_instance == self:
-		GameManager.game_ui_instance = null
+	# Deregister when this HUD is removed to prevent stale references
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager and game_manager.has_method("unregister_game_ui"):
+		game_manager.unregister_game_ui(self)

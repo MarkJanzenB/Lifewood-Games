@@ -36,41 +36,42 @@ func _ready():
 	set_process(true)
 
 func _process(_delta):
-	if not _is_listening: return
+	if not _is_listening:
+		return
 	# GODOT 4 UDP LISTENING METHOD
-	if _udp_recv.is_bound() and _udp_recv.get_available_packet_count() > 0:
+	if _udp_recv != null and _udp_recv.is_bound() and _udp_recv.get_available_packet_count() > 0:
 		while _udp_recv.get_available_packet_count() > 0:
 			# For receiving, get_packet() returns a PackedByteArray
 			var packet_data: PackedByteArray = _udp_recv.get_packet()
 			var sender_ip: String = _udp_recv.get_packet_ip()
 			# var sender_port = _udp_peer.get_packet_port() # If needed
-			
-			var json_string = packet_data.get_string_from_utf8()
-			var parsed = JSON.parse_string(json_string)
-			
-				if typeof(parsed) == TYPE_DICTIONARY and parsed.get("identifier") == GAME_IDENTIFIER:
+
+			var json_string: String = packet_data.get_string_from_utf8()
+			var parsed_raw: Variant = JSON.parse_string(json_string)
+
+			if typeof(parsed_raw) == TYPE_DICTIONARY:
+				var parsed: Dictionary = parsed_raw
+				if parsed.get("identifier") != GAME_IDENTIFIER:
+					continue
 				# --- HOST: Handle a client's request to find a lobby by code ---
 				if multiplayer.is_server() and parsed.get("request_type") == "find_lobby":
 					if parsed.get("room_code") == room_code:
 						print("[NetworkManager] Received find request for my room code. Responding to ", sender_ip)
 						_send_direct_lobby_info(sender_ip)
-					return # Don't process our own requests
+					continue
 
 				# --- CLIENT: Handle a direct response from a host ---
 				if not multiplayer.is_server() and parsed.get("request_type") == "lobby_response":
 					parsed["ip"] = sender_ip
 					print("[NetworkManager] Received direct lobby response from ", sender_ip)
 					emit_signal("lobby_found", parsed)
-					return
+					continue
 
 				# --- CLIENT: Handle a general broadcast from a host ---
 				if not multiplayer.is_server() and parsed.has("room_code"):
 					parsed["ip"] = sender_ip
-					#print("[NetworkManager] Received lobby broadcast from ", sender_ip, ": ", parsed)
+					print("[NetworkManager] Received lobby broadcast from ", sender_ip, ": ", parsed)
 					emit_signal("lobby_found", parsed)
-				parsed["ip"] = sender_ip
-				print("[NetworkManager] Received lobby broadcast from ", sender_ip, ": ", parsed)
-				emit_signal("lobby_found", parsed)
 
 func create_lobby(player_name: String, lobby_name: String, max_players: int, timer_setting: String):
 	# Validate lobby name
@@ -140,8 +141,9 @@ func leave_lobby():
 	my_lobby_data.clear()
 	multiplayer.multiplayer_peer = null
 	stop_lan_discovery()
-	if Engine.has_singleton("GameManager"):
-		GameManager.reset_to_lobby()
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager and game_manager.has_method("reset_to_lobby"):
+		game_manager.reset_to_lobby()
 
 func start_broadcasting():
 	if _is_broadcasting: return
@@ -253,29 +255,46 @@ func _send_direct_lobby_info(recipient_ip: String):
 func request_char_selection(char_index: int):
 	rpc_id(1, "_rpc_request_char_selection", multiplayer.get_unique_id(), char_index)
 
+func _all_players_ready() -> bool:
+	if players.size() < 2:
+		return false
+	for id in players.keys():
+		if int(players[id].get("char_index", -1)) < 0:
+			return false
+	return true
+
 func start_game():
-	if multiplayer.is_server():
-		# Assign roles randomly: exactly 1 seeker, others hiders (system-decided)
-		# Prefer ready players; if none are ready, include everyone.
-		var ids: Array = []
-		for id in players.keys():
-			if bool(players[id].get("ready", false)):
-				ids.append(id)
-		if ids.is_empty():
-			ids = players.keys()
-		if ids.size() > 0:
-			randomize()
-			var seeker_index := int(randi() % ids.size())
-			var seeker_id := int(ids[seeker_index])
-			for id in players.keys():
-				players[int(id)]["role"] = "seeker" if int(id) == seeker_id else "hider"
-			# Sync updated players with roles to all peers
-			rpc("_rpc_sync_player_data", players)
-		# Stop LAN broadcast and start the game for everyone
-		stop_lan_discovery()
-		rpc("_rpc_start_game")
-		# Also execute locally on the host so it transitions too
-		_rpc_start_game()
+	if not multiplayer.is_server():
+		return
+
+	# Validate readiness; if not ready, refuse to start quietly (UI decides enabling)
+	if not _all_players_ready():
+		print("[NetworkManager] start_game refused: not all players are locked in or not enough players.")
+		print("[NetworkManager] Players snapshot:", players)
+		return
+
+	# Assign roles randomly: exactly 1 seeker, others hiders
+	var ids: Array = players.keys()
+	if ids.is_empty():
+		print("[NetworkManager] start_game aborted: no players in dictionary.")
+		return
+	randomize()
+	var seeker_index := int(randi() % ids.size())
+	var seeker_id := int(ids[seeker_index])
+	for id in players.keys():
+		players[int(id)]["role"] = "seeker" if int(id) == seeker_id else "hider"
+	print("[NetworkManager] Roles assigned. Seeker=", seeker_id, " players=", players)
+
+	# Mark lobby in-game and stop discovery
+	my_lobby_data["status"] = "in_game"
+	stop_lan_discovery()
+	print("[NetworkManager] Broadcasting start to peers... Peers=", multiplayer.get_peers())
+
+	# Sync final player data and lobby metadata, then instruct everyone to load the world
+	rpc("_rpc_sync_player_data", players)
+	rpc("_rpc_sync_lobby_data", my_lobby_data)
+	rpc("_rpc_start_game", players, my_lobby_data)
+	_rpc_start_game(players, my_lobby_data) # call_local for the host as well
 
 # Host-only helpers to assign seeker explicitly before start
 func host_assign_seeker(seeker_id: int):
@@ -300,6 +319,20 @@ func host_assign_random_seeker():
 		players[int(id)]["role"] = "seeker" if int(id) == seeker_id else "hider"
 	rpc("_rpc_sync_player_data", players)
 	emit_signal("player_list_changed", players)
+
+func request_unlock():
+	rpc_id(1, "_rpc_request_unlock", multiplayer.get_unique_id())
+
+@rpc("reliable", "call_local")
+func _rpc_start_game(start_players: Dictionary, start_lobby_data: Dictionary):
+	players = start_players
+	my_lobby_data = start_lobby_data
+	emit_signal("player_list_changed", players)
+	emit_signal("lobby_data_changed", my_lobby_data)
+	# Backwards compatibility for any UI still listening for the signal
+	emit_signal("game_started", players)
+	# Perform the actual scene transition here to avoid UI desyncs
+	SceneChanger.change_scene_to_file("res://scenes/world.tscn")
 
 func _send_broadcast():
 	if not _is_broadcasting or not multiplayer.is_server(): 
@@ -355,7 +388,7 @@ func _rpc_register_player(player_name: String):
 		# Also update locally for host UI
 		emit_signal("player_list_changed", players)
 
-@rpc("reliable")
+@rpc("authority", "call_local", "reliable")
 func _rpc_sync_player_data(new_player_data: Dictionary):
 	players = new_player_data
 	emit_signal("player_list_changed", players)
@@ -379,7 +412,7 @@ func _rpc_request_lobby_resync():
 func request_lobby_resync():
 	rpc_id(1, "_rpc_request_lobby_resync")
 
-@rpc("reliable")
+@rpc("authority", "call_local", "reliable")
 func _rpc_sync_lobby_data(lobby_data: Dictionary):
 	my_lobby_data = lobby_data
 	emit_signal("lobby_data_changed", my_lobby_data)
@@ -403,10 +436,3 @@ func _rpc_request_unlock(peer_id: int):
 			players[peer_id].ready = false
 			rpc("_rpc_sync_player_data", players)
 			emit_signal("player_list_changed", players)
-
-func request_unlock():
-	rpc_id(1, "_rpc_request_unlock", multiplayer.get_unique_id())
-
-@rpc("reliable", "call_local")
-func _rpc_start_game():
-	emit_signal("game_started", players)
