@@ -37,8 +37,12 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_right = 530.0
 grow_horizontal = 2
 grow_vertical = 2
+scale = Vector2(0.707083, 0.999608)
+size_flags_horizontal = 4
+size_flags_vertical = 6
 script = ExtResource("1_iwjdh")
 
 [node name="create_lobby_background" type="TextureRect" parent="."]
@@ -58,8 +62,8 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_right = -462.0
-offset_bottom = 28.0
+offset_right = -729.0
+offset_bottom = 39.0
 grow_horizontal = 2
 grow_vertical = 2
 scale = Vector2(1.66921, 0.9532)
@@ -67,6 +71,8 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_s6gl7")
 
 [node name="FormMargin" type="MarginContainer" parent="FormPanel"]
 layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
 theme_override_constants/margin_left = 20
 theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
