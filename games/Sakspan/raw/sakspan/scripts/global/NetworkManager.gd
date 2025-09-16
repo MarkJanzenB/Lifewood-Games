@@ -6,6 +6,7 @@ signal connection_succeeded
 signal connection_failed
 signal game_started(player_data)
 signal lobby_found(lobby_info)
+signal lobby_data_changed(lobby_data)
 
 const DEFAULT_PORT = 7777
 const BROADCAST_PORT = 7778
@@ -64,6 +65,8 @@ func create_lobby(player_name: String, lobby_name: String, max_players: int, tim
 	multiplayer.multiplayer_peer = peer
 	players[1] = {"name": my_name, "is_host": true, "ready": false, "char_index": -1}
 	my_lobby_data = {"name": lobby_name, "max_players": capped_max, "timer": timer_setting}
+	# Add the host LAN IP so clients can display the correct IP rather than their own
+	my_lobby_data["host_ip"] = _get_lan_ipv4()
 	start_broadcasting()
 	# Also push lobby metadata to any already connected peers (none typically at creation)
 	rpc("_rpc_sync_lobby_data", my_lobby_data)
@@ -132,6 +135,19 @@ func stop_lan_discovery():
 	if not _is_broadcasting and not _is_listening:
 		set_process(false)
 
+# Return a likely LAN IPv4 for this device (avoids 127.*)
+func _get_lan_ipv4() -> String:
+	for a in IP.get_local_addresses():
+		if a.begins_with("192.168.") or a.begins_with("10."):
+			return a
+		if a.begins_with("172."):
+			var parts = a.split(".")
+			if parts.size() >= 2:
+				var second = int(parts[1])
+				if second >= 16 and second <= 31:
+					return a
+	return ""
+
 func request_char_selection(char_index: int):
 	rpc_id(1, "_rpc_request_char_selection", multiplayer.get_unique_id(), char_index)
 
@@ -158,6 +174,8 @@ func _send_broadcast():
 	var data = my_lobby_data.duplicate()
 	data["identifier"] = GAME_IDENTIFIER
 	data["current_players"] = players.size()
+	# Ensure broadcast includes host_ip for clients to display
+	data["host_ip"] = my_lobby_data.get("host_ip", _get_lan_ipv4())
 	var packet = JSON.stringify(data).to_utf8_buffer()
 	
 	# GODOT 4.1.1 UDP SENDING METHOD
@@ -209,9 +227,20 @@ func _rpc_request_players_resync():
 func request_players_resync():
 	rpc_id(1, "_rpc_request_players_resync")
 
+@rpc("any_peer", "call_local")
+func _rpc_request_lobby_resync():
+	# Called by a client; server responds with current lobby metadata
+	if multiplayer.is_server():
+		var sender := multiplayer.get_remote_sender_id()
+		rpc_id(sender, "_rpc_sync_lobby_data", my_lobby_data)
+
+func request_lobby_resync():
+	rpc_id(1, "_rpc_request_lobby_resync")
+
 @rpc("reliable")
 func _rpc_sync_lobby_data(lobby_data: Dictionary):
 	my_lobby_data = lobby_data
+	emit_signal("lobby_data_changed", my_lobby_data)
 
 @rpc("any_peer", "call_local")
 func _rpc_request_char_selection(peer_id: int, char_index: int):

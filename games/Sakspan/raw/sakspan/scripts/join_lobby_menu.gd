@@ -19,8 +19,12 @@ func _ready():
 	join_selected_button.pressed.connect(_on_join_selected_button_pressed)
 	back_button.pressed.connect(_on_back_button_pressed)
 	lobby_list.item_selected.connect(_on_lobby_list_item_selected)
+	# Double-click/Enter on a lobby row to join
+	lobby_list.item_activated.connect(func(): _on_join_selected_button_pressed())
 	if join_ip_button:
 		join_ip_button.pressed.connect(_on_join_ip_button_pressed)
+	if manual_ip_field:
+		manual_ip_field.text_submitted.connect(func(_text): _on_join_ip_button_pressed())
 
 	# SAFETY: Ensure we are not accidentally still hosting from a prior scene
 	multiplayer.multiplayer_peer = null
@@ -68,6 +72,8 @@ func _on_join_selected_button_pressed():
 	NetworkManager.join_lobby(player_name, ip_to_join)
 	join_selected_button.disabled = true
 	join_selected_button.text = "CONNECTING..."
+	manual_ip_field.editable = false
+	refresh_button.disabled = true
 
 func _on_join_ip_button_pressed():
 	if not manual_ip_field: return

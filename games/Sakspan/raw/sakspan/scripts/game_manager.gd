@@ -46,9 +46,14 @@ func initialize_game():
 			if cam:
 				cam.enabled = false
 
-	# Choose the local main player: host controls Seeker, client controls Hider
+	# Choose the local main player by role from NetworkManager (1 seeker, rest hiders)
 	var main_pc: PlayerCharacter = null
-	if multiplayer.is_server():
+	var my_role := ""
+	if Engine.has_singleton("NetworkManager"):
+		var my_id := multiplayer.get_unique_id()
+		if NetworkManager.players.has(my_id):
+			my_role = String(NetworkManager.players[my_id].get("role", ""))
+	if my_role == "seeker":
 		if not all_seekers.is_empty():
 			main_pc = all_seekers[0] as PlayerCharacter
 	else:

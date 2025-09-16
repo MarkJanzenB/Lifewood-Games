@@ -53,6 +53,19 @@ func _ready():
 		_players_in_lobby = NetworkManager.players if NetworkManager.players != null else {}
 		NetworkManager.player_list_changed.connect(_on_player_list_changed)
 		NetworkManager.game_started.connect(_on_game_started)
+		# Update header when lobby data is synced from host
+		NetworkManager.lobby_data_changed.connect(func(data: Dictionary):
+			lobby_data = data
+			if lobby_name_label:
+				var nm := String(lobby_data.get("name", ""))
+				if nm.is_empty():
+					lobby_name_label.text = _compose_lobby_title("Loading...")
+				else:
+					lobby_name_label.text = _compose_lobby_title(nm)
+		)
+		# Proactively request resyncs on entering the Wait Room
+		NetworkManager.request_lobby_resync()
+		NetworkManager.request_players_resync()
 	if start_game_button:
 		start_game_button.pressed.connect(_on_start_game_button_pressed)
 	if lock_in_button:
@@ -64,7 +77,11 @@ func _ready():
 	lobby_data = NetworkManager.my_lobby_data
 	is_host = multiplayer.is_server()
 	if lobby_name_label:
-		lobby_name_label.text = _compose_lobby_title(lobby_data.get("name", "Unnamed Lobby"))
+		var nm := String(lobby_data.get("name", ""))
+		if nm.is_empty():
+			lobby_name_label.text = _compose_lobby_title("Loading...")
+		else:
+			lobby_name_label.text = _compose_lobby_title(nm)
 
 	# Ensure a label exists above the character grid to show selections
 	selection_label = root_vbox.get_node_or_null("SelectionNameLabel") as Label
@@ -173,11 +190,13 @@ func _update_character_grid_highlight():
 
 func _update_character_grid_lock(players: Dictionary):
 	if not character_grid: return
-	var picked = []
+	var picked: Array[int] = []
+	var picked_by := {}
 	for id in players:
 		var idx = int(players[id].get("char_index", -1))
 		if idx >= 0:
 			picked.append(idx)
+			picked_by[idx] = String(players[id].get("name", str(id)))
 			
 	var my_id: int = multiplayer.get_unique_id()
 	var my_char: int = -1
@@ -187,6 +206,11 @@ func _update_character_grid_lock(players: Dictionary):
 	for i in range(character_grid.get_child_count()):
 		var btn = character_grid.get_child(i)
 		btn.disabled = (i in picked and i != my_char)
+		# Show who selected this character (tooltip)
+		if i in picked_by:
+			btn.tooltip_text = "Selected by %s" % String(picked_by[i])
+		else:
+			btn.tooltip_text = ""
 
 func _update_player_list(players: Dictionary):
 	if not player_list_container:
@@ -226,8 +250,16 @@ func _update_start_game_button():
 				ready_count += 1
 		if players.size() >= 2 and ready_count == players.size():
 			start_game_button.disabled = false
+			start_game_button.tooltip_text = ""
 	else:
 		start_game_button.disabled = true
+
+	# Helpful tooltip why disabled
+	if start_game_button.disabled:
+		if is_host:
+			start_game_button.tooltip_text = "Waiting for all players to lock in (min 2 players)."
+		else:
+			start_game_button.tooltip_text = "Only the host can start the game."
 
 # NOTE: Removed unused _on_char_button_pressed; grid uses CharacterButton signals.
 
@@ -244,6 +276,7 @@ func _on_lock_in_button_pressed():
 			if i != selected_char_index:
 				btn.disabled = true
 		print("[LobbyWaitRoom] Lock in sent for index=", selected_char_index)
+		NetworkManager.request_players_resync()
 	else:
 		# Unlock request
 		NetworkManager.request_unlock()
@@ -254,6 +287,7 @@ func _on_lock_in_button_pressed():
 			btn.disabled = false
 		_update_character_grid_highlight()
 		print("[LobbyWaitRoom] Unlock requested")
+		NetworkManager.request_players_resync()
 
 	_update_start_game_button()
 
@@ -298,31 +332,40 @@ func _on_leave_lobby_button_pressed():
 # --- OPTIONAL INITIALIZER CALLED BY SceneChanger ---
 # Allows passing lobby info and host flag when switching to this scene
 func _initialize_lobby(info: Dictionary, host: bool):
-	lobby_data = info
+	# Some callers pass { "lobby_info": {...}, "is_host": <bool> }
+	if info.has("lobby_info") and typeof(info["lobby_info"]) == TYPE_DICTIONARY:
+		lobby_data = info["lobby_info"]
+	else:
+		lobby_data = info
 	is_host = host
 	if lobby_name_label:
-		lobby_name_label.text = _compose_lobby_title(lobby_data.get("name", "Unnamed Lobby"))
+		var nm := String(lobby_data.get("name", ""))
+		if nm.is_empty():
+			lobby_name_label.text = _compose_lobby_title("Loading...")
+		else:
+			lobby_name_label.text = _compose_lobby_title(nm)
 	_update_player_list(NetworkManager.players)
 	_update_start_game_button()
 
 # Compose lobby title with host IP so others can join
 func _compose_lobby_title(name: String) -> String:
-	var ip := _get_lan_ipv4()
+	# Prefer the host's IP from synced lobby data when available
+	var ip := String(lobby_data.get("host_ip", ""))
+	if ip.is_empty():
+		# Fallback: find a likely LAN IPv4 from this device
+		for a in IP.get_local_addresses():
+			if a.begins_with("192.168.") or a.begins_with("10."):
+				ip = a
+				break
+			if a.begins_with("172."):
+				var parts = a.split(".")
+				if parts.size() >= 2:
+					var second = int(parts[1])
+					if second >= 16 and second <= 31:
+						ip = a
+						break
 	if ip.is_empty():
 		return "Lobby: %s" % name
 	return "Lobby: %s    IP: %s" % [name, ip]
 
-# Try to get a likely LAN IPv4 (avoids 127.*)
-func _get_lan_ipv4() -> String:
-	var addrs := IP.get_local_addresses()
-	for a in addrs:
-		if a.begins_with("192.168.") or a.begins_with("10."):
-			return a
-		# 172.16.0.0 – 172.31.255.255
-		if a.begins_with("172."):
-			var parts = a.split(".")
-			if parts.size() >= 2:
-				var second = int(parts[1])
-				if second >= 16 and second <= 31:
-					return a
-	return ""
+# Removed _get_lan_ipv4 helper; composed inline above to avoid missing symbol issues.
