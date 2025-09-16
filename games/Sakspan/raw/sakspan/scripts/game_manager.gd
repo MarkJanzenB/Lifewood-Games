@@ -37,11 +37,37 @@ func _ready():
 func initialize_game():
 	var all_hiders = get_tree().get_nodes_in_group("hider")
 	var all_seekers = get_tree().get_nodes_in_group("seeker")
-	if all_seekers.is_empty(): return
-	
-	var seeker = all_seekers[0] as PlayerCharacter
-	if seeker:
-		seeker.set_ammo(all_hiders.size() + 1)
+	# Reset all as non-main and disable their cameras
+	for p in all_seekers + all_hiders:
+		var pc = p as PlayerCharacter
+		if pc:
+			pc.is_main_player = false
+			var cam: Camera2D = pc.get_node_or_null("Camera2D")
+			if cam:
+				cam.enabled = false
+
+	# Choose the local main player: host controls Seeker, client controls Hider
+	var main_pc: PlayerCharacter = null
+	if multiplayer.is_server():
+		if not all_seekers.is_empty():
+			main_pc = all_seekers[0] as PlayerCharacter
+	else:
+		if not all_hiders.is_empty():
+			main_pc = all_hiders[0] as PlayerCharacter
+
+	if main_pc:
+		main_pc.is_main_player = true
+		var cam2: Camera2D = main_pc.get_node_or_null("Camera2D")
+		if cam2:
+			cam2.enabled = true
+		if is_instance_valid(game_ui_instance):
+			game_ui_instance.initialize(main_pc)
+
+	# Give ammo to the seeker based on hiders present (server authoritative)
+	if not all_seekers.is_empty():
+		var seeker = all_seekers[0] as PlayerCharacter
+		if seeker:
+			seeker.set_ammo(all_hiders.size() + 1)
 
 	update_ui()
 	change_state(GameState.HIDER_HEADSTART)

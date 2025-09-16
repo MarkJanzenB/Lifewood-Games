@@ -57,6 +57,15 @@ func _deferred_change_scene(scene_path: String, init_data: Dictionary = {}):
 	# Add the new scene to the root of the scene tree, making it active.
 	get_tree().root.add_child(current_scene)
 
+	# Toggle visibility of the autoloaded GameUI HUD depending on the target scene.
+	# Only show HUD during actual gameplay scene.
+	if Engine.has_singleton("GameManager"):
+		var gm = GameManager
+		if gm and gm.game_ui_instance:
+			var file := scene_path.get_file()
+			var is_game_scene = (file == "game.tscn" or file == "world.tscn")
+			gm.game_ui_instance.visible = is_game_scene
+
 	# If there is initialization data, try to pass it to the new scene using common hooks.
 	if init_data and current_scene:
 		# Specific hook for the lobby wait room scene

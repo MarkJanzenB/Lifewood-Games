@@ -40,7 +40,7 @@ func _on_start_game_button_pressed() -> void:
 	# Make sure this is the intended next scene when "Start Game" is pressed.
 	# If you have a different "main game" scene or a lobby scene that isn't the multiplayer setup,
 	# you might want to change this path.
-	get_tree().change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
 
 func _on_options_button_pressed() -> void:
 	_play_click()
@@ -49,7 +49,7 @@ func _on_options_button_pressed() -> void:
 	# You need to replace "res://scenes/UI/Options/options_menu.tscn" with the actual path
 	# to your options menu scene file.
 	# If this scene doesn't exist, Godot will print an error to the Output panel.
-	get_tree().change_scene_to_file("res://scenes/UI/Options/options_menu.tscn")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Options/options_menu.tscn")
 
 
 func _on_quit_button_pressed() -> void:

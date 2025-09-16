@@ -4,13 +4,14 @@ extends Control
 
 # --- SCENE REFERENCES (PATHS) ---
 # These paths are based on your screenshot. Double-check them if you have issues.
-@onready var lobby_name_label: Label = $HBoxContainer/LobbyNameLab
-@onready var players_count_label: Label = $HBoxContainer/PlayersCountLabe
-@onready var player_list_container: VBoxContainer = $ScrollContainer/PlayerListContai
-@onready var character_grid: GridContainer = $CharacterGrid
-@onready var lock_in_button: Button = $LockInButton
-@onready var start_game_button: Button = $StartGameButton
-@onready var leave_lobby_button: Button = $LeaveLobbyButto
+@onready var lobby_name_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/LobbyNameLabel
+@onready var players_count_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/PlayersCountLabel
+@onready var player_list_container: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/PlayerListContainer
+@onready var character_grid: GridContainer = $PanelContainer/MarginContainer/VBoxContainer/CharacterGrid
+@onready var root_vbox: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer
+@onready var lock_in_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LockInButton
+@onready var start_game_button: Button = $PanelContainer/MarginContainer/VBoxContainer/StartGameButton
+@onready var leave_lobby_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LeaveLobbyButton
 
 # --- RESOURCES ---
 # [!!! IMPORTANT: YOU MUST FIX THIS LINE !!!]
@@ -32,6 +33,9 @@ var selected_char_index: int = -1
 var locked_in: bool = false
 var is_host: bool = false
 var lobby_data: Dictionary = {}
+var selection_label: Label = null
+
+const CHARACTER_NAMES := ["Pink", "Red", "Blue", "Green", "Yellow"]
 
 
 # --- GODOT FUNCTIONS ---
@@ -44,9 +48,24 @@ func _ready():
 	lock_in_button.pressed.connect(_on_lock_in_button_pressed)
 	leave_lobby_button.pressed.connect(_on_leave_lobby_button_pressed)
 
+	# Initialize from NetworkManager by default; may be overridden via _initialize_lobby
 	lobby_data = NetworkManager.my_lobby_data
 	is_host = multiplayer.is_server()
-	lobby_name_label.text = "Lobby: " + lobby_data.get("name", "Unnamed Lobby")
+	if lobby_name_label:
+		lobby_name_label.text = _compose_lobby_title(lobby_data.get("name", "Unnamed Lobby"))
+
+	# Ensure a label exists above the character grid to show selections
+	selection_label = root_vbox.get_node_or_null("SelectionNameLabel") as Label
+	if not selection_label:
+		selection_label = Label.new()
+		selection_label.name = "SelectionNameLabel"
+		selection_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		selection_label.text = "No selection yet"
+		root_vbox.add_child(selection_label)
+		# Move it above the CharacterGrid
+		var idx = root_vbox.get_children().find(character_grid)
+		if idx != -1:
+			root_vbox.move_child(selection_label, idx)
 	
 	_update_player_list(NetworkManager.players)
 	_setup_character_grid()
@@ -68,12 +87,23 @@ func _setup_character_grid():
 	if not character_grid: return
 	for child in character_grid.get_children():
 		child.queue_free()
-		
+	# Make the grid visually larger and nicely spaced
+	character_grid.columns = CHARACTER_ICONS.size()
+	character_grid.add_theme_constant_override("h_separation", 24)
+	character_grid.add_theme_constant_override("v_separation", 24)
+	
 	for i in range(CHARACTER_ICONS.size()):
-		var btn = CharacterButtonScene.instance()
+		var btn = CharacterButtonScene.instantiate()
 		btn.set_character(CHARACTER_ICONS[i], i)
 		btn.character_selected.connect(_on_character_selected)
 		character_grid.add_child(btn)
+		# Try to enlarge buttons
+		if btn.has_method("set_custom_minimum_size"):
+			btn.custom_minimum_size = Vector2(96, 96)
+		elif "custom_minimum_size" in btn:
+			btn.custom_minimum_size = Vector2(96, 96)
+		else:
+			btn.scale = Vector2(1.5, 1.5)
 
 
 # --- UI UPDATE AND SIGNAL HANDLER FUNCTIONS ---
@@ -81,6 +111,10 @@ func _on_character_selected(idx: int):
 	if locked_in: return
 	selected_char_index = idx
 	_update_character_grid_highlight()
+	# Update selection label for local feedback before locking in
+	if selection_label:
+		var cname: String = CHARACTER_NAMES[idx] if (idx >= 0 and idx < CHARACTER_NAMES.size()) else "#%d" % idx
+		selection_label.text = "You selected: %s (not locked in)" % cname
 
 # This function now correctly uses the custom "set_selected" method on your buttons.
 func _update_character_grid_highlight():
@@ -95,7 +129,7 @@ func _update_character_grid_lock(players: Dictionary):
 	if not character_grid: return
 	var picked = []
 	for id in players:
-		var idx = players[id].char_index
+		var idx = int(players[id].get("char_index", -1))
 		if idx >= 0:
 			picked.append(idx)
 			
@@ -138,7 +172,7 @@ func _update_start_game_button():
 		var players = NetworkManager.players
 		var ready_count = 0
 		for id in players:
-			if players[id].char_index >= 0:
+			if int(players[id].get("char_index", -1)) >= 0:
 				ready_count += 1
 		if players.size() >= 2 and ready_count == players.size():
 			start_game_button.disabled = false
@@ -148,28 +182,89 @@ func _update_start_game_button():
 
 # --- BUTTON PRESS AND NETWORKING ---
 func _on_lock_in_button_pressed():
-	if selected_char_index == -1 or locked_in: return
-	NetworkManager.request_char_selection(selected_char_index)
-	locked_in = true
-	lock_in_button.disabled = true
-	for i in range(character_grid.get_child_count()):
-		var btn = character_grid.get_child(i)
-		if i != selected_char_index:
-			btn.disabled = true
+	# Toggle behavior: Lock in -> Unlock, Unlock -> Lock in
+	if not locked_in:
+		if selected_char_index == -1: return
+		NetworkManager.request_char_selection(selected_char_index)
+		locked_in = true
+		lock_in_button.text = "UNLOCK"
+		for i in range(character_grid.get_child_count()):
+			var btn = character_grid.get_child(i)
+			if i != selected_char_index:
+				btn.disabled = true
+	else:
+		# Unlock request
+		NetworkManager.request_unlock()
+		locked_in = false
+		lock_in_button.text = "LOCK IN"
+		for i in range(character_grid.get_child_count()):
+			var btn = character_grid.get_child(i)
+			btn.disabled = false
+		_update_character_grid_highlight()
+
+	_update_start_game_button()
 
 func _on_player_list_changed(players: Dictionary):
 	_update_player_list(players)
 	_update_start_game_button()
 	if not locked_in:
 		_update_character_grid_lock(players)
+	_update_selection_label_from_players(players)
+
+func _update_selection_label_from_players(players: Dictionary):
+	if not selection_label: return
+	var entries: Array[String] = []
+	for id in players:
+		var name := String(players[id].get("name", str(id)))
+		var idx := int(players[id].get("char_index", -1))
+		if idx >= 0:
+			var cname: String = CHARACTER_NAMES[idx] if (idx >= 0 and idx < CHARACTER_NAMES.size()) else "#%d" % idx
+			entries.append("%s → %s" % [name, cname])
+	if entries.is_empty():
+		selection_label.text = "No one locked in yet"
+	else:
+		selection_label.text = ", ".join(entries)
 
 func _on_start_game_button_pressed():
 	if is_host:
 		NetworkManager.start_game()
 
 func _on_game_started(_player_data):
-	get_tree().change_scene_to_file("res://scenes/game.tscn")
+	SceneChanger.change_scene_to_file("res://scenes/world.tscn")
 
 func _on_leave_lobby_button_pressed():
 	NetworkManager.leave_lobby()
-	get_tree().change_scene_to_file("res://scenes/UI/multiplayer_menu.tscn")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+
+
+# --- OPTIONAL INITIALIZER CALLED BY SceneChanger ---
+# Allows passing lobby info and host flag when switching to this scene
+func _initialize_lobby(info: Dictionary, host: bool):
+	lobby_data = info
+	is_host = host
+	if lobby_name_label:
+		lobby_name_label.text = _compose_lobby_title(lobby_data.get("name", "Unnamed Lobby"))
+	_update_player_list(NetworkManager.players)
+	_update_start_game_button()
+
+# Compose lobby title with host IP so others can join
+func _compose_lobby_title(name: String) -> String:
+	var ip := _get_lan_ipv4()
+	if ip.is_empty():
+		return "Lobby: %s" % name
+	return "Lobby: %s    IP: %s" % [name, ip]
+
+# Try to get a likely LAN IPv4 (avoids 127.*)
+func _get_lan_ipv4() -> String:
+	var addrs := IP.get_local_addresses()
+	for a in addrs:
+		if a.begins_with("192.168.") or a.begins_with("10."):
+			return a
+		# 172.16.0.0 – 172.31.255.255
+		if a.begins_with("172."):
+			var parts = a.split(".")
+			if parts.size() >= 2:
+				var second = int(parts[1])
+				if second >= 16 and second <= 31:
+					return a
+	return ""

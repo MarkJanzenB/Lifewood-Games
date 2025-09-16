@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3 uid="uid://b5gt1b7ksa1oj"]
 
 [ext_resource type="Texture2D" uid="uid://dnu0dcsftprce" path="res://scenes/UI/Join_Lobby/join_lobby_background.jpg" id="1_plr0g"]
-[ext_resource type="Script" path="res://scripts/join_lobby_menu.gd" id="1_rkjtl"]
+[ext_resource type="Script" uid="uid://dxbybsehh2dtr" path="res://scripts/join_lobby_menu.gd" id="1_rkjtl"]
 [ext_resource type="FontFile" uid="uid://bdhbu2neft0s3" path="res://fonts/Free Royalty.ttf" id="2_rkjtl"]
 
 [node name="JoinLobby" type="Control"]
@@ -89,6 +89,18 @@ theme_override_fonts/font = ExtResource("2_rkjtl")
 theme_override_font_sizes/font_size = 30
 disabled = true
 text = "JOIN"
+
+[node name="ManualIPLineEdit" type="LineEdit" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Enter host IP (e.g., 192.168.1.10)"
+
+[node name="JoinIPButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 2
+theme_override_fonts/font = ExtResource("2_rkjtl")
+theme_override_font_sizes/font_size = 30
+text = "JOIN IP"
 
 [node name="BackButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
 custom_minimum_size = Vector2(200, 50)

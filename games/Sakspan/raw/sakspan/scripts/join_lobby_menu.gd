@@ -5,6 +5,8 @@ extends Control
 @onready var refresh_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/RefreshButton
 @onready var join_selected_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/JoinSelectedButton
 @onready var back_button: Button = $PanelContainer/MarginContainer/VBoxContainer/BackButton
+@onready var manual_ip_field: LineEdit = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/ManualIPLineEdit
+@onready var join_ip_button: Button = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/JoinIPButton
 
 # A dictionary to store found lobbies, keyed by their IP address
 var _found_lobbies: Dictionary = {}
@@ -17,6 +19,8 @@ func _ready():
 	join_selected_button.pressed.connect(_on_join_selected_button_pressed)
 	back_button.pressed.connect(_on_back_button_pressed)
 	lobby_list.item_selected.connect(_on_lobby_list_item_selected)
+	if join_ip_button:
+		join_ip_button.pressed.connect(_on_join_ip_button_pressed)
 
 	NetworkManager.connection_succeeded.connect(_on_connection_succeeded)
 	NetworkManager.connection_failed.connect(_on_connection_failed)
@@ -46,7 +50,9 @@ func _on_refresh_button_pressed():
 	# Clearing the list and waiting for new broadcasts acts as a refresh
 	_found_lobbies.clear()
 	_update_lobby_list_ui()
-	print("Cleared lobby list, waiting for new broadcasts...")
+	print("[JoinLobby] Refresh clicked: restarting LAN discovery...")
+	NetworkManager.stop_lan_discovery()
+	NetworkManager.start_listening_for_lobbies()
 
 func _on_join_selected_button_pressed():
 	var selected_item = lobby_list.get_selected()
@@ -59,8 +65,20 @@ func _on_join_selected_button_pressed():
 	join_selected_button.disabled = true
 	join_selected_button.text = "CONNECTING..."
 
+func _on_join_ip_button_pressed():
+	if not manual_ip_field: return
+	var ip := manual_ip_field.text.strip_edges()
+	if ip.is_empty():
+		manual_ip_field.placeholder_text = "Enter a valid IP"
+		return
+	print("[JoinLobby] Joining IP entered: ", ip)
+	NetworkManager.join_lobby("Joiner", ip)
+	if join_selected_button:
+		join_selected_button.disabled = true
+		join_selected_button.text = "CONNECTING..."
+
 func _on_back_button_pressed():
-	SceneChanger.change_scene_to_file("res://scenes/UI/multiplayer_menu.tscn")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
 
 func _on_lobby_list_item_selected():
 	join_selected_button.disabled = lobby_list.get_selected() == null
@@ -73,7 +91,7 @@ func _on_lobby_list_item_selected():
 
 func _on_lobby_found(info: Dictionary):
 	# When NetworkManager finds a lobby, add or update it in our dictionary
-	var ip = info.ip
+	var ip = String(info.get("ip", ""))
 	info["timestamp"] = Time.get_ticks_msec() # Mark when we last heard from it
 	_found_lobbies[ip] = info
 	_update_lobby_list_ui()
@@ -94,7 +112,9 @@ func _on_cleanup_timer_timeout():
 	var now = Time.get_ticks_msec()
 	var ips_to_remove = []
 	for ip in _found_lobbies:
-		if now - _found_lobbies[ip].timestamp > 3000: # 3 seconds
+		var info: Dictionary = _found_lobbies[ip]
+		var ts: int = int(info.get("timestamp", 0))
+		if ts > 0 and now - ts > 3000: # 3 seconds
 			ips_to_remove.append(ip)
 			
 	if not ips_to_remove.is_empty():
@@ -107,11 +127,11 @@ func _update_lobby_list_ui():
 	var root = lobby_list.create_item()
 
 	for ip in _found_lobbies:
-		var info = _found_lobbies[ip]
+		var info: Dictionary = _found_lobbies[ip]
 		var item = lobby_list.create_item(root)
-		item.set_text(0, info.name)
-		item.set_text(1, "%d/%d" % [info.current_players, info.max_players])
-		# item.set_text(2, info.timer) # Add this back if you send timer info
+		item.set_text(0, String(info.get("name", "Unknown Lobby")))
+		item.set_text(1, "%d/%d" % [int(info.get("current_players", 0)), int(info.get("max_players", 0))])
+		# item.set_text(2, String(info.get("timer", ""))) # Add this back if you send timer info
 		item.set_text(3, "Waiting") # Or get real status from broadcast
 		item.set_metadata(0, ip) # Store the IP address
 

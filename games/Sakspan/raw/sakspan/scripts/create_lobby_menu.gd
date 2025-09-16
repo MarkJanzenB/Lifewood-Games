@@ -52,7 +52,7 @@ func _on_create_button_pressed():
 	NetworkManager.create_lobby(player_name, lobby_name, max_players, timer_setting)
 
 func _on_back_button_pressed():
-	SceneChanger.change_scene_to_file("res://scenes/UI/multiplayer_menu.tscn")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
 
 func _on_connection_succeeded():
 	var init := {"lobby_info": NetworkManager.my_lobby_data, "is_host": true}
