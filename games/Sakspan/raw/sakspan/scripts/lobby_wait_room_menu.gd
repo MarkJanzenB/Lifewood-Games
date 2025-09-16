@@ -45,6 +45,8 @@ var _my_peer_id: int
 var _my_temp_selection_index: int = -1
 
 func _ready():
+	if Engine.has_singleton("GameManager"):
+		GameManager.reset_to_lobby()
 	_check_ui_nodes()
 	_resolve_nodes_if_missing()
 	if Engine.has_singleton("NetworkManager"):

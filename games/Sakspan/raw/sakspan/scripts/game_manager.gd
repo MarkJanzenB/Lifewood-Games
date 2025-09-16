@@ -31,8 +31,17 @@ func _ready():
 	ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
 	sak_delay_timer.timeout.connect(_on_sak_delay_timer_timeout)
 	
+
+func start_game_logic():
 	await get_tree().process_frame
 	initialize_game()
+
+func reset_to_lobby():
+	current_state = GameState.WAITING_TO_START
+	main_timer.stop()
+	ammo_cooldown_timer.stop()
+	sak_delay_timer.stop()
+	print("GameManager state reset to WAITING_TO_START")
 
 func initialize_game():
 	var all_hiders = get_tree().get_nodes_in_group("hider")

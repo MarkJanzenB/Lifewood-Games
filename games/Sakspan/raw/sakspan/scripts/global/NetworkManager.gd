@@ -121,13 +121,19 @@ func leave_lobby():
 	my_lobby_data.clear()
 	multiplayer.multiplayer_peer = null
 	stop_lan_discovery()
+	if Engine.has_singleton("GameManager"):
+		GameManager.reset_to_lobby()
 
 func start_broadcasting():
 	if _is_broadcasting: return
+	# Bind the sending socket to an ephemeral port (port 0)
+	if _udp_send.bind(0) != OK:
+		push_warning("[NetworkManager] UDP broadcast sender failed to bind.")
+		return
 	_is_broadcasting = true
 	_udp_send.set_broadcast_enabled(true)
 	_broadcast_timer.start()
-	_send_broadcast()
+	_send_broadcast() # Send one immediately
 
 func _on_connected_to_server():
 	print("[NetworkManager] Low-level connected to server. My client id=", multiplayer.get_unique_id())

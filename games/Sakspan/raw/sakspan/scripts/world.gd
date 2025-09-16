@@ -41,3 +41,6 @@ func _ready():
 			if id == multiplayer.get_unique_id():
 				if new_player.has_node("Camera2D"):
 					new_player.get_node("Camera2D").enabled = true
+
+	if multiplayer.is_server():
+		GameManager.start_game_logic()
