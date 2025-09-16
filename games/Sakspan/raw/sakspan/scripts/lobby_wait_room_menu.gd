@@ -24,8 +24,6 @@ const CHARACTER_ICONS := [
 	preload("res://scenes/UI/Lobby_Wait_Room/red_char.png"),
 	preload("res://scenes/UI/Lobby_Wait_Room/blue_char.png"),
 	preload("res://scenes/UI/Lobby_Wait_Room/green_char.png"),
-	preload("res://scenes/UI/Lobby_Wait_Room/pink_char.png"),
-	preload("res://scenes/UI/Lobby_Wait_Room/red_char.png"),
 	preload("res://scenes/UI/Lobby_Wait_Room/yellow_char.png"),
 ]
 
@@ -47,13 +45,12 @@ var _my_temp_selection_index: int = -1
 
 func _ready():
 	_check_ui_nodes()
-	if Engine.has_singleton("NetworkManager") or ("NetworkManager" in ProjectSettings.get_setting("autoloads")):
+	if Engine.has_singleton("NetworkManager"):
 		# Access autoloaded NetworkManager directly
 		_lobby_data = NetworkManager.my_lobby_data if NetworkManager.my_lobby_data != null else {}
 		_players_in_lobby = NetworkManager.players if NetworkManager.players != null else {}
 		NetworkManager.player_list_changed.connect(_on_player_list_changed)
-		if NetworkManager.has_signal("game_started"):
-			NetworkManager.game_started.connect(_on_game_started)
+		NetworkManager.game_started.connect(_on_game_started)
 	if start_game_button:
 		start_game_button.pressed.connect(_on_start_game_button_pressed)
 	if lock_in_button:
@@ -156,44 +153,31 @@ func _update_character_grid_lock(players: Dictionary):
 		btn.disabled = (i in picked and i != my_char)
 
 func _update_player_list(players: Dictionary):
-	for child in player_list_container.get_children():
-		child.queue_free()
+	if not player_list_container:
+		return
+	for c in player_list_container.get_children():
+		c.queue_free()
 
-	for p_id in players.keys():
-		var player_data: Dictionary = players[p_id]
-		if lobby_player_item_scene == null:
-			continue
-		var player_item: Node = lobby_player_item_scene.instantiate()
-		player_list_container.add_child(player_item)
-		var char_texture: Texture2D = null
-		var idx: int = int(player_data.get("char_index", -1))
-		if idx >= 0 and idx < character_sprites.size():
-			char_texture = character_sprites[idx]
-		if player_item.has_method("update_display"):
-			player_item.call("update_display", player_data, char_texture)
+	var count := 0
+	for id in players:
+		var p: Dictionary = players[id]
+		var label := Label.new()
+		var p_name: String = p.get("name", "Player %s" % str(id))
+		var p_char: int = int(p.get("char_index", -1))
+		var p_is_host: bool = bool(p.get("is_host", false))
+		var char_text := " (Picking...)"
+		if p_char >= 0:
+			char_text = " (Ready)"
+		var host_text := " (Host)" if p_is_host else ""
+		label.text = "%s%s%s" % [p_name, host_text, char_text]
+		player_list_container.add_child(label)
+		count += 1
 
-func _setup_character_grid():
-	for i in range(character_sprites.size()):
-		var button: TextureButton = TextureButton.new()
-		button.texture_normal = character_sprites[i]
-		button.custom_minimum_size = Vector2(80, 80)
-		button.pressed.connect(_on_char_button_pressed.bind(i))
-		character_grid.add_child(button)
+	if players_count_label:
+		players_count_label.text = "Players: %d/%d" % [count, lobby_data.get("max_players", 5)]
 
-func _update_character_grid_lock(players: Dictionary):
-	var taken_char_indices: Array[int] = []
-	for p_id in players.keys():
-		var char_idx: int = int(players[p_id].get("char_index", -1))
-		if char_idx != -1:
-			taken_char_indices.append(char_idx)
-
-	for i in range(character_grid.get_child_count()):
-		var button: TextureButton = character_grid.get_child(i) as TextureButton
-		if button:
-			button.disabled = i in taken_char_indices
-			button.modulate = Color(1, 1, 1, 1)
-			if i == _my_temp_selection_index:
-				button.modulate = Color(1.0, 0.84, 0.0)
+# NOTE: Removed duplicate alternate implementations of _setup_character_grid and
+# _update_character_grid_lock that conflicted with the CharacterButton-based grid above.
 
 func _update_start_game_button():
 	if not start_game_button: return
@@ -209,9 +193,7 @@ func _update_start_game_button():
 	else:
 		start_game_button.disabled = true
 
-func _on_char_button_pressed(char_index: int) -> void:
-	_my_temp_selection_index = char_index
-	_update_character_grid_lock(_players_in_lobby)
+# NOTE: Removed unused _on_char_button_pressed; grid uses CharacterButton signals.
 
 # --- BUTTON PRESS AND NETWORKING ---
 func _on_lock_in_button_pressed():
