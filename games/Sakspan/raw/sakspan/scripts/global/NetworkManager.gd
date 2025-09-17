@@ -94,12 +94,19 @@ func create_lobby(player_name: String, lobby_name: String, max_players: int, tim
 	# Generate a unique room code for this lobby
 	room_code = _generate_room_code()
 	
+	print("[NetworkManager] 🏠 HOST: Creating ENet server on port %d..." % DEFAULT_PORT)
 	var peer = ENetMultiplayerPeer.new()
-	if peer.create_server(DEFAULT_PORT, capped_max) != OK:
-		print("[NetworkManager] Failed to create server.")
+	var server_result = peer.create_server(DEFAULT_PORT, capped_max)
+	print("[NetworkManager] 🔍 HOST: Server creation result: %d (OK=0)" % server_result)
+	
+	if server_result != OK:
+		print("[NetworkManager] ❌ HOST: FAILED to create server on port %d! Error code: %d" % [DEFAULT_PORT, server_result])
+		print("[NetworkManager] 🔍 HOST: Possible causes - Port already in use, insufficient permissions, firewall blocking")
 		return
 	
+	print("[NetworkManager] ✅ HOST: ENet server created successfully on port %d" % DEFAULT_PORT)
 	multiplayer.multiplayer_peer = peer
+	print("[NetworkManager] 🔗 HOST: Multiplayer peer assigned, server should be listening now")
 	players[1] = {"name": my_name, "is_host": true, "ready": false, "char_index": -1}
 	my_lobby_data = {
 		"name": lobby_name,
@@ -205,6 +212,10 @@ func _on_connected_to_server():
 func _on_connection_failed():
 	print("[NetworkManager] ❌ CLIENT: Connection to server FAILED!")
 	print("[NetworkManager] 🔍 CLIENT: Possible causes - Server offline, wrong IP, firewall blocking port %d" % DEFAULT_PORT)
+	print("[NetworkManager] 💡 CLIENT: Try these troubleshooting steps:")
+	print("[NetworkManager] 💡 CLIENT: 1. Check if host can ping client IP")
+	print("[NetworkManager] 💡 CLIENT: 2. Temporarily disable Windows Firewall on both machines")
+	print("[NetworkManager] 💡 CLIENT: 3. Try connecting from host to client instead")
 	emit_signal("connection_failed")
 
 func start_listening_for_lobbies():
