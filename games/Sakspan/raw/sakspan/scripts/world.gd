@@ -5,7 +5,9 @@ extends Node2D
 signal world_loaded()
 
 @onready var player_spawner = $PlayerSpawner
-@onready var loading_screen := $LoadingScreen
+@onready var loading_screen: Node = get_node_or_null("LoadingScreen")
+
+const PLAYER_SCENE := preload("res://scenes/player.tscn")
 
 # Predefined spawn points for up to 5 players
 var spawn_points := [Vector2(39, -323), Vector2(-103, -335), Vector2(200, 100), Vector2(-200, 100), Vector2(0, 200)]
@@ -24,32 +26,40 @@ func _ready():
 	# Wait for first frame to ensure all nodes are ready
 	await get_tree().process_frame
 	
-	# Validate NetworkManager
-	if not Engine.has_singleton("NetworkManager"):
-
-func _spawn_players():
-	var players = NetworkManager.players
-	for id in players.keys():
-		player_spawner.spawn(Callable(self, "_setup_player").bind(id))
-
-func _setup_player(node, id):
-	var player_info = NetworkManager.players[id]
-	node.set_player_name(player_info["name"])
-
-		push_error("NetworkManager not found!")
+	# Validate NetworkManager (autoload)
+	if get_node_or_null("/root/NetworkManager") == null:
+		push_error("[World] NetworkManager not found!")
+		queue_free()
 		return
 	
 	# Start loading sequence
 	_load_world_async()
+
+	# Configure MultiplayerSpawner for proper replication (so clients get spawned automatically)
+	if player_spawner and player_spawner is MultiplayerSpawner:
+		# Ensure the correct player scene is spawnable
+		if "spawnable_scenes" in player_spawner:
+			player_spawner.spawnable_scenes = PackedStringArray(["res://scenes/player.tscn"]) 
+		# Provide a spawn function used by all peers to instantiate the node
+		player_spawner.spawn_function = Callable(self, "_spawn_player_node")
+
+func _spawn_players():
+	_spawn_all_players()
+
+func _setup_player(node, id):
+	var player_info = NetworkManager.players[id]
+	node.set_player_name(player_info["name"])
 
 func _load_world_async():
 	if loading_screen:
 		loading_screen.update_progress(0.2, "Loading players...")
 	
 	# Connect to game manager signals
-	GameManager.game_state_changed.connect(_on_game_state_changed)
-	GameManager.player_joined.connect(_on_player_joined)
-	GameManager.player_left.connect(_on_player_left)
+	var gm := get_node_or_null("/root/GameManager")
+	if gm:
+		gm.game_state_changed.connect(_on_game_state_changed)
+		gm.player_joined.connect(_on_player_joined)
+		gm.player_left.connect(_on_player_left)
 	
 	# Connect to network manager for initial player sync
 	NetworkManager.player_list_changed.connect(_on_player_list_changed, CONNECT_DEFERRED)
@@ -145,59 +155,27 @@ func _spawn_all_players() -> void:
 	
 	# Convert keys to integers and sort for deterministic spawn order
 	var int_ids: Array[int] = []
-	for id_str in players.keys():
-		if id_str.is_valid_int():
-			int_ids.append(int(id_str))
+	for id_key in players.keys():
+		int_ids.append(int(id_key))
 	int_ids.sort()
 	
-	# Spawn each player
+	# Spawn each player via MultiplayerSpawner so it replicates to clients
 	for i in range(min(int_ids.size(), spawn_points.size())):
 		var id: int = int_ids[i]
-		var id_str = str(id)  # Convert to string for dictionary access
-		var pdata: Dictionary = players.get(id_str, {})
-		
-		print("[World] Attempting to spawn player ", id, " with data: ", pdata)
-		
-		var new_player = player_spawner.spawn(id)
-		if not is_instance_valid(new_player):
-			print("[World] Failed to spawn player ", id)
-			continue
-		
-		# Set basic properties
-		new_player.player_name = pdata.get("name", "Player%d" % id)
-		
-		# Set role and ensure proper group assignment
-		if pdata.has("role"):
-			var role_str = pdata["role"]
-			var role = PlayerCharacter.PlayerRole.SEEKER if role_str == "seeker" else PlayerCharacter.PlayerRole.HIDER
-			new_player.assign_role(role)
-			
-			# Double-check group assignment
-			if role == PlayerCharacter.PlayerRole.SEEKER:
-				if not new_player.is_in_group("seeker"):
-					new_player.add_to_group("seeker")
-				if new_player.is_in_group("hider"):
-					new_player.remove_from_group("hider")
-			else:
-				if not new_player.is_in_group("hider"):
-					new_player.add_to_group("hider")
-		
-		# Set character index if specified
-		if pdata.has("char_index") and new_player.has_method("apply_character_index"):
-			new_player.apply_character_index(int(pdata["char_index"]))
-		
-		# Set authority and position
-		new_player.set_multiplayer_authority(id, true)
-		new_player.global_position = spawn_points[i] if i < spawn_points.size() else Vector2(100, 100)
-		
-		# Set up camera for local player
-		if id == multiplayer.get_unique_id():
-			print("[World] Setting up camera for local player", id)
-			if new_player.has_node("Camera2D"):
-				new_player.get_node("Camera2D").enabled = true
-				new_player.get_node("Camera2D").make_current()
+		var pdata: Dictionary = players.get(id, {})
+		var spawn_data := {
+			"id": id,
+			"name": pdata.get("name", "Player%d" % id),
+			"role": pdata.get("role", "hider"),
+			"char_index": int(pdata.get("char_index", -1)),
+			"spawn_index": i
+		}
+		if player_spawner and player_spawner is MultiplayerSpawner:
+			player_spawner.spawn(spawn_data, id)
 		else:
-			print("[World] Spawned remote player", id)
+			# Fallback: local-only spawn (dev mode)
+			var new_player = _spawn_player_node(spawn_data)
+			add_child(new_player)
 	
 	if loading_screen:
 		loading_screen.update_progress(0.4, "Players spawned")
@@ -216,15 +194,18 @@ func _on_player_list_changed_once(_players: Dictionary) -> void:
 
 # GameManager signal handlers
 func _on_game_state_changed(new_state: int) -> void:
+	var gm := get_node_or_null("/root/GameManager")
+	if not gm:
+		return
 	match new_state:
-		GameManager.GameState.LOBBY:
+		gm.GameState.LOBBY:
 			print("Game State: Lobby")
-		GameManager.GameState.STARTING:
+		gm.GameState.STARTING:
 			print("Game State: Starting")
-		GameManager.GameState.IN_PROGRESS:
+		gm.GameState.IN_PROGRESS:
 			print("Game State: In Progress")
 			# Additional in-game setup can go here
-		GameManager.GameState.GAME_OVER:
+		gm.GameState.GAME_OVER:
 			print("Game State: Game Over")
 
 func _on_player_joined(player_id: int, player_data: Dictionary) -> void:
@@ -241,9 +222,49 @@ func _on_player_left(player_id: int) -> void:
 
 func _despawn_player(player_id: int) -> void:
 	for child in get_children():
-		if child is PlayerCharacter and child.player_id == player_id:
+		if child is PlayerCharacter and child.get_multiplayer_authority() == player_id:
 			child.queue_free()
 			break
+
+# Spawn function used by MultiplayerSpawner on all peers
+func _spawn_player_node(data: Dictionary) -> Node:
+	var id: int = int(data.get("id", 0))
+	var spawn_index: int = int(data.get("spawn_index", 0))
+	var role_str: String = String(data.get("role", "hider"))
+	var char_index: int = int(data.get("char_index", -1))
+	var player_name: String = String(data.get("name", "Player%d" % id))
+
+	var p = PLAYER_SCENE.instantiate()
+	# Set authority so only the owning peer sends sync
+	p.set_multiplayer_authority(id, true)
+	# Basic properties
+	if "player_name" in p:
+		p.player_name = player_name
+	# Role
+	var role = PlayerCharacter.PlayerRole.SEEKER if role_str == "seeker" else PlayerCharacter.PlayerRole.HIDER
+	if p.has_method("assign_role"):
+		p.assign_role(role)
+	# Character index
+	if char_index >= 0 and p.has_method("apply_character_index"):
+		p.apply_character_index(char_index)
+	# Position
+	p.global_position = spawn_points[spawn_index] if spawn_index < spawn_points.size() else Vector2(100, 100)
+
+	# Ensure MultiplayerSynchronizer has a replication config
+	var sync := p.get_node_or_null("MultiplayerSynchronizer")
+	if sync:
+		var rc := SceneReplicationConfig.new()
+		# Replicate common properties
+		rc.add_property(":global_position")
+		# Add other properties here as needed, e.g., state variables on the script
+		sync.replication_config = rc
+		sync.visibility_public = true
+		sync.visibility_update_mode = MultiplayerSynchronizer.VISIBILITY_PROCESS_PHYSICS
+	# Camera for local player
+	if id == multiplayer.get_unique_id() and p.has_node("Camera2D"):
+		p.get_node("Camera2D").enabled = true
+		p.get_node("Camera2D").make_current()
+	return p
 
 func _despawn_all_players() -> void:
 	for child in get_children():

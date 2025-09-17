@@ -502,9 +502,12 @@ func _rpc_sync_lobby_data(lobby_data: Dictionary):
 func _rpc_request_char_selection(peer_id: int, char_index: int):
 	if multiplayer.is_server():
 		for p_id in players:
-			if players[p_id].char_index == char_index: return
-		players[peer_id].char_index = char_index
-		players[peer_id].ready = true
+			var entry: Variant = players[p_id]
+			if typeof(entry) == TYPE_DICTIONARY:
+				if int(entry.get("char_index", -1)) == char_index:
+					return
+		players[peer_id]["char_index"] = char_index
+		players[peer_id]["ready"] = true
 		rpc("_rpc_sync_player_data", players)
 		# Update host UI too
 		emit_signal("player_list_changed", players)
@@ -513,7 +516,7 @@ func _rpc_request_char_selection(peer_id: int, char_index: int):
 func _rpc_request_unlock(peer_id: int):
 	if multiplayer.is_server():
 		if players.has(peer_id):
-			players[peer_id].char_index = -1
-			players[peer_id].ready = false
+			players[peer_id]["char_index"] = -1
+			players[peer_id]["ready"] = false
 			rpc("_rpc_sync_player_data", players)
 			emit_signal("player_list_changed", players)
