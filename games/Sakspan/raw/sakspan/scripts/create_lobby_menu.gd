@@ -1,4 +1,4 @@
-# create_lobby_menu.gd
+#res://scenes/UI/Create_Lobby/create_lobby_menu.tscn
 extends Control
 
 # --- NODE REFERENCES ---

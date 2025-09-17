@@ -1,3 +1,5 @@
+# res://scenes/UI/Main_Menu/main_menu.tscn
+
 extends Control
 
 @onready var single_click_effect: AudioStreamPlayer = get_node_or_null("single_click_effect")
