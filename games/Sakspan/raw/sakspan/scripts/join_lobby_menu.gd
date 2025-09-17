@@ -13,6 +13,7 @@ extends Control
 var _found_lobbies: Dictionary = {}
 var _cleanup_timer := Timer.new()
 var _selected_lobby_info: Dictionary = {}
+var _pending_join_code: String = "" # When set, auto-join the first lobby matching this code
 
 func _ready():
 	# --- Connect Signals ---
@@ -108,7 +109,16 @@ func _on_join_with_code_button_pressed():
 		return
 	
 	print("[JoinLobby] Searching for lobby with code: ", code)
+	_pending_join_code = code
 	NetworkManager.find_lobby_by_code(code)
+
+	# If we already have a matching lobby cached, join immediately
+	for ip in _found_lobbies:
+		var info: Dictionary = _found_lobbies[ip]
+		if String(info.get("room_code", "")).to_upper() == code:
+			_join_using_info(info)
+			_pending_join_code = ""
+			return
 
 func _on_back_button_pressed():
 	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
@@ -124,15 +134,22 @@ func _on_lobby_list_item_selected():
 
 func _on_lobby_found(info: Dictionary):
 	# When NetworkManager finds a lobby, add or update it in our dictionary
-	# Prefer the host's provided IP if available
-	var ip := String(info.get("host_ip", info.get("ip", "")))
+	var ip = String(info.get("host_ip", info.get("ip", "")))
 	if not _is_valid_lan_ipv4(ip):
 		print("[JoinLobby] Ignoring non-LAN or invalid IP:", ip)
 		return
 	info["ip"] = ip
 	info["timestamp"] = Time.get_ticks_msec() # Mark when we last heard from it
 	_found_lobbies[ip] = info
+	print("[JoinLobby] Added/Updated lobby:", info)
 	_update_lobby_list_ui()
+
+	# Auto-join if this matches a requested code
+	var resp_code := String(info.get("room_code", "")).to_upper()
+	if not _pending_join_code.is_empty() and resp_code == _pending_join_code:
+		print("[JoinLobby] Auto-joining by code match:", resp_code)
+		_join_using_info(info)
+		_pending_join_code = ""
 
 func _on_connection_succeeded():
 	var init := {"lobby_info": _selected_lobby_info, "is_host": false}
@@ -192,11 +209,20 @@ func _configure_lobby_list_columns():
 	lobby_list.hide_root = true
 
 # --- IP Utilities ---
+
 func _is_valid_lan_ipv4(addr: String) -> bool:
 	if addr.is_empty():
 		return false
-	if not addr.is_valid_ip_address():
+	# Validate IPv4 format manually to avoid engine API differences
+	var parts := addr.split(".")
+	if parts.size() != 4:
 		return false
+	for p in parts:
+		if p.is_empty() or not p.is_valid_int():
+			return false
+		var n := int(p)
+		if n < 0 or n > 255:
+			return false
 	# Exclude loopback, APIPA, invalid and common virtual adapter ranges
 	if addr.begins_with("127.") or addr == "0.0.0.0" or addr.begins_with("169.254."):
 		return false
@@ -206,9 +232,30 @@ func _is_valid_lan_ipv4(addr: String) -> bool:
 	if addr.begins_with("192.168.") or addr.begins_with("10."):
 		return true
 	if addr.begins_with("172."):
-		var parts := addr.split(".")
+		# Reuse the existing 'parts' array from above (already validated to size 4)
 		if parts.size() >= 2:
 			var second := int(parts[1])
 			if second >= 16 and second <= 31:
 				return true
 	return false
+
+# Begin a join using a discovered lobby info dictionary
+func _join_using_info(info: Dictionary) -> void:
+	_selected_lobby_info = info
+	var ip_to_join := String(info.get("host_ip", info.get("ip", "")))
+	if not _is_valid_lan_ipv4(ip_to_join):
+		print("[JoinLobby] Refusing to join non-LAN or invalid IP:", ip_to_join)
+		return
+	var room_name := String(info.get("name", "Unknown Room"))
+	var room_code := String(info.get("room_code", ""))
+	var player_name := "Player" + str(randi_range(1000, 9999))
+
+	NetworkManager.stop_lan_discovery()
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer = null
+
+	print("[JoinLobby] Auto-joining room '%s' (Code: %s) at %s" % [room_name, room_code, ip_to_join])
+	join_selected_button.disabled = true
+	join_selected_button.text = "CONNECTING..."
+	refresh_button.disabled = true
+	NetworkManager.join_lobby(player_name, ip_to_join)
