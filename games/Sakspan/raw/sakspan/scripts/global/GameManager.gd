@@ -1,3 +1,5 @@
+#res://scripts/GameManager.gd
+
 extends Node
 
 # Game State

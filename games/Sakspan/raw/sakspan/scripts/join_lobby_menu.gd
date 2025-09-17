@@ -1,3 +1,4 @@
+#res://scenes/UI/join_Lobby/join_lobby_menu.tscn
 # join_lobby_menu.gd
 extends Control
 

@@ -1,4 +1,5 @@
-# rock_projectile.gd (Corrected Version)
+# res://scenes/RockProjectile.tscn
+# res://scripts/rock_projectile.gd 
 
 extends Area2D
 
