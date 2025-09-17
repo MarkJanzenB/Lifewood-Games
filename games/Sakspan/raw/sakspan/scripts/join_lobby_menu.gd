@@ -103,9 +103,19 @@ func _on_join_selected_button_pressed():
 
 func _on_join_with_code_button_pressed():
 	var code = room_code_line_edit.text.strip_edges().to_upper()
+	# Fallback: if user typed an IPv4 address, try to join it directly
+	var raw := room_code_line_edit.text.strip_edges()
+	if raw.find('.') != -1 and _is_valid_lan_ipv4(raw):
+		print("[JoinLobby] Direct IP join fallback:", raw)
+		var player_name = NetworkManager.get_local_player_name()
+		if player_name.is_empty():
+			player_name = NetworkManager.randomize_local_player_name()
+		NetworkManager.stop_lan_discovery()
+		NetworkManager.join_lobby(player_name, raw)
+		return
+	# Otherwise expect a 6-char room code and use discovery/code-lookup
 	if code.length() != 6:
 		print("[JoinLobby] Invalid room code format.")
-		# Optionally, provide visual feedback to the user here
 		return
 	
 	print("[JoinLobby] Searching for lobby with code: ", code)
