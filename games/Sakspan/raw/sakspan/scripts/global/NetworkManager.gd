@@ -269,8 +269,10 @@ func stop_lan_discovery():
 # Return a likely LAN IPv4 for this device (avoids 127.*)
 func _get_lan_ipv4() -> String:
 	for a in IP.get_local_addresses():
+		# Only allow typical LAN ranges, skip VirtualBox/VMware/Hyper-V
 		if a.begins_with("192.168.") or a.begins_with("10."):
-			return a
+			if not a.begins_with("192.168.56."): # Exclude VirtualBox
+				return a
 		if a.begins_with("172."):
 			var parts = a.split(".")
 			if parts.size() >= 2:
