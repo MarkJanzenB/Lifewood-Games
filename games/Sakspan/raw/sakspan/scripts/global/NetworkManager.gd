@@ -14,6 +14,7 @@ var players: Dictionary = {}
 var my_lobby_data: Dictionary = {}  # Lobby metadata storage
 var is_game_started: bool = false  # Add game state tracking
 var local_player_name: String = ""  # Stored name picked on the Multiplayer menu
+const DEFAULT_MATCHMAKER_URL := "http://127.0.0.1:7070" # Change via settings if hosted elsewhere
 
 const DEFAULT_PORT = 8080 # Updated to more open port
 const DISCOVERY_PORT := 9001
@@ -26,6 +27,10 @@ var _discovery_poll_timer: Timer
 var _broadcast_timer: Timer
 var _listening: bool = false
 var _discovered_lobbies: Dictionary = {}
+var _mm_url: String = DEFAULT_MATCHMAKER_URL
+var _mm_http: HTTPRequest
+var _mm_pending: String = ""
+var _mm_heartbeat: Timer
 
 
 func _ready() -> void:
@@ -60,6 +65,19 @@ func _ready() -> void:
 	add_child(_broadcast_timer)
 	_broadcast_timer.timeout.connect(_broadcast_lobby)
 
+	# Matchmaker HTTP client + heartbeat timer
+	_mm_http = HTTPRequest.new()
+	add_child(_mm_http)
+	_mm_http.request_completed.connect(_on_http_request_completed)
+	_mm_heartbeat = Timer.new()
+	_mm_heartbeat.one_shot = false
+	_mm_heartbeat.wait_time = 10.0
+	add_child(_mm_heartbeat)
+	_mm_heartbeat.timeout.connect(_mm_register_now)
+
+	# Load matchmaker URL from config if present
+	_mm_load_url_from_config()
+
 func create_lobby(player_name: String, _lobby_name: String, max_players: int, _timer_setting: String) -> void:
 	var peer = ENetMultiplayerPeer.new()
 	var error = peer.create_server(DEFAULT_PORT, max_players - 1) # Max peers is exclusive of host
@@ -83,6 +101,9 @@ func create_lobby(player_name: String, _lobby_name: String, max_players: int, _t
 	lobby_data_changed.emit(my_lobby_data)
 	# Start broadcasting this lobby so LAN clients can discover it
 	_start_host_broadcast()
+	# Register with matchmaker and begin heartbeat
+	_mm_register_now()
+	_mm_heartbeat.start()
 	connection_succeeded.emit()
 
 func join_lobby(player_name: String, ip: String) -> void:
@@ -165,6 +186,7 @@ func start_listening_for_lobbies() -> void:
 	_listening = true
 	_discovery_poll_timer.start()
 	_discovered_lobbies.clear()
+	_mm_heartbeat.stop()
 
 # --- UI helper methods to avoid missing symbol errors ---
 func request_lobby_resync() -> void:
@@ -324,7 +346,9 @@ func find_lobby_by_code(code: String) -> void:
 		if String(data.get("room_code", "")).to_upper() == upper:
 			lobby_found.emit(data)
 			return
-	print("[Discovery] No lobby found for code:", upper)
+	# Try HTTP matchmaker lookup as a reliable fallback
+	_mm_lookup_code(upper)
+	print("[Discovery] No UDP lobby yet for code:", upper, " - querying matchmaker...")
 
 # --- Room Code Generation ---
 func _generate_room_code(len: int = 6) -> String:
@@ -409,3 +433,71 @@ func _get_subnet_broadcast_ipv4() -> String:
 		parts[3] = "255"
 		return ".".join(parts)
 	return ""
+
+# --- Matchmaker helpers ---
+func _mm_load_url_from_config() -> void:
+	var cfg := ConfigFile.new()
+	var err := cfg.load("user://settings.cfg")
+	if err == OK:
+		_mm_url = String(cfg.get_value("network", "matchmaker_url", DEFAULT_MATCHMAKER_URL))
+	else:
+		_mm_url = DEFAULT_MATCHMAKER_URL
+
+func set_matchmaker_url(url: String) -> void:
+	_mm_url = url
+	var cfg := ConfigFile.new()
+	var err := cfg.load("user://settings.cfg")
+	cfg.set_value("network", "matchmaker_url", _mm_url)
+	cfg.save("user://settings.cfg")
+
+func _mm_register_now() -> void:
+	if my_lobby_data.is_empty():
+		return
+	var body := {
+		"code": String(my_lobby_data.get("room_code", "")),
+		"ip": _get_lan_ipv4(),
+		"port": DEFAULT_PORT,
+		"name": String(my_lobby_data.get("name", ""))
+	}
+	var headers := ["Content-Type: application/json"]
+	_mm_pending = "register"
+	var url := _mm_url.rstrip("/") + "/register"
+	_mm_http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
+
+func _mm_lookup_code(code: String) -> void:
+	_mm_pending = "lookup:" + code
+	var url := _mm_url.rstrip("/") + "/lookup?code=" + code
+	_mm_http.request(url, [], HTTPClient.METHOD_GET)
+
+func _on_http_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	var txt := body.get_string_from_utf8()
+	var data = JSON.parse_string(txt)
+	if typeof(data) != TYPE_DICTIONARY:
+		print("[Matchmaker] Bad JSON response:", txt)
+		return
+	if _mm_pending.begins_with("lookup:"):
+		var ok := bool(data.get("ok", false))
+		if ok and response_code == 200:
+			var ip := String(data.get("ip", ""))
+			var name := String(data.get("name", "Lobby"))
+			var code := String(data.get("code", ""))
+			var info := {
+				"name": name,
+				"room_code": code,
+				"current_players": 0,
+				"max_players": 0,
+				"timer": "",
+				"host_ip": ip,
+				"port": DEFAULT_PORT,
+				"status": "waiting"
+			}
+			_discovered_lobbies[ip] = info
+			lobby_found.emit(info)
+		else:
+			print("[Matchmaker] Lookup failed:", data)
+	elif _mm_pending == "register":
+		if response_code == 200 and bool(data.get("ok", false)):
+			# ok
+			pass
+		else:
+			print("[Matchmaker] Register failed:", data)
