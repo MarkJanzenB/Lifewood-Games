@@ -25,6 +25,8 @@ var _udp_recv: PacketPeerUDP
 var _is_listening: bool = false
 var _is_broadcasting: bool = false
 var _last_join_ip: String = ""
+var _broadcast_timer: Timer = Timer.new()
+var _udp_send: PacketPeerUDP
 
 func _ready():
 	print("[NetworkManager] 🚀 NetworkManager initializing...")
