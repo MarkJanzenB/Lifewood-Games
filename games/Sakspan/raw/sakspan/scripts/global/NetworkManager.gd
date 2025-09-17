@@ -79,15 +79,23 @@ func _process(_delta):
 
 				# --- CLIENT: Handle a direct response from a host ---
 				if multiplayer.has_multiplayer_peer() and not multiplayer.is_server() and parsed.get("request_type") == "lobby_response":
-					parsed["ip"] = sender_ip
-					print("[NetworkManager] Received direct lobby response from ", sender_ip)
+					# Always use the host_ip provided by the host, not sender_ip
+					if parsed.has("host_ip"):
+						parsed["ip"] = parsed["host_ip"]
+					else:
+						parsed["ip"] = sender_ip
+					print("[NetworkManager] Received direct lobby response from ", parsed["ip"])
 					emit_signal("lobby_found", parsed)
 					continue
 
 				# --- CLIENT: Handle a general broadcast from a host ---
 				if (not multiplayer.has_multiplayer_peer() or not multiplayer.is_server()) and parsed.has("room_code"):
-					parsed["ip"] = sender_ip
-					print("[NetworkManager] Received lobby broadcast from ", sender_ip, ": ", parsed)
+					# Always use the host_ip provided by the host, not sender_ip
+					if parsed.has("host_ip"):
+						parsed["ip"] = parsed["host_ip"]
+					else:
+						parsed["ip"] = sender_ip
+					print("[NetworkManager] Received lobby broadcast from ", parsed["ip"], ": ", parsed)
 					emit_signal("lobby_found", parsed)
 
 func create_lobby(player_name: String, lobby_name: String, max_players: int, timer_setting: String):
