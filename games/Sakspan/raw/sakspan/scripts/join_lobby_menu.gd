@@ -68,13 +68,28 @@ func _on_join_selected_button_pressed():
 	var room_name = selected_item.get_text(0)
 	var room_code = selected_item.get_text(1)
 	var player_name = "Player" + str(randi_range(1000, 9999)) # Generate random name
-	
+
+	# Prefer the host_ip from the selected lobby info if present
+	if _selected_lobby_info.has("host_ip"):
+		ip_to_join = String(_selected_lobby_info["host_ip"])
+	# Sanitize and validate IP
+	if typeof(ip_to_join) != TYPE_STRING:
+		ip_to_join = String(ip_to_join)
+	ip_to_join = ip_to_join.strip_edges()
+	if not _is_valid_lan_ipv4(ip_to_join):
+		print("[JoinLobby] Refusing to join non-LAN or invalid IP:", ip_to_join)
+		return
+
+	# Stop discovery and clear any existing peers for a clean connect
+	NetworkManager.stop_lan_discovery()
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer = null
+
 	print("[JoinLobby] Joining room '%s' (Code: %s) at %s" % [room_name, room_code, ip_to_join])
 	NetworkManager.join_lobby(player_name, ip_to_join)
 	join_selected_button.disabled = true
 	join_selected_button.text = "CONNECTING..."
 	refresh_button.disabled = true
-
 
 func _on_join_with_code_button_pressed():
 	var code = room_code_line_edit.text.strip_edges().to_upper()
@@ -100,7 +115,12 @@ func _on_lobby_list_item_selected():
 
 func _on_lobby_found(info: Dictionary):
 	# When NetworkManager finds a lobby, add or update it in our dictionary
-	var ip = String(info.get("ip", ""))
+	# Prefer the host's provided IP if available
+	var ip := String(info.get("host_ip", info.get("ip", "")))
+	if not _is_valid_lan_ipv4(ip):
+		print("[JoinLobby] Ignoring non-LAN or invalid IP:", ip)
+		return
+	info["ip"] = ip
 	info["timestamp"] = Time.get_ticks_msec() # Mark when we last heard from it
 	_found_lobbies[ip] = info
 	_update_lobby_list_ui()
@@ -161,3 +181,25 @@ func _configure_lobby_list_columns():
 	lobby_list.set_column_title(3, "Timer")
 	lobby_list.set_column_title(4, "Status")
 	lobby_list.hide_root = true
+
+# --- IP Utilities ---
+func _is_valid_lan_ipv4(addr: String) -> bool:
+	if addr.is_empty():
+		return false
+	if not addr.is_valid_ip_address():
+		return false
+	# Exclude loopback, APIPA, invalid and common virtual adapter ranges
+	if addr.begins_with("127.") or addr == "0.0.0.0" or addr.begins_with("169.254."):
+		return false
+	if addr.begins_with("192.168.56."):
+		return false
+	# Accept typical LAN ranges
+	if addr.begins_with("192.168.") or addr.begins_with("10."):
+		return true
+	if addr.begins_with("172."):
+		var parts := addr.split(".")
+		if parts.size() >= 2:
+			var second := int(parts[1])
+			if second >= 16 and second <= 31:
+				return true
+	return false
