@@ -39,12 +39,15 @@ func _debug_print(msg: String):
 	if debug_label:
 		debug_label.text += "\n" + msg
 
+
 func _ready():
 	_debug_print("[NetworkManager] 🚀 NetworkManager initializing...")
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
+	if not multiplayer.server_disconnected.is_connected(_on_server_disconnected):
+		multiplayer.server_disconnected.connect(_on_server_disconnected)
 	_broadcast_timer.wait_time = BROADCAST_INTERVAL
 	_broadcast_timer.timeout.connect(_send_broadcast)
 	add_child(_broadcast_timer)
@@ -78,24 +81,27 @@ func _process(_delta):
 					continue
 
 				# --- CLIENT: Handle a direct response from a host ---
-				if multiplayer.has_multiplayer_peer() and not multiplayer.is_server() and parsed.get("request_type") == "lobby_response":
+				# Accept even if we don't yet have a multiplayer peer (pre-connection discovery)
+				if parsed.get("request_type") == "lobby_response" and not multiplayer.is_server():
 					# Always use the host_ip provided by the host, not sender_ip
 					if parsed.has("host_ip"):
 						parsed["ip"] = parsed["host_ip"]
 					else:
 						parsed["ip"] = sender_ip
-					print("[NetworkManager] Received direct lobby response from ", parsed["ip"])
+					_debug_print("[NetworkManager] Received direct lobby response from %s" % parsed["ip"])
 					emit_signal("lobby_found", parsed)
 					continue
 
 				# --- CLIENT: Handle a general broadcast from a host ---
-				if (not multiplayer.has_multiplayer_peer() or not multiplayer.is_server()) and parsed.has("room_code"):
+				if (not multiplayer.has_multiplayer_peer() or not multiplayer.is_server()) \
+						and parsed.has("room_code") \
+						and String(parsed.get("request_type", "")) != "find_lobby":
 					# Always use the host_ip provided by the host, not sender_ip
 					if parsed.has("host_ip"):
 						parsed["ip"] = parsed["host_ip"]
 					else:
 						parsed["ip"] = sender_ip
-					print("[NetworkManager] Received lobby broadcast from ", parsed["ip"], ": ", parsed)
+					_debug_print("[NetworkManager] Received lobby broadcast from %s: %s" % [parsed["ip"], str(parsed)])
 					emit_signal("lobby_found", parsed)
 
 func create_lobby(player_name: String, lobby_name: String, max_players: int, timer_setting: String):
@@ -153,8 +159,9 @@ func join_lobby(player_name: String, ip: String):
 	
 	_debug_print("[NetworkManager] 🔌 CLIENT: Creating ENet client peer...")
 	var peer = ENetMultiplayerPeer.new()
-	if peer.create_client(ip, DEFAULT_PORT) != OK:
-		_debug_print("[NetworkManager] ❌ CLIENT: FAILED to create ENet client!")
+	var result := peer.create_client(ip, DEFAULT_PORT)
+	if result != OK:
+		_debug_print("[NetworkManager] ❌ CLIENT: FAILED to create ENet client! Code: %d" % result)
 		emit_signal("connection_failed")
 		return
 	
@@ -170,6 +177,9 @@ func join_lobby(player_name: String, ip: String):
 	_debug_print("[NetworkManager] 📡 CLIENT: Waiting for low-level connection to establish...")
 	
 	# Connection callbacks are already set up in _ready()
+
+func _on_server_disconnected():
+	_debug_print("Disconnected from server!")
 
 func leave_lobby():
 	players.clear()
