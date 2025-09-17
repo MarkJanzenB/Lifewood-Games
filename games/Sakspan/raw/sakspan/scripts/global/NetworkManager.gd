@@ -72,11 +72,12 @@ func create_lobby(player_name: String, _lobby_name: String, max_players: int, _t
 	# Host is always ID 1
 	_add_player_data(1, player_name)
 	# Save lobby metadata and broadcast to UI
+	var code := _generate_room_code()
 	my_lobby_data = {
 		"name": _lobby_name,
 		"max_players": max_players,
 		"timer_setting": _timer_setting,
-		"room_code": "",
+		"room_code": code,
 		"is_host": true
 	}
 	lobby_data_changed.emit(my_lobby_data)
@@ -300,6 +301,12 @@ func _broadcast_lobby() -> void:
 		"status": ("full" if players.size() >= int(my_lobby_data.get("max_players", 5)) else "waiting")
 	}
 	var bytes := JSON.stringify(info).to_utf8_buffer()
+	# Try limited broadcast first (e.g., 192.168.X.255), then global 255.255.255.255
+	var subnet_broadcast := _get_subnet_broadcast_ipv4()
+	if subnet_broadcast != "":
+		_udp_broadcaster.set_dest_address(subnet_broadcast, DISCOVERY_PORT)
+		_udp_broadcaster.put_packet(bytes)
+	# Also send to 255.255.255.255 as a fallback
 	_udp_broadcaster.set_dest_address("255.255.255.255", DISCOVERY_PORT)
 	_udp_broadcaster.put_packet(bytes)
 
@@ -318,6 +325,14 @@ func find_lobby_by_code(code: String) -> void:
 			lobby_found.emit(data)
 			return
 	print("[Discovery] No lobby found for code:", upper)
+
+# --- Room Code Generation ---
+func _generate_room_code(len: int = 6) -> String:
+	var chars := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" # Avoid ambiguous O/0, I/1
+	var code := ""
+	for i in len:
+		code += chars[int(randi() % chars.length())]
+	return code
 
 # --- RPCs (Remote Procedure Calls) ---
 
@@ -383,4 +398,14 @@ func _get_lan_ipv4() -> String:
 				var s := int(parts[1])
 				if s >= 16 and s <= 31:
 					return a
+	return ""
+
+func _get_subnet_broadcast_ipv4() -> String:
+	var ip := _get_lan_ipv4()
+	if ip == "":
+		return ""
+	var parts := ip.split(".")
+	if parts.size() == 4:
+		parts[3] = "255"
+		return ".".join(parts)
 	return ""
