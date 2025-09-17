@@ -52,10 +52,14 @@ func _ready():
 	if not is_multiplayer_authority():
 		set_physics_process(false)
 		set_process_unhandled_input(false)
-		camera.enabled = false
-		vision_light.visible = false
-		vision_cone.monitoring = false
-		melee_range.monitoring = false
+		if is_instance_valid(camera):
+			camera.enabled = false
+		if is_instance_valid(vision_light):
+			vision_light.visible = false
+		if is_instance_valid(vision_cone):
+			vision_cone.monitoring = false
+		if is_instance_valid(melee_range):
+			melee_range.monitoring = false
 	
 	# Setup MultiplayerSynchronizer
 	sync.replication_config = null  # Will be set in editor
@@ -67,10 +71,12 @@ func assign_role(new_role: PlayerRole):
 	if self.role == PlayerRole.SEEKER:
 		add_to_group("seeker")
 		if is_in_group("hider"): remove_from_group("hider")
-		melee_range.monitoring = false
+		if is_instance_valid(melee_range):
+			melee_range.monitoring = false
 	else:
 		add_to_group("hider")
-		vision_light.energy = 0.5
+		if is_instance_valid(vision_light):
+			vision_light.energy = 0.5
 	print(player_name, " has been assigned the role of: ", PlayerRole.keys()[role])
 
 func _physics_process(delta: float):
@@ -113,8 +119,10 @@ func eliminate(attacker: PlayerCharacter):
 		gm.player_eliminated.emit(self, attacker)
 	animated_sprite.play("death")
 	collision_shape.disabled = true
-	melee_range.monitoring = false
-	vision_cone.monitoring = false
+	if is_instance_valid(melee_range):
+		melee_range.monitoring = false
+	if is_instance_valid(vision_cone):
+		vision_cone.monitoring = false
 
 func become_ghost():
 	print(player_name, " has become a ghost!")
@@ -123,7 +131,8 @@ func become_ghost():
 	if gm and gm.has_method("check_win_conditions"):
 		gm.check_win_conditions()
 	animated_sprite.modulate = Color(0.5, 0.7, 1, 0.5)
-	vision_light.color = Color.CYAN
+	if is_instance_valid(vision_light):
+		vision_light.color = Color.CYAN
 	set_collision_layer_value(1, false)
 	set_collision_layer_value(3, true)
 	set_collision_mask_value(1, false)
@@ -132,7 +141,8 @@ func become_ghost():
 	animated_sprite.set_visibility_layer_bit(1, false)
 	animated_sprite.set_visibility_layer_bit(2, true)
 	if is_main_player:
-		camera.set_cull_mask_bit(2, true)
+		if is_instance_valid(camera):
+			camera.set_cull_mask_bit(2, true)
 
 func fire_projectile():
 	if is_in_action: return
@@ -147,6 +157,8 @@ func fire_projectile():
 
 func perform_sak_attack():
 	if is_in_action: return
+	if not is_instance_valid(melee_range):
+		return
 	var nearby_players = melee_range.get_overlapping_bodies()
 	for target in nearby_players:
 		if target != self and (target as PlayerCharacter).current_state == PlayerState.ALIVE:
@@ -167,7 +179,8 @@ func handle_movement() -> void:
 
 func handle_visuals() -> void:
 	var mouse_position = get_global_mouse_position()
-	vision_cone.look_at(mouse_position)
+	if is_instance_valid(vision_cone):
+		vision_cone.look_at(mouse_position)
 	animated_sprite.flip_h = (mouse_position.x < global_position.x)
 	if is_in_action: return
 	var is_aiming_up = (mouse_position.y < global_position.y)
@@ -182,6 +195,8 @@ func handle_visuals() -> void:
 		else: animated_sprite.play("idle")
 
 func update_all_players_in_cone() -> void:
+	if not is_instance_valid(vision_cone):
+		return
 	var overlapping_bodies = vision_cone.get_overlapping_bodies()
 	hiders_in_cone.clear()
 	for body in overlapping_bodies:

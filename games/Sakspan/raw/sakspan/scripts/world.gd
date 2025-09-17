@@ -14,10 +14,6 @@ var spawn_points := [Vector2(39, -323), Vector2(-103, -335), Vector2(200, 100), 
 var _is_loading := true
 
 func _ready():
-	# The server is responsible for spawning players.
-	if multiplayer.is_server():
-		_spawn_players()
-	
 	# Set up loading screen
 	if loading_screen:
 		loading_screen.visible = true
@@ -32,18 +28,21 @@ func _ready():
 		queue_free()
 		return
 	
-	# Start loading sequence
-	_load_world_async()
-
 	# Configure MultiplayerSpawner for proper replication (so clients get spawned automatically)
 	if player_spawner and player_spawner is MultiplayerSpawner:
-		# Ensure the correct player scene is spawnable
-		if "spawnable_scenes" in player_spawner:
-			player_spawner.spawnable_scenes = PackedStringArray(["res://scenes/player.tscn"]) 
 		# Provide a spawn function used by all peers to instantiate the node
 		player_spawner.spawn_function = Callable(self, "_spawn_player_node")
 
+	# Start loading sequence (after spawner is configured)
+	_load_world_async()
+
 func _spawn_players():
+	# Safety: server-only and ensure spawn_function is valid
+	if not multiplayer.is_server():
+		return
+	if player_spawner and player_spawner is MultiplayerSpawner:
+		if typeof(player_spawner.spawn_function) != TYPE_CALLABLE or not player_spawner.spawn_function.is_valid():
+			player_spawner.spawn_function = Callable(self, "_spawn_player_node")
 	_spawn_all_players()
 
 func _setup_player(node, id):
@@ -139,6 +138,9 @@ func _on_world_loaded() -> void:
 	world_loaded.emit()
 
 func _spawn_all_players() -> void:
+	# Safety: server-only
+	if not multiplayer.is_server():
+		return
 	if not is_inside_tree() or not is_instance_valid(self):
 		print("[World] Cannot spawn players - world not ready")
 		return
@@ -170,8 +172,8 @@ func _spawn_all_players() -> void:
 			"char_index": int(pdata.get("char_index", -1)),
 			"spawn_index": i
 		}
-		if player_spawner and player_spawner is MultiplayerSpawner:
-			player_spawner.spawn(spawn_data, id)
+		if player_spawner and player_spawner is MultiplayerSpawner and typeof(player_spawner.spawn_function) == TYPE_CALLABLE and player_spawner.spawn_function.is_valid():
+			player_spawner.spawn(spawn_data)
 		else:
 			# Fallback: local-only spawn (dev mode)
 			var new_player = _spawn_player_node(spawn_data)
@@ -255,10 +257,10 @@ func _spawn_player_node(data: Dictionary) -> Node:
 	if sync:
 		var rc := SceneReplicationConfig.new()
 		# Replicate common properties
-		rc.add_property(":global_position")
+		rc.add_property(":position")
 		# Add other properties here as needed, e.g., state variables on the script
 		sync.replication_config = rc
-		sync.visibility_public = true
+		sync.public_visibility = true
 		sync.visibility_update_mode = MultiplayerSynchronizer.VISIBILITY_PROCESS_PHYSICS
 	# Camera for local player
 	if id == multiplayer.get_unique_id() and p.has_node("Camera2D"):
