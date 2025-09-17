@@ -27,13 +27,17 @@ var _is_broadcasting = false
 var _is_listening = false
 
 func _ready():
+	print("[NetworkManager] 🚀 NetworkManager initializing...")
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	multiplayer.connected_to_server.connect(_on_connected_to_server)
+	multiplayer.connection_failed.connect(_on_connection_failed)
 	_broadcast_timer.wait_time = BROADCAST_INTERVAL
 	_broadcast_timer.timeout.connect(_send_broadcast)
 	add_child(_broadcast_timer)
 	# Ensure _process() runs so we can poll UDP packets.
 	set_process(true)
+	print("[NetworkManager] ✅ NetworkManager ready!")
 
 func _process(_delta):
 	if not _is_listening:
@@ -139,11 +143,7 @@ func join_lobby(player_name: String, ip: String):
 	print("[NetworkManager] 🚀 CLIENT: ENet peer created successfully, attempting connection...")
 	print("[NetworkManager] 📡 CLIENT: Waiting for low-level connection to establish...")
 	
-	# Defer success until the low-level connection succeeds
-	if not multiplayer.connected_to_server.is_connected(_on_connected_to_server):
-		multiplayer.connected_to_server.connect(_on_connected_to_server)
-	if not multiplayer.connection_failed.is_connected(_on_connection_failed):
-		multiplayer.connection_failed.connect(_on_connection_failed)
+	# Connection callbacks are already set up in _ready()
 
 func leave_lobby():
 	players.clear()
@@ -168,12 +168,22 @@ func start_broadcasting():
 	_send_broadcast() # Send one immediately
 
 func _on_peer_connected(id):
-	print("[NetworkManager] PEER CONNECTED - ID: ", id, " | Total peers: ", multiplayer.get_peers().size() + 1)
-	print("[NetworkManager] Connection details - Is server: ", multiplayer.is_server(), " | My ID: ", multiplayer.get_unique_id())
+	print("[NetworkManager] ✅ PEER CONNECTED - ID: ", id, " | Total peers: ", multiplayer.get_peers().size() + 1)
+	print("[NetworkManager] 📊 Connection details - Is server: ", multiplayer.is_server(), " | My ID: ", multiplayer.get_unique_id())
+	
+	if multiplayer.is_server():
+		print("[NetworkManager] 🏠 HOST: New client connected, requesting player info...")
+		rpc_id(id, "_rpc_request_info")
 
 func _on_peer_disconnected(id):
 	print("[NetworkManager] ❌ PEER DISCONNECTED - ID: ", id, " | Remaining peers: ", multiplayer.get_peers().size())
 	print("[NetworkManager] 📊 Disconnection details - Is server: ", multiplayer.is_server(), " | My ID: ", multiplayer.get_unique_id())
+	
+	if multiplayer.is_server():
+		print("[NetworkManager] 🏠 HOST: Client disconnected, updating player list...")
+		players.erase(id)
+		rpc("_rpc_sync_player_data", players)
+		emit_signal("player_list_changed", players)
 
 func _on_connected_to_server():
 	print("[NetworkManager] ✅ CLIENT: Successfully connected to server!")
@@ -391,34 +401,31 @@ func _send_broadcast():
 	else:
 		print("[NetworkManager] Broadcasting room '%s' (Code: %s)" % [data.get("name", "Unknown"), data.get("room_code", "N/A")])
 
-#func _on_peer_connected(id: int):
-	#if multiplayer.is_server():
-		#rpc_id(id, "_rpc_request_info")
-#
-#func _on_peer_disconnected(id: int):
-	#if multiplayer.is_server():
-		#players.erase(id)
-		#rpc("_rpc_sync_player_data", players)
-		## Also update locally for host UI
-		#emit_signal("player_list_changed", players)
 
 @rpc("any_peer")
 func _rpc_request_info():
-	if not multiplayer.is_server(): rpc_id(1, "_rpc_register_player", my_name)
+	print("[NetworkManager] 📞 CLIENT: Received info request from server")
+	if not multiplayer.is_server(): 
+		print("[NetworkManager] 📝 CLIENT: Sending registration to server with name: '%s'" % my_name)
+		rpc_id(1, "_rpc_register_player", my_name)
 
 @rpc("any_peer", "call_local")
 func _rpc_register_player(player_name: String):
 	if multiplayer.is_server():
 		var peer_id = multiplayer.get_remote_sender_id()
+		print("[NetworkManager] 🏠 HOST: Registering new player - ID: %d, Name: '%s'" % [peer_id, player_name])
 		players[peer_id] = {"name": player_name, "is_host": false, "ready": false, "char_index": -1}
-		# Send full lobby metadata and then current players
+		print("[NetworkManager] 🏠 HOST: Sending lobby data to new player...")
 		rpc_id(peer_id, "_rpc_sync_lobby_data", my_lobby_data)
+		print("[NetworkManager] 🏠 HOST: Broadcasting updated player list to all clients...")
 		rpc("_rpc_sync_player_data", players)
 		# Also update locally for host UI
 		emit_signal("player_list_changed", players)
+		print("[NetworkManager] 🏠 HOST: Player registration complete. Total players: %d" % players.size())
 
 @rpc("authority", "call_local", "reliable")
 func _rpc_sync_player_data(new_player_data: Dictionary):
+	print("[NetworkManager] 📋 Received player data sync - Players: %d" % new_player_data.size())
 	players = new_player_data
 	emit_signal("player_list_changed", players)
 
