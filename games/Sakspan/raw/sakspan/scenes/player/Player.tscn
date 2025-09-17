@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3 uid="uid://b5w5d5f5g5h5"]
+
+[ext_resource type="Script" path="res://scenes/player/Player.gd" id="1_abcde"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_12345"]
+radius = 25.0
+height = 70.0
+
+[node name="Player" type="CharacterBody2D"]
+script = ExtResource("1_abcde")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CapsuleShape2D_12345")
+
+[node name="NameLabel" type="Label" parent="."]
+text = "Player"
+
+[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = {
+"properties": [
+	{"path": ":position", "spawn": true, "sync": true, "watch": false}
+]
+}

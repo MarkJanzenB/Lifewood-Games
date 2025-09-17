@@ -398,6 +398,7 @@ func request_unlock():
 
 @rpc("reliable", "call_local")
 func _rpc_start_game(start_players: Dictionary, start_lobby_data: Dictionary):
+
 	players = start_players
 	my_lobby_data = start_lobby_data
 	emit_signal("player_list_changed", players)
@@ -497,6 +498,21 @@ func _rpc_request_char_selection(peer_id: int, char_index: int):
 		rpc("_rpc_sync_player_data", players)
 		# Update host UI too
 		emit_signal("player_list_changed", players)
+
+@rpc("any_peer", "call_local")
+func _spawn_players():
+	if not multiplayer.is_server():
+		return
+
+	var player_spawner = get_tree().get_root().find_child("PlayerSpawner", true, false)
+	if not player_spawner:
+		print("[NetworkManager] PlayerSpawner not found in the scene tree!")
+		return
+
+	for id in players.keys():
+		var player_node = player_spawner.spawn(id)
+		print(f"[NetworkManager] Spawned player for peer {id}")
+
 
 @rpc("any_peer", "call_local")
 func _rpc_request_unlock(peer_id: int):

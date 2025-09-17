@@ -4,7 +4,7 @@ extends Node2D
 
 signal world_loaded()
 
-@onready var player_spawner := $PlayerSpawner
+@onready var player_spawner = $PlayerSpawner
 @onready var loading_screen := $LoadingScreen
 
 # Predefined spawn points for up to 5 players
@@ -12,6 +12,10 @@ var spawn_points := [Vector2(39, -323), Vector2(-103, -335), Vector2(200, 100), 
 var _is_loading := true
 
 func _ready():
+	# The server is responsible for spawning players.
+	if multiplayer.is_server():
+		_spawn_players()
+	
 	# Set up loading screen
 	if loading_screen:
 		loading_screen.visible = true
@@ -22,6 +26,16 @@ func _ready():
 	
 	# Validate NetworkManager
 	if not Engine.has_singleton("NetworkManager"):
+
+func _spawn_players():
+	var players = NetworkManager.players
+	for id in players.keys():
+		player_spawner.spawn(Callable(self, "_setup_player").bind(id))
+
+func _setup_player(node, id):
+	var player_info = NetworkManager.players[id]
+	node.set_player_name(player_info["name"])
+
 		push_error("NetworkManager not found!")
 		return
 	
