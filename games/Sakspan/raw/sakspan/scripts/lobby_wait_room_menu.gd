@@ -54,24 +54,29 @@ func _ready():
 	
 	var network_manager = get_node_or_null("/root/NetworkManager")
 	if network_manager:
-		# Access autoloaded NetworkManager directly
-		_lobby_data = NetworkManager.my_lobby_data if NetworkManager.my_lobby_data != null else {}
-		_players_in_lobby = NetworkManager.players if NetworkManager.players != null else {}
-		NetworkManager.player_list_changed.connect(_on_player_list_changed)
-		NetworkManager.game_started.connect(_on_game_started)
+		# Access via the node instance to avoid symbol conflicts
+		_lobby_data = network_manager.my_lobby_data if network_manager.my_lobby_data != null else {}
+		_players_in_lobby = network_manager.players if network_manager.players != null else {}
+		if not network_manager.player_list_changed.is_connected(_on_player_list_changed):
+			network_manager.player_list_changed.connect(_on_player_list_changed)
+		if not network_manager.game_started.is_connected(_on_game_started):
+			network_manager.game_started.connect(_on_game_started)
 		# Update header when lobby data is synced from host
-		NetworkManager.lobby_data_changed.connect(func(data: Dictionary):
-			lobby_data = data
-			if lobby_name_label:
-				var nm := String(lobby_data.get("name", ""))
-				if nm.is_empty():
-					lobby_name_label.text = _compose_lobby_title("Loading...")
-				else:
-					lobby_name_label.text = _compose_lobby_title(nm)
-		)
+		if not network_manager.lobby_data_changed.is_connected(func(_d: Dictionary): pass):
+			network_manager.lobby_data_changed.connect(func(data: Dictionary):
+				lobby_data = data
+				if lobby_name_label:
+					var nm := String(lobby_data.get("name", ""))
+					if nm.is_empty():
+						lobby_name_label.text = _compose_lobby_title("Loading...")
+					else:
+						lobby_name_label.text = _compose_lobby_title(nm)
+			)
 		# Proactively request resyncs on entering the Wait Room
-		NetworkManager.request_lobby_resync()
-		NetworkManager.request_players_resync()
+		if network_manager.has_method("request_lobby_resync"):
+			network_manager.request_lobby_resync()
+		if network_manager.has_method("request_players_resync"):
+			network_manager.request_players_resync()
 	if start_game_button:
 		start_game_button.pressed.connect(_on_start_game_button_pressed)
 	if lock_in_button:
@@ -80,7 +85,7 @@ func _ready():
 		leave_lobby_button.pressed.connect(_on_leave_lobby_button_pressed)
 
 	# Initialize from NetworkManager by default; may be overridden via _initialize_lobby
-	lobby_data = NetworkManager.my_lobby_data
+	lobby_data = (get_node_or_null("/root/NetworkManager") as Node).my_lobby_data if get_node_or_null("/root/NetworkManager") else {}
 	is_host = multiplayer.is_server()
 	if lobby_name_label:
 		var nm := String(lobby_data.get("name", ""))

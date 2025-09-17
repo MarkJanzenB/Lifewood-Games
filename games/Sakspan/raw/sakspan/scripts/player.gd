@@ -44,7 +44,9 @@ var run_speed: float = 350.0
 
 func _ready():
 	await get_tree().process_frame
-	GameManager.game_state_changed.connect(_on_game_state_changed)
+	var gm = get_node_or_null("/root/GameManager")
+	if gm:
+		gm.game_state_changed.connect(_on_game_state_changed)
 	
 	# Only the authority processes input and physics for this player
 	if not is_multiplayer_authority():
@@ -106,7 +108,9 @@ func set_ammo(new_ammo_count: int) -> void: ammo = new_ammo_count
 func eliminate(attacker: PlayerCharacter):
 	if is_dying or current_state == PlayerState.GHOST: return
 	is_dying = true
-	GameManager.player_eliminated.emit(self, attacker)
+	var gm = get_node_or_null("/root/GameManager")
+	if gm:
+		gm.player_eliminated.emit(self, attacker)
 	animated_sprite.play("death")
 	collision_shape.disabled = true
 	melee_range.monitoring = false
@@ -115,7 +119,9 @@ func eliminate(attacker: PlayerCharacter):
 func become_ghost():
 	print(player_name, " has become a ghost!")
 	current_state = PlayerState.GHOST
-	GameManager.check_win_conditions()
+	var gm = get_node_or_null("/root/GameManager")
+	if gm and gm.has_method("check_win_conditions"):
+		gm.check_win_conditions()
 	animated_sprite.modulate = Color(0.5, 0.7, 1, 0.5)
 	vision_light.color = Color.CYAN
 	set_collision_layer_value(1, false)
@@ -135,7 +141,9 @@ func fire_projectile():
 	ammo -= 1
 	print("Fired! Ammo remaining: ", ammo)
 	if ammo == 0:
-		GameManager.start_ammo_cooldown()
+		var gm = get_node_or_null("/root/GameManager")
+		if gm and gm.has_method("start_ammo_cooldown"):
+			gm.start_ammo_cooldown()
 
 func perform_sak_attack():
 	if is_in_action: return

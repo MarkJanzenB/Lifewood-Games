@@ -37,8 +37,10 @@ func _populate_options():
 	game_timer_option.select(1) # Index 1 corresponds to "5 minutes"
 
 func _on_create_button_pressed():
-	# Get player name from a global setting or another input field
-	var player_name = "Host" + str(randi_range(1000, 9999))
+	# Get player name from NetworkManager (persisted from Multiplayer Menu)
+	var player_name = NetworkManager.get_local_player_name()
+	if player_name.is_empty():
+		player_name = NetworkManager.randomize_local_player_name()
 	var lobby_name = lobby_name_line_edit.text
 	if lobby_name.is_empty():
 		lobby_name = player_name + "'s Room" # Default name

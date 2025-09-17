@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3 uid="uid://b5w5d5f5g5h5"]
 
-[ext_resource type="Script" path="res://scenes/player/Player.gd" id="1_abcde"]
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_abcde"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_12345"]
 radius = 25.0
@@ -17,9 +17,12 @@ shape = SubResource("CapsuleShape2D_12345")
 [node name="NameLabel" type="Label" parent="."]
 text = "Player"
 
+[node name="VisionCone" type="Node2D" parent="."]
+
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 replication_config = {
 "properties": [
-	{"path": ":position", "spawn": true, "sync": true, "watch": false}
+	{"path": ":global_position", "spawn": true, "sync": true, "watch": false},
+	{"path": "VisionCone:global_rotation", "spawn": true, "sync": true, "watch": false}
 ]
 }

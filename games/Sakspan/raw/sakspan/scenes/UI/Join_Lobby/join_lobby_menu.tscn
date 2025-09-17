@@ -83,10 +83,7 @@ layout_mode = 2
 [node name="RefreshButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_fonts/font = ExtResource("2_rkjtl")
-theme_override_font_sizes/font_size = 30
-text = "REFRESH"
+text = "Refresh"
 
 [node name="JoinSelectedButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2

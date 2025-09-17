@@ -12,7 +12,7 @@ size = Vector2(8.5, 864)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_nnsk1"]
 size = Vector2(1552, 7.75)
 
-[node name="world" type="Node2D"]
+[node name="World" type="Node2D"]
 script = ExtResource("6_q2wld")
 
 [node name="TextureRect" type="TextureRect" parent="."]
@@ -52,9 +52,11 @@ shape = SubResource("RectangleShape2D_nnsk1")
 position = Vector2(948, 981)
 shape = SubResource("RectangleShape2D_nnsk1")
 
-[node name="PlayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("uid://b5w5d5f5g5h5")
-spawn_path = NodePath(".")
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("uid://b75j5af55anqv", "uid://cdmdl43ffakku")
+spawn_path = NodePath("./Players")
+
+[node name="Players" type="Node" parent="."]
 
 [node name="CanvasModulate" type="CanvasModulate" parent="."]
 color = Color(0.1, 0.1, 0.1, 1)

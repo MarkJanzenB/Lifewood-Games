@@ -1,519 +1,386 @@
 # res://scripts/global/NetworkManager.gd
 extends Node
 
-signal player_list_changed(players)
 signal connection_succeeded
 signal connection_failed
-signal game_started(player_data)
+signal player_list_changed(players_dict)
 signal lobby_found(lobby_info)
+signal game_started(player_data)
 signal lobby_data_changed(lobby_data)
 
-const DEFAULT_PORT = 12345 # Use a fixed port for both host and client
-# NOTE: Ensure the client uses the host's LAN IP (e.g., 192.168.0.xxx) and NOT localhost.
-const BROADCAST_PORT = 7778
-const BROADCAST_INTERVAL = 1.0
-const GAME_IDENTIFIER = "sakspan_bangSak_v1"
-const MAX_LOBBY_NAME_LENGTH = 20
-const MIN_LOBBY_NAME_LENGTH = 3
-
+# Master list of all players in the lobby/game.
+# Structure: {1: {"name": "HostName"}, 54321: {"name": "ClientName"}}
 var players: Dictionary = {}
-var my_name: String = "Player" + str(randi_range(1000, 9999))
-var my_lobby_data: Dictionary = {}
-var room_code: String = ""
-var _udp_peer: PacketPeerUDP
-var _udp_recv: PacketPeerUDP
-var _is_listening: bool = false
-var _is_broadcasting: bool = false
-var _last_join_ip: String = ""
-var _broadcast_timer: Timer = Timer.new()
-var _udp_send: PacketPeerUDP
+var my_lobby_data: Dictionary = {}  # Lobby metadata storage
+var is_game_started: bool = false  # Add game state tracking
+var local_player_name: String = ""  # Stored name picked on the Multiplayer menu
 
-# Debug label node (should be set from UI script or autoload)
-var debug_label: Label = null
+const DEFAULT_PORT = 8080 # Updated to more open port
+const DISCOVERY_PORT := 9001
+const DISCOVERY_MAGIC := "SAKSPAN_V1"
 
-func set_debug_label(label: Label):
-	debug_label = label
-
-func _debug_print(msg: String):
-	print(msg)
-	if debug_label:
-		debug_label.text += "\n" + msg
+# UDP sockets and timers for LAN discovery
+var _udp_listener: PacketPeerUDP = PacketPeerUDP.new()
+var _udp_broadcaster: PacketPeerUDP = PacketPeerUDP.new()
+var _discovery_poll_timer: Timer
+var _broadcast_timer: Timer
+var _listening: bool = false
+var _discovered_lobbies: Dictionary = {}
 
 
-func _ready():
-	_debug_print("[NetworkManager] 🚀 NetworkManager initializing...")
-	multiplayer.peer_connected.connect(_on_peer_connected)
-	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	multiplayer.connected_to_server.connect(_on_connected_to_server)
-	multiplayer.connection_failed.connect(_on_connection_failed)
-	if not multiplayer.server_disconnected.is_connected(_on_server_disconnected):
-		multiplayer.server_disconnected.connect(_on_server_disconnected)
-	_broadcast_timer.wait_time = BROADCAST_INTERVAL
-	_broadcast_timer.timeout.connect(_send_broadcast)
-	add_child(_broadcast_timer)
-	# Ensure _process() runs so we can poll UDP packets.
-	set_process(true)
-	_debug_print("[NetworkManager] ✅ NetworkManager ready!")
-
-func _process(_delta):
-	if not _is_listening:
-		return
-	# GODOT 4 UDP LISTENING METHOD
-	if _udp_recv != null and _udp_recv.is_bound() and _udp_recv.get_available_packet_count() > 0:
-		while _udp_recv.get_available_packet_count() > 0:
-			# For receiving, get_packet() returns a PackedByteArray
-			var packet_data: PackedByteArray = _udp_recv.get_packet()
-			var sender_ip: String = _udp_recv.get_packet_ip()
-			# var sender_port = _udp_peer.get_packet_port() # If needed
-
-			var json_string: String = packet_data.get_string_from_utf8()
-			var parsed_raw: Variant = JSON.parse_string(json_string)
-
-			if typeof(parsed_raw) == TYPE_DICTIONARY:
-				var parsed: Dictionary = parsed_raw
-				if parsed.get("identifier") != GAME_IDENTIFIER:
-					continue
-				# --- HOST: Handle a client's request to find a lobby by code ---
-				if multiplayer.has_multiplayer_peer() and multiplayer.is_server() and parsed.get("request_type") == "find_lobby":
-					if parsed.get("room_code") == room_code:
-						print("[NetworkManager] Received find request for my room code. Responding to ", sender_ip)
-						_send_direct_lobby_info(sender_ip)
-					continue
-
-				# --- CLIENT: Handle a direct response from a host ---
-				# Accept even if we don't yet have a multiplayer peer (pre-connection discovery)
-				if parsed.get("request_type") == "lobby_response" and not multiplayer.is_server():
-					# Always use the host_ip provided by the host, not sender_ip
-					if parsed.has("host_ip"):
-						parsed["ip"] = parsed["host_ip"]
-					else:
-						parsed["ip"] = sender_ip
-					_debug_print("[NetworkManager] Received direct lobby response from %s" % parsed["ip"])
-					emit_signal("lobby_found", parsed)
-					continue
-
-				# --- CLIENT: Handle a general broadcast from a host ---
-				if (not multiplayer.has_multiplayer_peer() or not multiplayer.is_server()) \
-						and parsed.has("room_code") \
-						and String(parsed.get("request_type", "")) != "find_lobby":
-					# Always use the host_ip provided by the host, not sender_ip
-					if parsed.has("host_ip"):
-						parsed["ip"] = parsed["host_ip"]
-					else:
-						parsed["ip"] = sender_ip
-					_debug_print("[NetworkManager] Received lobby broadcast from %s: %s" % [parsed["ip"], str(parsed)])
-					emit_signal("lobby_found", parsed)
-
-func create_lobby(player_name: String, lobby_name: String, max_players: int, timer_setting: String):
-	# Validate lobby name
-	if lobby_name.length() < MIN_LOBBY_NAME_LENGTH or lobby_name.length() > MAX_LOBBY_NAME_LENGTH:
-		_debug_print("[NetworkManager] Invalid lobby name length. Must be between %d and %d characters." % [MIN_LOBBY_NAME_LENGTH, MAX_LOBBY_NAME_LENGTH])
-		return
-	
-	# Set local player name and cap max players to 5 (min 2)
-	my_name = player_name
-	# SAFETY: Tear down any existing peer (e.g., from a previous client session)
-	if multiplayer.multiplayer_peer != null:
-		_debug_print("[NetworkManager] Clearing existing peer before creating server")
-		multiplayer.multiplayer_peer = null
-	
-	var capped_max: int = int(clamp(max_players, 2, 5))
-	# Generate a unique room code for this lobby
-	room_code = _generate_room_code()
-	
-	_debug_print("[NetworkManager] 🏠 HOST: Creating ENet server on port %d..." % DEFAULT_PORT)
-	var peer = ENetMultiplayerPeer.new()
-	var server_result = peer.create_server(DEFAULT_PORT, capped_max)
-	_debug_print("[NetworkManager] 🔍 HOST: Server creation result: %d (OK=0)" % server_result)
-	if server_result != OK:
-		_debug_print("[NetworkManager] ❌ HOST: FAILED to create server on port %d!" % DEFAULT_PORT)
-		return
-	_debug_print("[NetworkManager] ✅ HOST: ENet server created successfully on port %d" % DEFAULT_PORT)
-	multiplayer.multiplayer_peer = peer
-	players[1] = {"name": my_name, "is_host": true, "ready": false, "char_index": -1}
-	my_lobby_data = {
-		"name": lobby_name,
-		"room_code": room_code,
-		"max_players": capped_max,
-		"timer": timer_setting,
-		"status": "waiting",
-		"game_mode": "Bang-Sak"
-	}
-	# Add the host LAN IP so clients can display the correct IP rather than their own
-	my_lobby_data["host_ip"] = _get_lan_ipv4()
-	
-	_debug_print("[NetworkManager] 🏠 HOST: Created lobby '%s' with room code: %s" % [lobby_name, room_code])
-	_debug_print("[NetworkManager] 🏠 HOST: Server listening on port %d for %d max players" % [DEFAULT_PORT, capped_max])
-	_debug_print("[NetworkManager] 📡 HOST: Starting UDP broadcast on port %d..." % BROADCAST_PORT)
-	start_broadcasting()
-	# Also push lobby metadata to any already connected peers (none typically at creation)
-	rpc("_rpc_sync_lobby_data", my_lobby_data)
-	emit_signal("player_list_changed", players)
-	emit_signal("connection_succeeded")
-
-func join_lobby(player_name: String, ip: String):
-	_debug_print("[NetworkManager] 🔄 CLIENT: Starting join attempt - Player: '%s' | Target IP: %s:%d" % [player_name, ip, DEFAULT_PORT])
-	
-	my_name = player_name
-	_last_join_ip = ip  # Store IP for reference
-	
-	_debug_print("[NetworkManager] 🔌 CLIENT: Creating ENet client peer...")
-	var peer = ENetMultiplayerPeer.new()
-	var result := peer.create_client(ip, DEFAULT_PORT)
-	if result != OK:
-		_debug_print("[NetworkManager] ❌ CLIENT: FAILED to create ENet client! Code: %d" % result)
-		emit_signal("connection_failed")
-		return
-	
-	_debug_print("[NetworkManager] 🚀 CLIENT: ENet peer created successfully, attempting connection...")
-	multiplayer.multiplayer_peer = peer
-	
-	# Connect multiplayer signals if not already connected
+func _ready() -> void:
+	# Connect multiplayer signals
+	if not multiplayer.peer_connected.is_connected(_on_peer_connected):
+		multiplayer.peer_connected.connect(_on_peer_connected)
+	if not multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
+		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	if not multiplayer.connected_to_server.is_connected(_on_connected_to_server):
 		multiplayer.connected_to_server.connect(_on_connected_to_server)
 	if not multiplayer.connection_failed.is_connected(_on_connection_failed):
 		multiplayer.connection_failed.connect(_on_connection_failed)
+	if not multiplayer.server_disconnected.is_connected(_on_server_disconnected):
+		multiplayer.server_disconnected.connect(_on_server_disconnected)
+
+	# Load persisted local player name (or generate a friendly default)
+	_load_local_name_from_config()
+	if local_player_name.is_empty():
+		randomize_local_player_name()
+
 	
-	_debug_print("[NetworkManager] 📡 CLIENT: Waiting for low-level connection to establish...")
-	
-	# Connection callbacks are already set up in _ready()
+	# Timers for LAN discovery
+	_discovery_poll_timer = Timer.new()
+	_discovery_poll_timer.one_shot = false
+	_discovery_poll_timer.wait_time = 0.2
+	add_child(_discovery_poll_timer)
+	_discovery_poll_timer.timeout.connect(_poll_discovery)
 
-func _on_server_disconnected():
-	_debug_print("Disconnected from server!")
+	_broadcast_timer = Timer.new()
+	_broadcast_timer.one_shot = false
+	_broadcast_timer.wait_time = 1.0
+	add_child(_broadcast_timer)
+	_broadcast_timer.timeout.connect(_broadcast_lobby)
 
-func leave_lobby():
-	players.clear()
-	my_lobby_data.clear()
-	multiplayer.multiplayer_peer = null
-	stop_lan_discovery()
-	var game_manager = get_node_or_null("/root/GameManager")
-	if game_manager and game_manager.has_method("reset_to_lobby"):
-		game_manager.reset_to_lobby()
-
-func start_broadcasting():
-	if _is_broadcasting: return
-	_udp_send = PacketPeerUDP.new()
-	# Bind the sending socket to an ephemeral port (port 0)
-	if _udp_send.bind(0) != OK:
-		push_warning("[NetworkManager] UDP broadcast sender failed to bind.")
-		_udp_send = null # Clear the invalid peer
+func create_lobby(player_name: String, _lobby_name: String, max_players: int, _timer_setting: String) -> void:
+	var peer = ENetMultiplayerPeer.new()
+	var error = peer.create_server(DEFAULT_PORT, max_players - 1) # Max peers is exclusive of host
+	if error != OK:
+		print("SERVER CREATION FAILED")
+		connection_failed.emit()
 		return
-	_is_broadcasting = true
-	_udp_send.set_broadcast_enabled(true)
-	_broadcast_timer.start()
-	_send_broadcast() # Send one immediately
 
-func _on_peer_connected(id):
-	_debug_print("Peer connected: %s" % id)
-	_debug_print("[NetworkManager] ✅ PEER CONNECTED - ID: %s | Total peers: %s" % [id, multiplayer.get_peers().size() + 1])
-	_debug_print("[NetworkManager] 📊 Connection details - Is server: %s | My ID: %s" % [multiplayer.is_server(), multiplayer.get_unique_id()])
-	
-	if multiplayer.is_server():
-		_debug_print("[NetworkManager] 🏠 HOST: New client connected, requesting player info...")
-		rpc_id(id, "_rpc_request_info")
-
-func _on_peer_disconnected(id):
-	_debug_print("[NetworkManager] ❌ PEER DISCONNECTED - ID: %s | Remaining peers: %s" % [id, multiplayer.get_peers().size()])
-	_debug_print("[NetworkManager] 📊 Disconnection details - Is server: %s | My ID: %s" % [multiplayer.is_server(), multiplayer.get_unique_id()])
-	_debug_print("Disconnected from server!")
-	
-	if multiplayer.is_server():
-		_debug_print("[NetworkManager] 🏠 HOST: Client disconnected, updating player list...")
-		players.erase(id)
-		rpc("_rpc_sync_player_data", players)
-		emit_signal("player_list_changed", players)
-
-func _on_connected_to_server():
-	_debug_print("[NetworkManager] ✅ CLIENT: Successfully connected to server!")
-	_debug_print("[NetworkManager] 📋 CLIENT: My assigned ID: %s" % multiplayer.get_unique_id())
-	_debug_print("[NetworkManager] 🛑 CLIENT: Stopping LAN discovery...")
-	
-	# Ensure we act purely as client from now on
-	stop_lan_discovery()
-	
-	_debug_print("[NetworkManager] 📢 CLIENT: Emitting connection_succeeded signal...")
-	emit_signal("connection_succeeded")
-	
-	_debug_print("[NetworkManager] 📝 CLIENT: Registering with server - Name: '%s'" % my_name)
-	rpc_id(1, "_rpc_register_player", my_name)
-	
-	_debug_print("[NetworkManager] 🔄 CLIENT: Requesting player list sync...")
-	request_players_resync()
-
-func _on_connection_failed():
-	_debug_print("Connection failed!")
-	_debug_print("[NetworkManager] ❌ CLIENT: Connection to server FAILED on port %d!" % DEFAULT_PORT)
-	_debug_print("[NetworkManager] 🔍 CLIENT: Possible causes - Server offline, wrong IP, firewall blocking port %d" % DEFAULT_PORT)
-	_debug_print("[NetworkManager] 💡 CLIENT: Try these troubleshooting steps:")
-	_debug_print("[NetworkManager] 💡 CLIENT: 1. Check if host can ping client IP")
-	_debug_print("[NetworkManager] 💡 CLIENT: 2. Temporarily disable Windows Firewall on both machines")
-	_debug_print("[NetworkManager] 💡 CLIENT: 3. Try connecting from host to client instead")
-	emit_signal("connection_failed")
-
-func start_listening_for_lobbies():
-	if _is_listening: return
-	_udp_recv = PacketPeerUDP.new()
-	var bind_status := _udp_recv.bind(BROADCAST_PORT, "0.0.0.0")
-	if bind_status != OK:
-		push_warning("[NetworkManager] Error starting UDP listener on port %d. Status: %d" % [BROADCAST_PORT, bind_status])
-		_udp_recv = null # Clear the invalid peer
-		return
-	_is_listening = true
-	# Ensure processing is enabled to poll UDP packets.
-	set_process(true)
-
-func stop_lan_discovery():
-	_broadcast_timer.stop()
-	if is_instance_valid(_udp_send):
-		_udp_send.close()
-		_udp_send = null
-	if is_instance_valid(_udp_recv):
-		_udp_recv.close()
-		_udp_recv = null
-	_is_broadcasting = false
-	_is_listening = false
-	# Disable processing if neither broadcasting nor listening to save cycles.
-	if not _is_broadcasting and not _is_listening:
-		set_process(false)
-
-# Return a likely LAN IPv4 for this device (avoids 127.*)
-func _get_lan_ipv4() -> String:
-	for a in IP.get_local_addresses():
-		# Only allow typical LAN ranges, skip VirtualBox/VMware/Hyper-V
-		if a.begins_with("192.168.") or a.begins_with("10."):
-			if not a.begins_with("192.168.56."): # Exclude VirtualBox
-				return a
-		if a.begins_with("172."):
-			var parts = a.split(".")
-			if parts.size() >= 2:
-				var second = int(parts[1])
-				if second >= 16 and second <= 31:
-					return a
-	return ""
-
-# Generate a unique 6-character room code
-func _generate_room_code() -> String:
-	const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	var code = ""
-	for i in range(6):
-		code += CHARS[randi() % CHARS.length()]
-	return code
-
-# Find lobby by room code (for future room code joining feature)
-func find_lobby_by_code(code: String):
-	if not is_instance_valid(_udp_send):
-		# Ensure the sender socket is ready
-		_udp_send = PacketPeerUDP.new()
-		if _udp_send.bind(0) != OK:
-			push_warning("[NetworkManager] UDP find request sender failed to bind.")
-			_udp_send = null
-			return
-	
-	var request_data = {
-		"identifier": GAME_IDENTIFIER,
-		"request_type": "find_lobby",
-		"room_code": code
+	multiplayer.multiplayer_peer = peer
+	# Host is always ID 1
+	_add_player_data(1, player_name)
+	# Save lobby metadata and broadcast to UI
+	my_lobby_data = {
+		"name": _lobby_name,
+		"max_players": max_players,
+		"timer_setting": _timer_setting,
+		"room_code": "",
+		"is_host": true
 	}
-	var packet = JSON.stringify(request_data).to_utf8_buffer()
-	_udp_send.set_broadcast_enabled(true)
-	_udp_send.set_dest_address("255.255.255.255", BROADCAST_PORT)
-	if _udp_send.put_packet(packet) != OK:
-		push_warning("[NetworkManager] Failed to send find_lobby request packet.")
+	lobby_data_changed.emit(my_lobby_data)
+	# Start broadcasting this lobby so LAN clients can discover it
+	_start_host_broadcast()
+	connection_succeeded.emit()
 
-# Host sends its lobby info directly to a specific IP
-func _send_direct_lobby_info(recipient_ip: String):
-	if not multiplayer.is_server(): return
-
-	var data = my_lobby_data.duplicate()
-	data["identifier"] = GAME_IDENTIFIER
-	data["request_type"] = "lobby_response" # Mark this as a direct response
-	data["current_players"] = players.size()
-	data["timestamp"] = Time.get_ticks_msec()
-	data["host_ip"] = my_lobby_data.get("host_ip", _get_lan_ipv4())
-
-	var packet = JSON.stringify(data).to_utf8_buffer()
-	_udp_send.set_dest_address(recipient_ip, BROADCAST_PORT)
-	if _udp_send.put_packet(packet) != OK:
-		push_warning("[NetworkManager] Failed to send direct lobby info to %s" % recipient_ip)
-
-func request_char_selection(char_index: int):
-	rpc_id(1, "_rpc_request_char_selection", multiplayer.get_unique_id(), char_index)
-
-func _all_players_ready() -> bool:
-	if players.size() < 2:
-		return false
-	for id in players.keys():
-		if int(players[id].get("char_index", -1)) < 0:
-			return false
-	return true
-
-func start_game():
-	if not multiplayer.is_server():
+func join_lobby(player_name: String, ip: String) -> void:
+	var peer = ENetMultiplayerPeer.new()
+	var error = peer.create_client(ip, DEFAULT_PORT)
+	if error != OK:
+		print("CLIENT CREATION FAILED")
+		connection_failed.emit()
 		return
+	
+	multiplayer.multiplayer_peer = peer
+	# The 'connected_to_server' signal will handle next steps
 
-	# Validate readiness; if not ready, refuse to start quietly (UI decides enabling)
-	if not _all_players_ready():
-		print("[NetworkManager] start_game refused: not all players are locked in or not enough players.")
-		print("[NetworkManager] Players snapshot:", players)
+func _add_player_data(id: int, name: String) -> void:
+	players[id] = {
+		"name": name,
+		"char_index": -1,
+		"is_host": id == 1
+	}
+	player_list_changed.emit(players)
+	print("Updated Players List: ", players)
+
+func _remove_player_data(id: int) -> void:
+	if players.has(id):
+		players.erase(id)
+		player_list_changed.emit(players)
+		print("Updated Players List: ", players)
+
+# --- Signal Handlers ---
+
+func _on_peer_connected(id: int) -> void:
+	print("Peer connected: %s" % id)
+
+func _on_peer_disconnected(id: int) -> void:
+	print("Peer disconnected: %s" % id)
+	_remove_player_data(id)
+
+func _on_connected_to_server() -> void:
+	print("Successfully connected to the server!")
+	# Now that we're connected, tell the server who we are.
+	# It's important to get the player's name from your UI here.
+	# For now, we use a placeholder.
+	var nm := get_local_player_name()
+	var my_name = nm if not nm.is_empty() else ("Player" + str(multiplayer.get_unique_id()))
+	register_with_server.rpc_id(1, my_name)
+	connection_succeeded.emit()
+
+func _on_connection_failed() -> void:
+	print("CONNECTION FAILED.")
+	multiplayer.multiplayer_peer = null
+	connection_failed.emit()
+
+func _on_server_disconnected() -> void:
+	print("DISCONNECTED FROM SERVER.")
+	multiplayer.multiplayer_peer = null
+	players.clear()
+	# Here you would typically change scene back to the main menu.
+	# SceneChanger.change_scene_to_file("res://scenes/UI/Main_Menu/main_menu.tscn")
+
+func stop_lan_discovery_and_reset() -> void:
+	# Clear any existing multiplayer peer
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer = null
+
+	# Clear player list
+	players.clear()
+	player_list_changed.emit(players)
+	print("Stopped LAN discovery and reset network state")
+
+func start_listening_for_lobbies() -> void:
+	if _listening:
 		return
-
-	# Assign roles randomly: exactly 1 seeker, others hiders
-	var ids: Array = players.keys()
-	if ids.is_empty():
-		print("[NetworkManager] start_game aborted: no players in dictionary.")
+	print("[DISCOVERY] Starting listener on UDP:", DISCOVERY_PORT)
+	# Recreate the listener to ensure clean state
+	_udp_listener = PacketPeerUDP.new()
+	var bind_err := _udp_listener.bind(DISCOVERY_PORT, "0.0.0.0")
+	if bind_err != OK:
+		push_error("[DISCOVERY] Failed to bind UDP listener: " + str(bind_err))
 		return
-	randomize()
-	var seeker_index := int(randi() % ids.size())
-	var seeker_id := int(ids[seeker_index])
-	for id in players.keys():
-		players[int(id)]["role"] = "seeker" if int(id) == seeker_id else "hider"
-	print("[NetworkManager] Roles assigned. Seeker=", seeker_id, " players=", players)
+	_listening = true
+	_discovery_poll_timer.start()
+	_discovered_lobbies.clear()
 
-	# Mark lobby in-game and stop discovery
-	my_lobby_data["status"] = "in_game"
-	stop_lan_discovery()
-	print("[NetworkManager] Broadcasting start to peers... Peers=", multiplayer.get_peers())
-
-	# Sync final player data and lobby metadata, then instruct everyone to load the world
-	rpc("_rpc_sync_player_data", players)
-	rpc("_rpc_sync_lobby_data", my_lobby_data)
-	rpc("_rpc_start_game", players, my_lobby_data)
-	_rpc_start_game(players, my_lobby_data) # call_local for the host as well
-
-# Host-only helpers to assign seeker explicitly before start
-func host_assign_seeker(seeker_id: int):
-	if not multiplayer.is_server():
-		return
-	var ids: Array = players.keys()
-	for id in ids:
-		players[int(id)]["role"] = "seeker" if int(id) == int(seeker_id) else "hider"
-	rpc("_rpc_sync_player_data", players)
-	emit_signal("player_list_changed", players)
-
-func host_assign_random_seeker():
-	if not multiplayer.is_server():
-		return
-	var ids: Array = players.keys()
-	if ids.is_empty():
-		return
-	randomize()
-	var seeker_index := int(randi() % ids.size())
-	var seeker_id := int(ids[seeker_index])
-	for id in ids:
-		players[int(id)]["role"] = "seeker" if int(id) == seeker_id else "hider"
-	rpc("_rpc_sync_player_data", players)
-	emit_signal("player_list_changed", players)
-
-func request_unlock():
-	rpc_id(1, "_rpc_request_unlock", multiplayer.get_unique_id())
-
-@rpc("reliable", "call_local")
-func _rpc_start_game(start_players: Dictionary, start_lobby_data: Dictionary):
-	players = start_players
-	my_lobby_data = start_lobby_data
-	emit_signal("player_list_changed", players)
+# --- UI helper methods to avoid missing symbol errors ---
+func request_lobby_resync() -> void:
 	emit_signal("lobby_data_changed", my_lobby_data)
-	# Backwards compatibility for any UI still listening for the signal
+
+func request_players_resync() -> void:
+	emit_signal("player_list_changed", players)
+
+# --- Local Player Name Management ---
+func get_local_player_name() -> String:
+	return local_player_name
+
+func set_local_player_name(name: String) -> void:
+	var cleaned := _sanitize_name(name)
+	if cleaned.is_empty():
+		cleaned = _generate_random_name()
+	local_player_name = cleaned
+	_save_local_name_to_config()
+
+func randomize_local_player_name() -> String:
+	local_player_name = _generate_random_name()
+	_save_local_name_to_config()
+	return local_player_name
+
+func _sanitize_name(n: String) -> String:
+	var s := n.strip_edges()
+	# Allow ASCII letters, digits, space and hyphen only (simplified, safe)
+	var out := ""
+	for ch in s:
+		var c := String(ch)
+		var code := int(c.unicode_at(0)) if c.length() > 0 else 0
+		var is_digit := code >= 48 and code <= 57
+		var is_upper := code >= 65 and code <= 90
+		var is_lower := code >= 97 and code <= 122
+		if is_digit or is_upper or is_lower or c == " " or c == "-":
+			out += c
+	# Clamp length
+	if out.length() > 18:
+		out = out.substr(0, 18)
+	return out
+
+func _generate_random_name() -> String:
+	var adjectives: Array[String] = ["Swift", "Brave", "Clever", "Mighty", "Sneaky", "Lucky", "Bold", "Chill"]
+	var critters: Array[String] = ["Fox", "Wolf", "Panda", "Hawk", "Tiger", "Otter", "Lynx", "Koala"]
+	var adj: String = adjectives[int(randi() % adjectives.size())]
+	var ani: String = critters[int(randi() % critters.size())]
+	var num := str(randi_range(1000, 9999))
+	return "%s%s_%s" % [adj, ani, num]
+
+func _load_local_name_from_config() -> void:
+	var cfg := ConfigFile.new()
+	var err := cfg.load("user://settings.cfg")
+	if err == OK:
+		local_player_name = String(cfg.get_value("player", "name", ""))
+
+func _save_local_name_to_config() -> void:
+	var cfg := ConfigFile.new()
+	var err := cfg.load("user://settings.cfg")
+	# Ignore err; we'll overwrite
+	cfg.set_value("player", "name", local_player_name)
+	cfg.save("user://settings.cfg")
+
+func request_char_selection(index: int) -> void:
+	# Client-side helper: send selection request to server
+	rpc_request_char_selection.rpc(index)
+
+func request_unlock() -> void:
+	# Client-side helper: send unlock (-1) to server
+	rpc_request_char_selection.rpc(-1)
+
+func start_game() -> void:
+	# Host triggers the actual game start; server instructs all peers
+	if multiplayer.is_server():
+		rpc("rpc_start_game", my_lobby_data)
+	else:
+		print("[StartGame] Only host can start the game.")
+
+@rpc("authority", "call_local", "reliable")
+func rpc_start_game(lobby_info: Dictionary) -> void:
+	is_game_started = true
 	emit_signal("game_started", players)
-	# Perform the actual scene transition here to avoid UI desyncs
+	# Switch everyone to the world scene
 	SceneChanger.change_scene_to_file("res://scenes/world.tscn")
 
-func _send_broadcast():
-	if not _is_broadcasting or not multiplayer.is_server(): 
-		stop_lan_discovery()
-		return
-	
-	var data = my_lobby_data.duplicate()
-	data["identifier"] = GAME_IDENTIFIER
-	data["current_players"] = players.size()
-	data["timestamp"] = Time.get_ticks_msec()
-	# Ensure broadcast includes host_ip for clients to display
-	data["host_ip"] = my_lobby_data.get("host_ip", _get_lan_ipv4())
-	
-	# Update status based on game state
-	if players.size() >= my_lobby_data.get("max_players", 5):
-		data["status"] = "full"
-	else:
-		data["status"] = "waiting"
-	
-	var packet = JSON.stringify(data).to_utf8_buffer()
-	
-	# GODOT 4.1.1 UDP SENDING METHOD
-	_udp_send.set_dest_address("255.255.255.255", BROADCAST_PORT)
-	var err := _udp_send.put_packet(packet)
-	if err != OK:
-		push_warning("[NetworkManager] Failed to send broadcast packet: %d" % err)
-	else:
-		print("[NetworkManager] Broadcasting room '%s' (Code: %s)" % [data.get("name", "Unknown"), data.get("room_code", "N/A")])
-
-
-@rpc("any_peer")
-func _rpc_request_info():
-	print("[NetworkManager] 📞 CLIENT: Received info request from server")
-	if not multiplayer.is_server(): 
-		print("[NetworkManager] 📝 CLIENT: Sending registration to server with name: '%s'" % my_name)
-		rpc_id(1, "_rpc_register_player", my_name)
-
-@rpc("any_peer", "call_local")
-func _rpc_register_player(player_name: String):
-	if multiplayer.is_server():
-		var peer_id = multiplayer.get_remote_sender_id()
-		print("[NetworkManager] 🏠 HOST: Registering new player - ID: %d, Name: '%s'" % [peer_id, player_name])
-		players[peer_id] = {"name": player_name, "is_host": false, "ready": false, "char_index": -1}
-		print("[NetworkManager] 🏠 HOST: Sending lobby data to new player...")
-		rpc_id(peer_id, "_rpc_sync_lobby_data", my_lobby_data)
-		print("[NetworkManager] 🏠 HOST: Broadcasting updated player list to all clients...")
-		rpc("_rpc_sync_player_data", players)
-		# Also update locally for host UI
-		emit_signal("player_list_changed", players)
-		print("[NetworkManager] 🏠 HOST: Player registration complete. Total players: %d" % players.size())
-
-@rpc("authority", "call_local", "reliable")
-func _rpc_sync_player_data(new_player_data: Dictionary):
-	print("[NetworkManager] 📋 Received player data sync - Players: %d" % new_player_data.size())
-	players = new_player_data
+func leave_lobby() -> void:
+	multiplayer.multiplayer_peer = null
+	players.clear()
 	emit_signal("player_list_changed", players)
+	_stop_host_broadcast()
+	stop_lan_discovery()
 
-@rpc("any_peer", "call_local")
-func _rpc_request_players_resync():
-	# Called by a client; server responds with full player data
-	if multiplayer.is_server():
-		rpc("_rpc_sync_player_data", players)
+# --- LAN Discovery internals ---
+func _poll_discovery() -> void:
+	if not _listening:
+		return
+	while _udp_listener.get_available_packet_count() > 0:
+		var pkt := _udp_listener.get_packet()
+		var text := pkt.get_string_from_utf8()
+		var parsed = JSON.parse_string(text)
+		if typeof(parsed) != TYPE_DICTIONARY:
+			continue
+		var data: Dictionary = parsed
+		if data.get("magic", "") != DISCOVERY_MAGIC:
+			continue
+		# Normalize and emit
+		var ip := String(data.get("host_ip", data.get("ip", "")))
+		data["ip"] = ip
+		_discovered_lobbies[ip] = data
+		lobby_found.emit(data)
 
-func request_players_resync():
-	rpc_id(1, "_rpc_request_players_resync")
+func _start_host_broadcast() -> void:
+	# Host broadcasts lobby info periodically
+	_udp_broadcaster = PacketPeerUDP.new()
+	_udp_broadcaster.set_broadcast_enabled(true)
+	_broadcast_timer.start()
 
-@rpc("any_peer", "call_local")
-func _rpc_request_lobby_resync():
-	# Called by a client; server responds with current lobby metadata
-	if multiplayer.is_server():
-		var sender := multiplayer.get_remote_sender_id()
-		rpc_id(sender, "_rpc_sync_lobby_data", my_lobby_data)
+func _stop_host_broadcast() -> void:
+	if _broadcast_timer:
+		_broadcast_timer.stop()
+	_udp_broadcaster = PacketPeerUDP.new()
 
-func request_lobby_resync():
-	rpc_id(1, "_rpc_request_lobby_resync")
+func _broadcast_lobby() -> void:
+	if multiplayer.multiplayer_peer == null or not multiplayer.is_server():
+		return
+	var info := {
+		"magic": DISCOVERY_MAGIC,
+		"name": String(my_lobby_data.get("name", "")),
+		"room_code": String(my_lobby_data.get("room_code", "")),
+		"max_players": int(my_lobby_data.get("max_players", 5)),
+		"current_players": players.size(),
+		"timer": String(my_lobby_data.get("timer_setting", "5 minutes")),
+		"host_ip": _get_lan_ipv4(),
+		"port": DEFAULT_PORT,
+		"status": ("full" if players.size() >= int(my_lobby_data.get("max_players", 5)) else "waiting")
+	}
+	var bytes := JSON.stringify(info).to_utf8_buffer()
+	_udp_broadcaster.set_dest_address("255.255.255.255", DISCOVERY_PORT)
+	_udp_broadcaster.put_packet(bytes)
+
+func stop_lan_discovery() -> void:
+	if _discovery_poll_timer:
+		_discovery_poll_timer.stop()
+	_listening = false
+	_udp_listener = PacketPeerUDP.new()
+	_discovered_lobbies.clear()
+
+func find_lobby_by_code(code: String) -> void:
+	var upper := code.strip_edges().to_upper()
+	for ip in _discovered_lobbies:
+		var data: Dictionary = _discovered_lobbies[ip]
+		if String(data.get("room_code", "")).to_upper() == upper:
+			lobby_found.emit(data)
+			return
+	print("[Discovery] No lobby found for code:", upper)
+
+# --- RPCs (Remote Procedure Calls) ---
+
+@rpc("any_peer", "reliable")
+func register_with_server(player_name: String) -> void:
+	# This function ONLY runs on the server.
+	var sender_id = multiplayer.get_remote_sender_id()
+	
+	# Add the new player to the server's list.
+	_add_player_data(sender_id, player_name)
+
+	# Now, tell the new player about everyone who was already in the lobby.
+	for existing_id in players:
+		if existing_id != sender_id:
+			sync_new_player.rpc_id(sender_id, existing_id, players[existing_id]["name"])
+
+	# Finally, tell everyone (including the new player) about the new player.
+	sync_new_player.rpc(sender_id, player_name)
+
+@rpc("authority", "reliable")
+func sync_new_player(id: int, name: String) -> void:
+	# This function runs on ALL clients to inform them of a new player.
+	_add_player_data(id, name)
+
+# Clients request a character selection; server validates and broadcasts
+@rpc("any_peer", "call_local", "reliable")
+func rpc_request_char_selection(index: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	# When the host triggers this locally, remote sender is 0. Map to self (server's unique ID).
+	if sender_id == 0:
+		sender_id = multiplayer.get_unique_id()
+	# Enforce basic bounds and uniqueness (optional)
+	if index < -1 or index > 10: # arbitrary upper bound; adjust to your roster
+		return
+	# Assign
+	if players.has(sender_id):
+		players[sender_id]["char_index"] = index
+		sync_char_selection.rpc(sender_id, index)
+		player_list_changed.emit(players)
+
+## No separate RPC for unlock; use rpc_request_char_selection(-1)
 
 @rpc("authority", "call_local", "reliable")
-func _rpc_sync_lobby_data(lobby_data: Dictionary):
-	my_lobby_data = lobby_data
-	emit_signal("lobby_data_changed", my_lobby_data)
+func sync_char_selection(id: int, index: int) -> void:
+	if not players.has(id):
+		return
+	players[id]["char_index"] = index
+	player_list_changed.emit(players)
 
-@rpc("any_peer", "call_local")
-func _rpc_request_char_selection(peer_id: int, char_index: int):
-	if multiplayer.is_server():
-		for p_id in players:
-			if players[p_id].char_index == char_index: return
-		players[peer_id].char_index = char_index
-		players[peer_id].ready = true
-		rpc("_rpc_sync_player_data", players)
-		# Update host UI too
-		emit_signal("player_list_changed", players)
 
-@rpc("any_peer", "call_local")
-func _rpc_request_unlock(peer_id: int):
-	if multiplayer.is_server():
-		if players.has(peer_id):
-			players[peer_id].char_index = -1
-			players[peer_id].ready = false
-			rpc("_rpc_sync_player_data", players)
-			emit_signal("player_list_changed", players)
+
+# --- Helpers ---
+func _get_lan_ipv4() -> String:
+	var addrs: PackedStringArray = IP.get_local_addresses()
+	for a in addrs:
+		if a.begins_with("192.168.") or a.begins_with("10."):
+			return a
+		if a.begins_with("172."):
+			var parts := a.split(".")
+			if parts.size() >= 2:
+				var s := int(parts[1])
+				if s >= 16 and s <= 31:
+					return a
+	return ""

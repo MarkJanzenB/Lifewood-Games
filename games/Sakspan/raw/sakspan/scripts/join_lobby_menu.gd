@@ -67,11 +67,20 @@ func _on_join_selected_button_pressed():
 	var ip_to_join = selected_item.get_metadata(0)
 	var room_name = selected_item.get_text(0)
 	var room_code = selected_item.get_text(1)
-	var player_name = "Player" + str(randi_range(1000, 9999)) # Generate random name
+	var player_name = NetworkManager.get_local_player_name()
+	if player_name.is_empty():
+		player_name = NetworkManager.randomize_local_player_name()
 
 	# Prefer the host_ip from the selected lobby info if present
 	if _selected_lobby_info.has("host_ip"):
 		ip_to_join = String(_selected_lobby_info["host_ip"])
+	# Sanitize and validate IP
+	if typeof(ip_to_join) != TYPE_STRING:
+		ip_to_join = String(ip_to_join)
+	ip_to_join = ip_to_join.strip_edges()
+	if not _is_valid_lan_ipv4(ip_to_join):
+		print("[JoinLobby] Refusing to join non-LAN or invalid IP:", ip_to_join)
+		return
 	# Sanitize and validate IP
 	if typeof(ip_to_join) != TYPE_STRING:
 		ip_to_join = String(ip_to_join)

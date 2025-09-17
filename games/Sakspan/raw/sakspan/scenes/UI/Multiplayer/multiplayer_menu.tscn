@@ -54,11 +54,38 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="button_holder" type="VBoxContainer" parent="CenterContainer"]
+[node name="MainVBox" type="VBoxContainer" parent="CenterContainer"]
+layout_mode = 2
+theme_override_constants/separation = 24
+
+[node name="NameHBox" type="HBoxContainer" parent="CenterContainer/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayerNameLabel" type="Label" parent="CenterContainer/MainVBox/NameHBox"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("3_0fr1y")
+theme_override_font_sizes/font_size = 24
+text = "Your Name:"
+
+[node name="PlayerNameLineEdit" type="LineEdit" parent="CenterContainer/MainVBox/NameHBox"]
+custom_minimum_size = Vector2(260, 44)
+layout_mode = 2
+placeholder_text = "Enter your name"
+max_length = 18
+
+[node name="RandomizeButton" type="Button" parent="CenterContainer/MainVBox/NameHBox"]
+custom_minimum_size = Vector2(140, 44)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("3_0fr1y")
+theme_override_font_sizes/font_size = 20
+text = "Randomize"
+
+[node name="button_holder" type="VBoxContainer" parent="CenterContainer/MainVBox"]
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="create_lobby_button" type="Button" parent="CenterContainer/button_holder"]
+[node name="create_lobby_button" type="Button" parent="CenterContainer/MainVBox/button_holder"]
 custom_minimum_size = Vector2(200, 50)
 layout_mode = 2
 tooltip_text = "able to create lobby, where fellow players can join"
@@ -73,7 +100,7 @@ theme_override_styles/pressed = SubResource("StyleBoxFlat_ltb6y")
 theme_override_styles/normal = SubResource("StyleBoxFlat_ico33")
 text = "Create Lobby"
 
-[node name="join_lobby_button" type="Button" parent="CenterContainer/button_holder"]
+[node name="join_lobby_button" type="Button" parent="CenterContainer/MainVBox/button_holder"]
 custom_minimum_size = Vector2(200, 50)
 layout_mode = 2
 tooltip_text = "Join existing lobbies"
@@ -85,7 +112,7 @@ theme_override_font_sizes/font_size = 30
 theme_override_styles/normal = SubResource("StyleBoxFlat_ico33")
 text = "Join"
 
-[node name="back_button" type="Button" parent="CenterContainer/button_holder"]
+[node name="back_button" type="Button" parent="CenterContainer/MainVBox/button_holder"]
 custom_minimum_size = Vector2(200, 50)
 layout_mode = 2
 tooltip_text = "Are you sure?"
