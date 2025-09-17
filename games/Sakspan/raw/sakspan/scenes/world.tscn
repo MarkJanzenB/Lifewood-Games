@@ -53,7 +53,7 @@ position = Vector2(948, 981)
 shape = SubResource("RectangleShape2D_nnsk1")
 
 [node name="PlayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("res://scenes/player/Player.tscn")
+_spawnable_scenes = PackedStringArray("uid://b5w5d5f5g5h5")
 spawn_path = NodePath(".")
 
 [node name="CanvasModulate" type="CanvasModulate" parent="."]

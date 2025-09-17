@@ -223,8 +223,7 @@ func _on_connection_failed():
 	
 	# Try fallback port
 	var fallback_peer = ENetMultiplayerPeer.new()
-	var target_ip = multiplayer.multiplayer_peer.get_peer_address(1) if multiplayer.has_multiplayer_peer() else "unknown"
-	
+		
 	# Get the IP from the last join attempt
 	if _last_join_ip != "":
 		print("[NetworkManager] 🔌 CLIENT: Attempting fallback connection to %s:%d" % [_last_join_ip, FALLBACK_PORT])
@@ -511,7 +510,7 @@ func _spawn_players():
 
 	for id in players.keys():
 		var player_node = player_spawner.spawn(id)
-		print(f"[NetworkManager] Spawned player for peer {id}")
+		print("[NetworkManager] Spawned player for peer {id}")
 
 
 @rpc("any_peer", "call_local")
