@@ -9,6 +9,7 @@ signal lobby_found(lobby_info)
 signal lobby_data_changed(lobby_data)
 
 const DEFAULT_PORT = 7777
+const FALLBACK_PORT = 8080
 const BROADCAST_PORT = 7778
 const BROADCAST_INTERVAL = 1.0
 const GAME_IDENTIFIER = "sakspan_bangSak_v1"
@@ -19,12 +20,11 @@ var players: Dictionary = {}
 var my_name: String = "Player" + str(randi_range(1000, 9999))
 var my_lobby_data: Dictionary = {}
 var room_code: String = ""
-
-var _udp_send: PacketPeerUDP
+var _udp_peer: PacketPeerUDP
 var _udp_recv: PacketPeerUDP
-var _broadcast_timer = Timer.new()
-var _is_broadcasting = false
-var _is_listening = false
+var _is_listening: bool = false
+var _is_broadcasting: bool = false
+var _last_join_ip: String = ""
 
 func _ready():
 	print("[NetworkManager] 🚀 NetworkManager initializing...")
@@ -98,15 +98,19 @@ func create_lobby(player_name: String, lobby_name: String, max_players: int, tim
 	var peer = ENetMultiplayerPeer.new()
 	var server_result = peer.create_server(DEFAULT_PORT, capped_max)
 	print("[NetworkManager] 🔍 HOST: Server creation result: %d (OK=0)" % server_result)
-	
 	if server_result != OK:
-		print("[NetworkManager] ❌ HOST: FAILED to create server on port %d! Error code: %d" % [DEFAULT_PORT, server_result])
-		print("[NetworkManager] 🔍 HOST: Possible causes - Port already in use, insufficient permissions, firewall blocking")
-		return
-	
-	print("[NetworkManager] ✅ HOST: ENet server created successfully on port %d" % DEFAULT_PORT)
-	multiplayer.multiplayer_peer = peer
-	print("[NetworkManager] 🔗 HOST: Multiplayer peer assigned, server should be listening now")
+		print("[NetworkManager] ⚠️ HOST: Primary server failed on port %d, trying fallback port %d..." % [DEFAULT_PORT, FALLBACK_PORT])
+		var fallback_peer = ENetMultiplayerPeer.new()
+		var fallback_result = fallback_peer.create_server(FALLBACK_PORT, capped_max)
+		print("[NetworkManager] 🔍 HOST: Fallback server result: %d (OK=0)" % fallback_result)
+		if fallback_result != OK:
+			print("[NetworkManager] ❌ HOST: FAILED to create server on both ports %d and %d!" % [DEFAULT_PORT, FALLBACK_PORT])
+			return
+		print("[NetworkManager] ✅ HOST: ENet server created successfully on fallback port %d" % FALLBACK_PORT)
+		multiplayer.multiplayer_peer = fallback_peer
+	else:
+		print("[NetworkManager] ✅ HOST: ENet server created successfully on port %d" % DEFAULT_PORT)
+		multiplayer.multiplayer_peer = peer
 	players[1] = {"name": my_name, "is_host": true, "ready": false, "char_index": -1}
 	my_lobby_data = {
 		"name": lobby_name,
@@ -129,25 +133,27 @@ func create_lobby(player_name: String, lobby_name: String, max_players: int, tim
 	emit_signal("connection_succeeded")
 
 func join_lobby(player_name: String, ip: String):
-	# Set local player name before connecting so registration sends the right name
-	my_name = player_name
 	print("[NetworkManager] 🔄 CLIENT: Starting join attempt - Player: '%s' | Target IP: %s:%d" % [player_name, ip, DEFAULT_PORT])
 	
-	# SAFETY: If we were acting as server, stop and clear before joining
-	if multiplayer.is_server() or multiplayer.multiplayer_peer != null:
-		print("[NetworkManager] 🧹 CLIENT: Clearing existing peer before joining server at ", ip)
-		stop_lan_discovery()
-		multiplayer.multiplayer_peer = null
+	my_name = player_name
+	_last_join_ip = ip  # Store IP for fallback attempts
 	
-	var peer = ENetMultiplayerPeer.new()
 	print("[NetworkManager] 🔌 CLIENT: Creating ENet client peer...")
+	var peer = ENetMultiplayerPeer.new()
 	if peer.create_client(ip, DEFAULT_PORT) != OK:
-		print("[NetworkManager] ❌ CLIENT: FAILED to create client connection to %s:%d" % [ip, DEFAULT_PORT])
+		print("[NetworkManager] ❌ CLIENT: FAILED to create ENet client!")
 		emit_signal("connection_failed")
 		return
 	
-	multiplayer.multiplayer_peer = peer
 	print("[NetworkManager] 🚀 CLIENT: ENet peer created successfully, attempting connection...")
+	multiplayer.multiplayer_peer = peer
+	
+	# Connect multiplayer signals if not already connected
+	if not multiplayer.connected_to_server.is_connected(_on_connected_to_server):
+		multiplayer.connected_to_server.connect(_on_connected_to_server)
+	if not multiplayer.connection_failed.is_connected(_on_connection_failed):
+		multiplayer.connection_failed.connect(_on_connection_failed)
+	
 	print("[NetworkManager] 📡 CLIENT: Waiting for low-level connection to establish...")
 	
 	# Connection callbacks are already set up in _ready()
@@ -210,8 +216,23 @@ func _on_connected_to_server():
 	request_players_resync()
 
 func _on_connection_failed():
-	print("[NetworkManager] ❌ CLIENT: Connection to server FAILED!")
-	print("[NetworkManager] 🔍 CLIENT: Possible causes - Server offline, wrong IP, firewall blocking port %d" % DEFAULT_PORT)
+	print("[NetworkManager] ❌ CLIENT: Connection to server FAILED on port %d!" % DEFAULT_PORT)
+	print("[NetworkManager] 🔄 CLIENT: Trying fallback port %d..." % FALLBACK_PORT)
+	
+	# Try fallback port
+	var fallback_peer = ENetMultiplayerPeer.new()
+	var target_ip = multiplayer.multiplayer_peer.get_peer_address(1) if multiplayer.has_multiplayer_peer() else "unknown"
+	
+	# Get the IP from the last join attempt
+	if _last_join_ip != "":
+		print("[NetworkManager] 🔌 CLIENT: Attempting fallback connection to %s:%d" % [_last_join_ip, FALLBACK_PORT])
+		if fallback_peer.create_client(_last_join_ip, FALLBACK_PORT) == OK:
+			multiplayer.multiplayer_peer = fallback_peer
+			print("[NetworkManager] 📡 CLIENT: Fallback connection attempt started...")
+			return
+	
+	print("[NetworkManager] ❌ CLIENT: All connection attempts failed!")
+	print("[NetworkManager] 🔍 CLIENT: Possible causes - Server offline, wrong IP, firewall blocking ports %d and %d" % [DEFAULT_PORT, FALLBACK_PORT])
 	print("[NetworkManager] 💡 CLIENT: Try these troubleshooting steps:")
 	print("[NetworkManager] 💡 CLIENT: 1. Check if host can ping client IP")
 	print("[NetworkManager] 💡 CLIENT: 2. Temporarily disable Windows Firewall on both machines")
