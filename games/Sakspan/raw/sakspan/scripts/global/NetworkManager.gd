@@ -58,21 +58,21 @@ func _process(_delta):
 				if parsed.get("identifier") != GAME_IDENTIFIER:
 					continue
 				# --- HOST: Handle a client's request to find a lobby by code ---
-				if multiplayer.is_server() and parsed.get("request_type") == "find_lobby":
+				if multiplayer.has_multiplayer_peer() and multiplayer.is_server() and parsed.get("request_type") == "find_lobby":
 					if parsed.get("room_code") == room_code:
 						print("[NetworkManager] Received find request for my room code. Responding to ", sender_ip)
 						_send_direct_lobby_info(sender_ip)
 					continue
 
 				# --- CLIENT: Handle a direct response from a host ---
-				if not multiplayer.is_server() and parsed.get("request_type") == "lobby_response":
+				if multiplayer.has_multiplayer_peer() and not multiplayer.is_server() and parsed.get("request_type") == "lobby_response":
 					parsed["ip"] = sender_ip
 					print("[NetworkManager] Received direct lobby response from ", sender_ip)
 					emit_signal("lobby_found", parsed)
 					continue
 
 				# --- CLIENT: Handle a general broadcast from a host ---
-				if not multiplayer.is_server() and parsed.has("room_code"):
+				if (not multiplayer.has_multiplayer_peer() or not multiplayer.is_server()) and parsed.has("room_code"):
 					parsed["ip"] = sender_ip
 					print("[NetworkManager] Received lobby broadcast from ", sender_ip, ": ", parsed)
 					emit_signal("lobby_found", parsed)
