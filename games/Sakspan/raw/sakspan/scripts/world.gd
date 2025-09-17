@@ -77,7 +77,7 @@ func _try_spawn_players(max_attempts: int = 10, delay: float = 0.2) -> void:
 		if not NetworkManager.players.is_empty():
 			print("[World] Players found after ", attempts, " attempts")
 			timer.stop()
-			timer.queue_free()
+			timer.queue_free() 
 			_spawn_all_players()
 		elif attempts >= max_attempts:
 			print("[World] Failed to find players after ", max_attempts, " attempts")

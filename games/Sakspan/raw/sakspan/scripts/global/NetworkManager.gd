@@ -108,7 +108,9 @@ func create_lobby(player_name: String, lobby_name: String, max_players: int, tim
 	# Add the host LAN IP so clients can display the correct IP rather than their own
 	my_lobby_data["host_ip"] = _get_lan_ipv4()
 	
-	print("[NetworkManager] Created lobby '%s' with room code: %s" % [lobby_name, room_code])
+	print("[NetworkManager] 🏠 HOST: Created lobby '%s' with room code: %s" % [lobby_name, room_code])
+	print("[NetworkManager] 🏠 HOST: Server listening on port %d for %d max players" % [DEFAULT_PORT, capped_max])
+	print("[NetworkManager] 📡 HOST: Starting UDP broadcast on port %d..." % BROADCAST_PORT)
 	start_broadcasting()
 	# Also push lobby metadata to any already connected peers (none typically at creation)
 	rpc("_rpc_sync_lobby_data", my_lobby_data)
@@ -118,23 +120,30 @@ func create_lobby(player_name: String, lobby_name: String, max_players: int, tim
 func join_lobby(player_name: String, ip: String):
 	# Set local player name before connecting so registration sends the right name
 	my_name = player_name
+	print("[NetworkManager] 🔄 CLIENT: Starting join attempt - Player: '%s' | Target IP: %s:%d" % [player_name, ip, DEFAULT_PORT])
+	
 	# SAFETY: If we were acting as server, stop and clear before joining
 	if multiplayer.is_server() or multiplayer.multiplayer_peer != null:
-		print("[NetworkManager] Clearing existing peer before joining server at ", ip)
+		print("[NetworkManager] 🧹 CLIENT: Clearing existing peer before joining server at ", ip)
 		stop_lan_discovery()
 		multiplayer.multiplayer_peer = null
 	
 	var peer = ENetMultiplayerPeer.new()
+	print("[NetworkManager] 🔌 CLIENT: Creating ENet client peer...")
 	if peer.create_client(ip, DEFAULT_PORT) != OK:
-		print("[NetworkManager] Failed to connect to %s" % ip)
+		print("[NetworkManager] ❌ CLIENT: FAILED to create client connection to %s:%d" % [ip, DEFAULT_PORT])
 		emit_signal("connection_failed")
 		return
 	
 	multiplayer.multiplayer_peer = peer
-	print("[NetworkManager] Attempting to join lobby at %s" % ip)
+	print("[NetworkManager] 🚀 CLIENT: ENet peer created successfully, attempting connection...")
+	print("[NetworkManager] 📡 CLIENT: Waiting for low-level connection to establish...")
+	
 	# Defer success until the low-level connection succeeds
 	if not multiplayer.connected_to_server.is_connected(_on_connected_to_server):
 		multiplayer.connected_to_server.connect(_on_connected_to_server)
+	if not multiplayer.connection_failed.is_connected(_on_connection_failed):
+		multiplayer.connection_failed.connect(_on_connection_failed)
 
 func leave_lobby():
 	players.clear()
@@ -158,15 +167,35 @@ func start_broadcasting():
 	_broadcast_timer.start()
 	_send_broadcast() # Send one immediately
 
+func _on_peer_connected(id):
+	print("[NetworkManager] PEER CONNECTED - ID: ", id, " | Total peers: ", multiplayer.get_peers().size() + 1)
+	print("[NetworkManager] Connection details - Is server: ", multiplayer.is_server(), " | My ID: ", multiplayer.get_unique_id())
+
+func _on_peer_disconnected(id):
+	print("[NetworkManager] ❌ PEER DISCONNECTED - ID: ", id, " | Remaining peers: ", multiplayer.get_peers().size())
+	print("[NetworkManager] 📊 Disconnection details - Is server: ", multiplayer.is_server(), " | My ID: ", multiplayer.get_unique_id())
+
 func _on_connected_to_server():
-	print("[NetworkManager] Low-level connected to server. My client id=", multiplayer.get_unique_id())
+	print("[NetworkManager] ✅ CLIENT: Successfully connected to server!")
+	print("[NetworkManager] 📋 CLIENT: My assigned ID: ", multiplayer.get_unique_id())
+	print("[NetworkManager] 🛑 CLIENT: Stopping LAN discovery...")
+	
 	# Ensure we act purely as client from now on
 	stop_lan_discovery()
-	# Notify UI flow now that transport is ready
+	
+	print("[NetworkManager] 📢 CLIENT: Emitting connection_succeeded signal...")
 	emit_signal("connection_succeeded")
-	# Register and request a fresh players list from the host
+	
+	print("[NetworkManager] 📝 CLIENT: Registering with server - Name: '%s'" % my_name)
 	rpc_id(1, "_rpc_register_player", my_name)
+	
+	print("[NetworkManager] 🔄 CLIENT: Requesting player list sync...")
 	request_players_resync()
+
+func _on_connection_failed():
+	print("[NetworkManager] ❌ CLIENT: Connection to server FAILED!")
+	print("[NetworkManager] 🔍 CLIENT: Possible causes - Server offline, wrong IP, firewall blocking port %d" % DEFAULT_PORT)
+	emit_signal("connection_failed")
 
 func start_listening_for_lobbies():
 	if _is_listening: return
@@ -362,16 +391,16 @@ func _send_broadcast():
 	else:
 		print("[NetworkManager] Broadcasting room '%s' (Code: %s)" % [data.get("name", "Unknown"), data.get("room_code", "N/A")])
 
-func _on_peer_connected(id: int):
-	if multiplayer.is_server():
-		rpc_id(id, "_rpc_request_info")
-
-func _on_peer_disconnected(id: int):
-	if multiplayer.is_server():
-		players.erase(id)
-		rpc("_rpc_sync_player_data", players)
-		# Also update locally for host UI
-		emit_signal("player_list_changed", players)
+#func _on_peer_connected(id: int):
+	#if multiplayer.is_server():
+		#rpc_id(id, "_rpc_request_info")
+#
+#func _on_peer_disconnected(id: int):
+	#if multiplayer.is_server():
+		#players.erase(id)
+		#rpc("_rpc_sync_player_data", players)
+		## Also update locally for host UI
+		#emit_signal("player_list_changed", players)
 
 @rpc("any_peer")
 func _rpc_request_info():
