@@ -120,9 +120,6 @@ func join_lobby(player_name: String, ip: String) -> void:
 	
 	var peer = ENetMultiplayerPeer.new()
 	
-	# Set connection timeout (default is often too long)
-	peer.get_host().set_timeout(5000, 5000, 5000)  # 5 second timeout
-	
 	var error: int = peer.create_client(ip, DEFAULT_PORT)
 	if error != OK:
 		print("[JoinLobby] CLIENT CREATION FAILED - Error code: ", error)
@@ -132,6 +129,10 @@ func join_lobby(player_name: String, ip: String) -> void:
 		print("  ERR_INVALID_PARAMETER (51): Invalid IP or port")
 		connection_failed.emit()
 		return
+	
+	# Set connection timeout AFTER creating the client successfully
+	if peer.get_host():
+		peer.get_host().set_timeout(5000, 5000, 5000)  # 5 second timeout
 	
 	print("[JoinLobby] ENet client created successfully, attempting connection...")
 	multiplayer.multiplayer_peer = peer
