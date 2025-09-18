@@ -195,8 +195,8 @@ func _on_character_selected(idx: int):
 	# Update selection label for local feedback before locking in
 	if selection_label:
 		var cname: String = CHARACTER_NAMES[idx] if (idx >= 0 and idx < CHARACTER_NAMES.size()) else "#%d" % idx
-		selection_label.text = "You selected: %s (not locked in)" % cname
-	print("[LobbyWaitRoom] Selected character index=", idx)
+		selection_label.text = "You selected: %s (press LOCK IN to confirm)" % cname
+	print("[LobbyWaitRoom] Selected character index=", idx, " (", CHARACTER_NAMES[idx], ")")
 
 # This function now correctly uses the custom "set_selected" method on your buttons.
 func _update_character_grid_highlight():
@@ -244,11 +244,21 @@ func _update_player_list(players: Dictionary):
 		var p_name: String = p.get("name", "Player %s" % str(id))
 		var p_char: int = int(p.get("char_index", -1))
 		var p_is_host: bool = bool(p.get("is_host", false))
-		var char_text := " (Picking...)"
-		if p_char >= 0:
-			char_text = " (Ready)"
-		var host_text := " (Host)" if p_is_host else ""
+		
+		# Show character selection status
+		var char_text := " - Selecting..."
+		if p_char >= 0 and p_char < CHARACTER_NAMES.size():
+			char_text = " - " + CHARACTER_NAMES[p_char] + " ✓"
+		
+		var host_text := " [HOST]" if p_is_host else ""
+		
+		# Color code the text based on ready status
 		label.text = "%s%s%s" % [p_name, host_text, char_text]
+		if p_char >= 0:
+			label.modulate = Color.GREEN  # Ready players in green
+		else:
+			label.modulate = Color.YELLOW  # Selecting players in yellow
+			
 		player_list_container.add_child(label)
 		count += 1
 
@@ -286,29 +296,53 @@ func _update_start_game_button():
 func _on_lock_in_button_pressed():
 	# Toggle behavior: Lock in -> Unlock, Unlock -> Lock in
 	if not locked_in:
-		if selected_char_index == -1: return
+		if selected_char_index == -1: 
+			_update_status("Please select a character first!")
+			return
+		
+		var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
+		print("[LobbyWaitRoom] Locking in character: ", character_name, " (index ", selected_char_index, ")")
+		
 		NetworkManager.request_char_selection(selected_char_index)
 		locked_in = true
 		lock_in_button.text = "UNLOCK"
+		
+		# Disable other character buttons
 		for i in range(character_grid.get_child_count()):
 			var btn = character_grid.get_child(i)
 			if i != selected_char_index:
 				btn.disabled = true
-		print("[LobbyWaitRoom] Lock in sent for index=", selected_char_index)
+		
+		# Update selection label
+		if selection_label:
+			selection_label.text = "Locked in as: " + character_name + " ✓"
+		
 		NetworkManager.request_players_resync()
 	else:
 		# Unlock request
+		print("[LobbyWaitRoom] Unlocking character selection")
 		NetworkManager.request_unlock()
 		locked_in = false
 		lock_in_button.text = "LOCK IN"
+		
+		# Re-enable all character buttons
 		for i in range(character_grid.get_child_count()):
 			var btn = character_grid.get_child(i)
 			btn.disabled = false
+		
+		# Update selection label
+		if selection_label:
+			var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
+			selection_label.text = "You selected: " + character_name + " (press LOCK IN to confirm)"
+		
 		_update_character_grid_highlight()
-		print("[LobbyWaitRoom] Unlock requested")
 		NetworkManager.request_players_resync()
 
 	_update_start_game_button()
+
+func _update_status(message: String):
+	print("[LobbyWaitRoom] ", message)
+	# You can add a status label to show messages to the player if needed
 
 func _on_player_list_changed(players: Dictionary):
 	print("[LobbyWaitRoom] Player list changed: ", players)
