@@ -48,19 +48,55 @@ func _ready():
 	if gm:
 		gm.game_state_changed.connect(_on_game_state_changed)
 	
+	# Configure multiplayer authority
+	_configure_multiplayer_authority()
+	
+	# Setup MultiplayerSynchronizer
+	if sync:
+		sync.replication_config = null  # Will be set in editor
+		sync.visibility_update_mode = MultiplayerSynchronizer.VISIBILITY_PROCESS_PHYSICS
+		sync.visibility_public = true
+
+func _configure_multiplayer_authority():
 	# Only the authority processes input and physics for this player
 	if not is_multiplayer_authority():
 		set_physics_process(false)
 		set_process_unhandled_input(false)
-		camera.enabled = false
-		vision_light.visible = false
-		vision_cone.monitoring = false
-		melee_range.monitoring = false
+		if camera:
+			camera.enabled = false
+		if vision_light:
+			vision_light.visible = false
+		if vision_cone:
+			vision_cone.monitoring = false
+		if melee_range:
+			melee_range.monitoring = false
+	else:
+		# This is the local player
+		is_main_player = true
+		if camera:
+			camera.enabled = true
+			camera.make_current()
+
+# Called by World script when spawning players
+func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
+	player_name = player_data.get("name", "Player")
+	is_main_player = is_local
 	
-	# Setup MultiplayerSynchronizer
-	sync.replication_config = null  # Will be set in editor
-	sync.visibility_update_mode = MultiplayerSynchronizer.VISIBILITY_PROCESS_PHYSICS
-	sync.visibility_public = true
+	# Configure based on whether this is the local player
+	if is_local:
+		if camera:
+			camera.enabled = true
+			camera.make_current()
+	else:
+		if camera:
+			camera.enabled = false
+		# Disable input processing for remote players
+		set_physics_process(false)
+		set_process_unhandled_input(false)
+
+func set_is_main_player(value: bool):
+	is_main_player = value
+	_configure_multiplayer_authority()
 
 func assign_role(new_role: PlayerRole):
 	self.role = new_role
@@ -75,21 +111,27 @@ func assign_role(new_role: PlayerRole):
 
 func _physics_process(delta: float):
 	if is_dying: return
-	# Only the multiplayer authority simulates input and movement
-	if not is_multiplayer_authority():
-		return
-	if not is_main_player:
-		return
-		
-	handle_movement()
-	if current_state == PlayerState.GHOST: return
-	handle_visuals()
-	update_all_players_in_cone()
-	check_line_of_sight()
 	
-	# Update sync position for replication
-	if is_multiplayer_authority():
-		_sync_position = global_position
+	# Only the multiplayer authority simulates input and movement
+	if is_multiplayer_authority() and is_main_player:
+		handle_movement()
+		if current_state == PlayerState.GHOST: return
+		handle_visuals()
+		update_all_players_in_cone()
+		check_line_of_sight()
+		
+		# Sync position to other clients
+		_sync_player_position.rpc(global_position, velocity)
+	else:
+		# Non-authority players just interpolate to synced position
+		if _sync_position != Vector2.ZERO:
+			global_position = global_position.lerp(_sync_position, delta * 10.0)
+
+@rpc("any_peer", "unreliable")
+func _sync_player_position(pos: Vector2, vel: Vector2):
+	if not is_multiplayer_authority():
+		_sync_position = pos
+		velocity = vel
 
 func _input(event: InputEvent) -> void:
 	if is_dying or current_state == PlayerState.GHOST: return

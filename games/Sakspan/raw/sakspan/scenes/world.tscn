@@ -54,7 +54,7 @@ shape = SubResource("RectangleShape2D_nnsk1")
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://b75j5af55anqv", "uid://cdmdl43ffakku")
-spawn_path = NodePath("./Players")
+spawn_path = NodePath("../Players")
 
 [node name="Players" type="Node" parent="."]
 

@@ -1,9 +1,9 @@
 # res://scripts/world.gd
 extends Node2D
 class_name GameWorld
-const PlayerCharacter = preload("res://scripts/player.gd")
 
 signal world_loaded()
+signal all_players_spawned()
 
 @onready var multiplayer_spawner = $MultiplayerSpawner
 @onready var loading_screen := $LoadingScreen
@@ -19,13 +19,19 @@ var game_state = {
 	"game_started": false
 }
 var _is_loading := true
+var _spawned_players: Dictionary = {}
+var _spawn_attempts := 0
+var _max_spawn_attempts := 10
 
 func _ready():
 	if multiplayer.is_server():
 		# Initialize server state
 		game_state.players = NetworkManager.players.duplicate()
 		
+	# Connect to NetworkManager signals
 	NetworkManager.player_list_changed.connect(_on_player_list_changed)
+	NetworkManager.player_joined.connect(_on_player_joined)
+	NetworkManager.player_left.connect(_on_player_left)
 	
 	if loading_screen:
 		loading_screen.visible = true
@@ -54,7 +60,7 @@ func player_action(action: String, data: Dictionary):
 			_handle_move(player_id, data)
 		
 	# Sync state to all clients
-	rpc("update_game_state", game_state)
+	update_game_state.rpc(game_state)
 
 @rpc("authority", "reliable")
 func update_game_state(new_state: Dictionary) -> void:
@@ -62,7 +68,7 @@ func update_game_state(new_state: Dictionary) -> void:
 
 # Client function to request actions
 func request_action(action: String, data: Dictionary):
-	rpc_id(1, "player_action", action, data)
+	player_action.rpc_id(1, action, data)
 
 # Server validation function
 func _validate_action(player_id: int, action: String, data: Dictionary) -> bool:
@@ -116,7 +122,17 @@ func _on_player_list_changed(players: Dictionary) -> void:
 func _spawn_all_players() -> void:
 	if not multiplayer.is_server():
 		return
+		
+	print("[World] Starting player spawn process...")
 	var players_dict = NetworkManager.players
+	
+	if players_dict.is_empty():
+		print("[World] No players to spawn")
+		return
+	
+	# Clear existing spawned players
+	_spawned_players.clear()
+	_despawn_all_players()
 	
 	# Convert keys to integers and sort for deterministic spawn order
 	var int_ids: Array[int] = []
@@ -124,25 +140,71 @@ func _spawn_all_players() -> void:
 		int_ids.append(int(key))
 	int_ids.sort()
 	
+	print("[World] Spawning players: ", int_ids)
+	
 	# Spawn each player via MultiplayerSpawner so it replicates to clients
 	for i in range(min(int_ids.size(), spawn_points.size())):
 		var id: int = int_ids[i]
-		var new_player: Node = multiplayer_spawner.spawn(id)
-		if new_player == null:
-			continue
-		new_player.name = str(id)
-		if new_player.has_method("set_multiplayer_authority"):
-			new_player.set_multiplayer_authority(id, true)
-		if new_player is Node2D:
-			(new_player as Node2D).global_position = spawn_points[i]
-		# Set up camera for local player
-		if id == multiplayer.get_unique_id() and new_player.has_node("Camera2D"):
-			new_player.get_node("Camera2D").enabled = true
-			new_player.get_node("Camera2D").make_current()
+		var player_data = players_dict[id]
+		
+		print("[World] Spawning player ", id, " at position ", spawn_points[i])
+		
+		# Use RPC to spawn player on all clients
+		_spawn_player_on_clients.rpc(id, player_data, spawn_points[i], i)
+		
+	# Notify NetworkManager that game scene is loaded
+	NetworkManager.notify_game_scene_loaded()
+	all_players_spawned.emit()
+
+@rpc("authority", "call_local", "reliable")
+func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos: Vector2, spawn_index: int) -> void:
+	print("[World] Spawning player ", player_id, " on client")
+	
+	# Create player instance
+	var new_player: Node = multiplayer_spawner.spawn(player_id)
+	if new_player == null:
+		print("[World] Failed to spawn player ", player_id)
+		return
+		
+	new_player.name = "Player_" + str(player_id)
+	
+	# Set multiplayer authority - each player controls their own character
+	new_player.set_multiplayer_authority(player_id, true)
+	
+	# Position the player
+	if new_player is Node2D:
+		(new_player as Node2D).global_position = spawn_pos
+	
+	# Configure player properties
+	if new_player.has_method("setup_multiplayer_player"):
+		new_player.setup_multiplayer_player(player_data, player_id == multiplayer.get_unique_id())
+	
+	# Set up camera and input for local player only
+	if player_id == multiplayer.get_unique_id():
+		if new_player.has_node("Camera2D"):
+			var camera = new_player.get_node("Camera2D")
+			camera.enabled = true
+			camera.make_current()
+		
+		# Enable input processing for local player
+		if new_player.has_method("set_is_main_player"):
+			new_player.set_is_main_player(true)
+		elif "is_main_player" in new_player:
+			new_player.is_main_player = true
+			
+		print("[World] Local player ", player_id, " spawned and configured")
+	else:
+		# Disable camera for remote players
+		if new_player.has_node("Camera2D"):
+			new_player.get_node("Camera2D").enabled = false
+		print("[World] Remote player ", player_id, " spawned")
+	
+	_spawned_players[player_id] = new_player
 
 func _despawn_all_players() -> void:
 	for child in players_container.get_children():
 		child.queue_free()
+	_spawned_players.clear()
 
 func _handle_attack(player_id: int, data: Dictionary) -> void:
 	# Implement attack logic here

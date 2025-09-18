@@ -7,13 +7,16 @@ signal player_list_changed(players_dict)
 signal lobby_found(lobby_info)
 signal game_started(player_data)
 signal lobby_data_changed(lobby_data)
+signal player_joined(player_id: int, player_data: Dictionary)
+signal player_left(player_id: int)
 
 # Master list of all players in the lobby/game.
-# Structure: {1: {"name": "HostName"}, 54321: {"name": "ClientName"}}
+# Structure: {1: {"name": "HostName", "ready": false, "char_index": -1}, 54321: {"name": "ClientName", "ready": false, "char_index": -1}}
 var players: Dictionary = {}
 var my_lobby_data: Dictionary = {}  # Lobby metadata storage
 var is_game_started: bool = false  # Add game state tracking
 var local_player_name: String = ""  # Stored name picked on the Multiplayer menu
+var game_scene_loaded: bool = false
 
 const DEFAULT_PORT = 8080 # Updated to more open port
 const DISCOVERY_PORT := 9001
@@ -127,13 +130,16 @@ func _add_player_data(id: int, name: String) -> void:
 	players[id] = {
 		"name": name,
 		"char_index": -1,
-		"is_host": id == 1
+		"is_host": id == 1,
+		"ready": false
 	}
 	player_list_changed.emit(players)
+	player_joined.emit(id, players[id])
 	print("Updated Players List: ", players)
 
 func _remove_player_data(id: int) -> void:
 	if players.has(id):
+		player_left.emit(id)
 		players.erase(id)
 		player_list_changed.emit(players)
 		print("Updated Players List: ", players)
@@ -251,13 +257,14 @@ func request_unlock() -> void:
 func start_game() -> void:
 	# Host triggers the actual game start; server instructs all peers
 	if multiplayer.is_server():
-		rpc("rpc_start_game", my_lobby_data)
+		rpc_start_game.rpc(my_lobby_data)
 	else:
 		print("[StartGame] Only host can start the game.")
 
 @rpc("authority", "call_local", "reliable")
 func rpc_start_game(lobby_info: Dictionary) -> void:
 	is_game_started = true
+	game_scene_loaded = false
 	emit_signal("game_started", players)
 	# Switch everyone to the dev test scene temporarily (toggleable)
 	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else "res://scenes/world.tscn"
@@ -355,3 +362,46 @@ func _get_lan_ipv4() -> String:
 
 func get_local_ipv4() -> String:
 	return _get_lan_ipv4()
+
+# --- Player Authority and Game State Management ---
+
+func set_player_ready(player_id: int, ready: bool) -> void:
+	if players.has(player_id):
+		players[player_id]["ready"] = ready
+		player_list_changed.emit(players)
+
+func are_all_players_ready() -> bool:
+	if players.is_empty():
+		return false
+	for id in players:
+		if not players[id].get("ready", false):
+			return false
+	return true
+
+func get_player_count() -> int:
+	return players.size()
+
+func reset_game_state() -> void:
+	is_game_started = false
+	game_scene_loaded = false
+	for id in players:
+		players[id]["ready"] = false
+	player_list_changed.emit(players)
+
+# Called when world scene is loaded and ready
+func notify_game_scene_loaded() -> void:
+	game_scene_loaded = true
+	print("[NetworkManager] Game scene loaded and ready")
+
+# Get spawn data for all players (used by World script)
+func get_spawn_data() -> Dictionary:
+	var spawn_data = {}
+	var index = 0
+	for id in players.keys():
+		spawn_data[id] = {
+			"name": players[id]["name"],
+			"spawn_index": index,
+			"char_index": players[id].get("char_index", 0)
+		}
+		index += 1
+	return spawn_data

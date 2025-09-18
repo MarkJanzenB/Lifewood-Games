@@ -39,6 +39,7 @@ func rpc_request_char_selection(index: int) -> void:
 		return
 	if mgr.players.has(sender_id):
 		mgr.players[sender_id]["char_index"] = index
+		print("[LobbySync] Player ", sender_id, " selected character ", index)
 		sync_char_selection.rpc(sender_id, index)
 		mgr.player_list_changed.emit(mgr.players)
 
@@ -50,6 +51,7 @@ func sync_char_selection(id: int, index: int) -> void:
 	if not mgr.players.has(id):
 		return
 	mgr.players[id]["char_index"] = index
+	print("[LobbySync] Synced character selection: Player ", id, " -> character ", index)
 	mgr.player_list_changed.emit(mgr.players)
 
 func _owner_add_player(id: int, name: String) -> void:

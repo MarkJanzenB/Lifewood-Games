@@ -203,7 +203,7 @@ func _update_character_grid_highlight():
 	if not character_grid: return
 	for i in range(character_grid.get_child_count()):
 		# The "as CharacterButton" cast now works because of "class_name".
-		var btn = character_grid.get_child(i) as CharacterButton
+		var btn = character_grid.get_child(i) as LobbyCharacterButton
 		if btn:
 			btn.set_selected(i == selected_char_index)
 
@@ -311,10 +311,10 @@ func _on_lock_in_button_pressed():
 	_update_start_game_button()
 
 func _on_player_list_changed(players: Dictionary):
+	print("[LobbyWaitRoom] Player list changed: ", players)
 	_update_player_list(players)
 	_update_start_game_button()
-	if not locked_in:
-		_update_character_grid_lock(players)
+	_update_character_grid_lock(players)
 	_update_selection_label_from_players(players)
 
 func _update_selection_label_from_players(players: Dictionary):
