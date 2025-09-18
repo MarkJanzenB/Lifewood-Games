@@ -40,6 +40,9 @@ func _ready():
 	_setup_ui()
 	_load_saved_settings()
 	
+	# Run network diagnostics
+	_run_network_diagnostics()
+	
 	# Start listening for lobbies
 	NetworkManager.start_listening_for_lobbies()
 
@@ -150,6 +153,13 @@ func _join_lobby_by_ip():
 		_update_status("Please enter an IP address!")
 		return
 	
+	# Test connectivity first
+	_update_status("Testing connection to " + ip + "...")
+	var diag = preload("res://scripts/global/NetworkDiagnostics.gd").new()
+	if not diag.test_udp_connection(ip, NetworkManager.DEFAULT_PORT):
+		_update_status("Cannot reach " + ip + ". Check network/firewall settings.")
+		return
+	
 	# Save player name
 	NetworkManager.set_local_player_name(player_name)
 	
@@ -236,6 +246,22 @@ func _enable_ui():
 		join_button.disabled = false
 	if refresh_button:
 		refresh_button.disabled = false
+
+func _run_network_diagnostics():
+	print("=== SAKSPAN NETWORK DIAGNOSTICS ===")
+	var diag = preload("res://scripts/global/NetworkDiagnostics.gd").new()
+	diag.print_network_info()
+	diag.get_network_adapters_info()
+	print("=== END DIAGNOSTICS ===")
+
+func _test_connection_to_ip(ip: String):
+	_update_status("Testing connection to " + ip + "...")
+	var diag = preload("res://scripts/global/NetworkDiagnostics.gd").new()
+	var success = diag.test_udp_connection(ip, NetworkManager.DEFAULT_PORT)
+	if success:
+		_update_status("UDP test to " + ip + " successful!")
+	else:
+		_update_status("UDP test to " + ip + " failed!")
 
 func _exit_tree():
 	# Clean up discovery when leaving

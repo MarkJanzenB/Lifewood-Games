@@ -65,7 +65,19 @@ func _get_broadcast_candidates(ip: String) -> PackedStringArray:
 
 # Test UDP connectivity between two IPs
 func test_udp_connection(target_ip: String, port: int = 9001) -> bool:
+	print("[NetworkTest] Testing UDP connection to ", target_ip, ":", port)
+	
+	# Validate IP format first
+	if not _is_valid_ip(target_ip):
+		print("[NetworkTest] Invalid IP format: ", target_ip)
+		return false
+	
 	var udp = PacketPeerUDP.new()
+	var bind_err = udp.bind(0)  # Bind to any available port
+	if bind_err != OK:
+		print("[NetworkTest] Failed to bind UDP socket, error: ", bind_err)
+		return false
+	
 	udp.set_dest_address(target_ip, port)
 	
 	var test_message = "SAKSPAN_TEST"
@@ -74,9 +86,26 @@ func test_udp_connection(target_ip: String, port: int = 9001) -> bool:
 	var err = udp.put_packet(bytes)
 	if err != OK:
 		print("[NetworkTest] Failed to send UDP packet to ", target_ip, ":", port, " Error: ", err)
+		udp.close()
 		return false
 	
 	print("[NetworkTest] UDP packet sent to ", target_ip, ":", port)
+	udp.close()
+	return true
+
+func _is_valid_ip(ip: String) -> bool:
+	var parts = ip.split(".")
+	if parts.size() != 4:
+		return false
+	
+	for part in parts:
+		var num = part.to_int()
+		if num < 0 or num > 255:
+			return false
+		# Check if the string actually represents the number (no leading zeros, etc.)
+		if str(num) != part:
+			return false
+	
 	return true
 
 # Get network adapter information (Windows specific)

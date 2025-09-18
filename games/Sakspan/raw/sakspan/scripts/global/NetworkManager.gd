@@ -110,15 +110,42 @@ func create_lobby(player_name: String, _lobby_name: String, max_players: int, _t
 	connection_succeeded.emit()
 
 func join_lobby(player_name: String, ip: String) -> void:
+	print("[JoinLobby] Attempting to join lobby at ", ip, ":", DEFAULT_PORT)
+	print("[JoinLobby] Player name: ", player_name)
+	
+	# Test basic connectivity first
+	var diag = preload("res://scripts/global/NetworkDiagnostics.gd").new()
+	if not diag.test_udp_connection(ip, DEFAULT_PORT):
+		print("[JoinLobby] UDP connectivity test failed")
+	
 	var peer = ENetMultiplayerPeer.new()
+	
+	# Set connection timeout (default is often too long)
+	peer.get_host().set_timeout(5000, 5000, 5000)  # 5 second timeout
+	
 	var error: int = peer.create_client(ip, DEFAULT_PORT)
 	if error != OK:
-		print("CLIENT CREATION FAILED")
+		print("[JoinLobby] CLIENT CREATION FAILED - Error code: ", error)
+		print("[JoinLobby] Error meanings:")
+		print("  ERR_ALREADY_IN_USE (48): Port already in use")
+		print("  ERR_CANT_CREATE (50): Cannot create client")
+		print("  ERR_INVALID_PARAMETER (51): Invalid IP or port")
 		connection_failed.emit()
 		return
 	
+	print("[JoinLobby] ENet client created successfully, attempting connection...")
 	multiplayer.multiplayer_peer = peer
-	# The 'connected_to_server' signal will handle next steps
+	
+	# Set a timer to detect connection timeout
+	var timeout_timer = Timer.new()
+	add_child(timeout_timer)
+	timeout_timer.wait_time = 10.0  # 10 second timeout
+	timeout_timer.one_shot = true
+	timeout_timer.timeout.connect(_on_connection_timeout)
+	timeout_timer.start()
+	
+	# Store timer reference to clean it up later
+	set_meta("connection_timeout_timer", timeout_timer)
 
 func _on_discovery_lobby_found(data: Dictionary) -> void:
 	# Mirror discovery results to our own store and re-emit to UI
@@ -154,17 +181,29 @@ func _on_peer_disconnected(id: int) -> void:
 	_remove_player_data(id)
 
 func _on_connected_to_server() -> void:
-	print("Successfully connected to the server!")
+	print("[NetworkManager] Successfully connected to the server!")
+	
+	# Clean up connection timeout timer
+	_cleanup_connection_timer()
+	
 	# Now that we're connected, tell the server who we are.
-	# It's important to get the player's name from your UI here.
-	# For now, we use a placeholder.
 	var nm: String = get_local_player_name()
 	var my_name: String = nm if not nm.is_empty() else ("Player" + str(multiplayer.get_unique_id()))
+	print("[NetworkManager] Registering with server as: ", my_name)
 	lobby_sync.register_with_server.rpc_id(1, my_name)
 	connection_succeeded.emit()
 
 func _on_connection_failed() -> void:
-	print("CONNECTION FAILED.")
+	print("[NetworkManager] CONNECTION FAILED.")
+	print("[NetworkManager] Possible causes:")
+	print("  - Host is not running or not accessible")
+	print("  - Firewall blocking connection")
+	print("  - Network connectivity issues")
+	print("  - Port ", DEFAULT_PORT, " is blocked")
+	
+	# Clean up connection timeout timer
+	_cleanup_connection_timer()
+	
 	multiplayer.multiplayer_peer = null
 	connection_failed.emit()
 
@@ -174,6 +213,25 @@ func _on_server_disconnected() -> void:
 	players.clear()
 	# Here you would typically change scene back to the main menu.
 	# SceneChanger.change_scene_to_file("res://scenes/UI/Main_Menu/main_menu.tscn")
+
+func _on_connection_timeout() -> void:
+	print("[NetworkManager] CONNECTION TIMEOUT - No response from server")
+	print("[NetworkManager] This usually means:")
+	print("  - The host IP is wrong or unreachable")
+	print("  - The host is not running a server")
+	print("  - Network/firewall is blocking the connection")
+	
+	# Clean up and fail the connection
+	multiplayer.multiplayer_peer = null
+	_cleanup_connection_timer()
+	connection_failed.emit()
+
+func _cleanup_connection_timer() -> void:
+	if has_meta("connection_timeout_timer"):
+		var timer = get_meta("connection_timeout_timer")
+		if timer and is_instance_valid(timer):
+			timer.queue_free()
+		remove_meta("connection_timeout_timer")
 
 ## Removed: stop_lan_discovery_and_reset merged into simpler flows
 
