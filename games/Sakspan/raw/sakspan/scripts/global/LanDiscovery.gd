@@ -8,6 +8,7 @@ signal stopped
 
 var discovery_port: int = 9001
 var discovery_magic: String = "SAKSPAN_V1"
+var debug: bool = false
 
 var _udp_listener: PacketPeerUDP = PacketPeerUDP.new()
 var _udp_broadcaster: PacketPeerUDP = PacketPeerUDP.new()
@@ -46,6 +47,8 @@ func start_listening() -> void:
 	_listening = true
 	_discovered_lobbies.clear()
 	_poll_timer.start()
+	if debug:
+		print("[Discovery] Listening on UDP:", discovery_port)
 	emit_signal("started")
 
 func stop_listening() -> void:
@@ -54,6 +57,8 @@ func stop_listening() -> void:
 	_listening = false
 	_udp_listener = PacketPeerUDP.new()
 	_discovered_lobbies.clear()
+	if debug:
+		print("[Discovery] Stopped listening")
 	emit_signal("stopped")
 
 func _poll() -> void:
@@ -86,11 +91,15 @@ func start_broadcasting() -> void:
 	_udp_broadcaster = PacketPeerUDP.new()
 	_udp_broadcaster.set_broadcast_enabled(true)
 	_broadcast_timer.start()
+	if debug:
+		print("[Discovery] Broadcasting on UDP:", discovery_port, " targets:", _get_broadcast_candidates_ipv4())
 
 func stop_broadcasting() -> void:
 	if _broadcast_timer:
 		_broadcast_timer.stop()
 	_udp_broadcaster = PacketPeerUDP.new()
+	if debug:
+		print("[Discovery] Stopped broadcasting")
 
 func _on_broadcast_tick() -> void:
 	if _payload_provider == null:
@@ -99,14 +108,22 @@ func _on_broadcast_tick() -> void:
 	if info.is_empty():
 		return
 	var bytes: PackedByteArray = JSON.stringify(info).to_utf8_buffer()
-	for b in _get_broadcast_candidates_ipv4():
+	var targets := _get_broadcast_candidates_ipv4()
+	for b in targets:
 		_udp_broadcaster.set_dest_address(b, discovery_port)
 		_udp_broadcaster.put_packet(bytes)
+	if debug:
+		print("[Discovery] Broadcast tick to", targets.size(), "targets")
 
 # --- Helpers ---
 func _get_lan_ipv4() -> String:
 	var addrs: PackedStringArray = IP.get_local_addresses()
 	for a in addrs:
+		# Skip loopback/APIPA/virtual adapters commonly seen on Windows
+		if a.begins_with("127.") or a.begins_with("0.") or a.begins_with("169.254."):
+			continue
+		if a.begins_with("192.168.56."):
+			continue
 		if a.begins_with("192.168.") or a.begins_with("10."):
 			return a
 		if a.begins_with("172."):

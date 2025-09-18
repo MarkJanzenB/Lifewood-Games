@@ -18,6 +18,7 @@ var local_player_name: String = ""  # Stored name picked on the Multiplayer menu
 const DEFAULT_PORT = 8080 # Updated to more open port
 const DISCOVERY_PORT := 9001
 const DISCOVERY_MAGIC := "SAKSPAN_V1"
+const DISCOVERY_DEBUG := true
 const USE_DEV_TEST_TEMP := true
 const DEV_TEST_SCENE_PATH := "res://scenes/dev/dev_test.tscn"
 
@@ -71,6 +72,7 @@ func _ready() -> void:
 	discovery.name = "LanDiscovery"
 	add_child(discovery)
 	discovery.configure(DISCOVERY_PORT, DISCOVERY_MAGIC)
+	discovery.debug = DISCOVERY_DEBUG
 	discovery.lobby_found.connect(_on_discovery_lobby_found)
 	discovery.set_payload_provider(Callable(self, "_get_lobby_info_payload"))
 
@@ -335,6 +337,12 @@ func _generate_room_code(len: int = 6) -> String:
 func _get_lan_ipv4() -> String:
 	var addrs: PackedStringArray = IP.get_local_addresses()
 	for a in addrs:
+		# Skip loopback/APIPA/virtual adapters commonly seen on Windows
+		if a.begins_with("127.") or a.begins_with("0.") or a.begins_with("169.254."):
+			continue
+		# Prefer to avoid VirtualBox Host-Only adapter
+		if a.begins_with("192.168.56."):
+			continue
 		if a.begins_with("192.168.") or a.begins_with("10."):
 			return a
 		if a.begins_with("172."):
