@@ -1,0 +1,44 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/dev/diagnostics_panel.gd" id="1_3m1d6"]
+
+[node name="DiagnosticsPanel" type="Panel"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = -400.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 150.0
+script = ExtResource("1_3m1d6")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+custom_constants/margin_left = 8
+custom_constants/margin_top = 8
+custom_constants/margin_right = 8
+custom_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Title" type="Label" parent="Margin/VBox"]
+text = "Diagnostics"
+
+[node name="IP" type="Label" parent="Margin/VBox"]
+text = "Local IP:"
+
+[node name="Ports" type="Label" parent="Margin/VBox"]
+text = "Ports:"
+
+[node name="Discovery" type="Label" parent="Margin/VBox"]
+text = "Discovery:"
+
+[node name="Peers" type="Label" parent="Margin/VBox"]
+text = "Peers:"

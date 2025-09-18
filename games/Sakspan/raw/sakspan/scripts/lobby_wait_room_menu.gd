@@ -49,6 +49,11 @@ func _ready():
 	if game_manager and game_manager.has_method("reset_to_lobby"):
 		game_manager.reset_to_lobby()
 	
+	# Safety: ensure fullscreen background never intercepts mouse
+	var bg := get_node_or_null("../lobby_wait_room_background") as Control
+	if bg:
+		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
 	_check_ui_nodes()
 	_resolve_nodes_if_missing()
 	
@@ -83,6 +88,9 @@ func _ready():
 		lock_in_button.pressed.connect(_on_lock_in_button_pressed)
 	if leave_lobby_button:
 		leave_lobby_button.pressed.connect(_on_leave_lobby_button_pressed)
+	# Default focus to Lock In for immediate keyboard navigation
+	if lock_in_button:
+		lock_in_button.grab_focus()
 
 	# Initialize from NetworkManager by default; may be overridden via _initialize_lobby
 	lobby_data = (get_node_or_null("/root/NetworkManager") as Node).my_lobby_data if get_node_or_null("/root/NetworkManager") else {}
