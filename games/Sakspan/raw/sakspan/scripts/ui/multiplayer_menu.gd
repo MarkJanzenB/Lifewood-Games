@@ -256,12 +256,23 @@ func _run_network_diagnostics():
 
 func _test_connection_to_ip(ip: String):
 	_update_status("Testing connection to " + ip + "...")
-	var diag = preload("res://scripts/global/NetworkDiagnostics.gd").new()
-	var success = diag.test_udp_connection(ip, NetworkManager.DEFAULT_PORT)
-	if success:
-		_update_status("UDP test to " + ip + " successful!")
+	var tester = preload("res://scripts/global/ConnectionTester.gd").new()
+	var results = await tester.full_network_test(ip)
+	
+	if results.tcp_8080:
+		_update_status("✅ Connection test passed! Host is reachable.")
 	else:
-		_update_status("UDP test to " + ip + " failed!")
+		var issues = []
+		if not results.ip_valid:
+			issues.append("Invalid IP format")
+		if not results.ping_success:
+			issues.append("Host unreachable")
+		if not results.tcp_8080:
+			issues.append("Port 8080 blocked/closed")
+		if not results.udp_9001:
+			issues.append("UDP discovery blocked")
+		
+		_update_status("❌ Connection issues: " + ", ".join(issues))
 
 func _exit_tree():
 	# Clean up discovery when leaving

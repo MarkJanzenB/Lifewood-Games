@@ -18,7 +18,8 @@ var is_game_started: bool = false  # Add game state tracking
 var local_player_name: String = ""  # Stored name picked on the Multiplayer menu
 var game_scene_loaded: bool = false
 
-const DEFAULT_PORT = 8080 # Updated to more open port
+const DEFAULT_PORT: int = 8080
+const ALTERNATIVE_PORTS: Array[int] = [8080, 7777, 9999, 12345, 25565]
 const DISCOVERY_PORT := 9001
 const DISCOVERY_MAGIC := "SAKSPAN_V1"
 const DISCOVERY_DEBUG := true
