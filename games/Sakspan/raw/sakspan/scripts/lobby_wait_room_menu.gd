@@ -120,10 +120,11 @@ func _ready():
 	_update_start_game_button()
 
 	# Heartbeat refresh in case signals are missed; keeps UI in sync
-	_heartbeat_timer.wait_time = 1.0
+	_heartbeat_timer.wait_time = 0.5  # More frequent updates
 	_heartbeat_timer.timeout.connect(func():
 		_update_player_list(NetworkManager.players)
-		_update_start_game_button())
+		_update_start_game_button()
+		_update_character_grid_lock(NetworkManager.players))
 	add_child(_heartbeat_timer)
 	_heartbeat_timer.start()
 
@@ -303,6 +304,7 @@ func _on_lock_in_button_pressed():
 		var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
 		print("[LobbyWaitRoom] Locking in character: ", character_name, " (index ", selected_char_index, ")")
 		
+		print("[LobbyWaitRoom] Lock in sent for index=", selected_char_index)
 		NetworkManager.request_char_selection(selected_char_index)
 		locked_in = true
 		lock_in_button.text = "UNLOCK"
@@ -317,6 +319,10 @@ func _on_lock_in_button_pressed():
 		if selection_label:
 			selection_label.text = "Locked in as: " + character_name + " ✓"
 		
+		# Force immediate UI refresh
+		await get_tree().process_frame
+		_update_player_list(NetworkManager.players)
+		_update_start_game_button()
 		NetworkManager.request_players_resync()
 	else:
 		# Unlock request
@@ -346,6 +352,12 @@ func _update_status(message: String):
 
 func _on_player_list_changed(players: Dictionary):
 	print("[LobbyWaitRoom] Player list changed: ", players)
+	# Debug: Print each player's character selection status
+	for id in players:
+		var char_index = int(players[id].get("char_index", -1))
+		var name = players[id].get("name", "Unknown")
+		print("[LobbyWaitRoom] Player ", id, " (", name, ") char_index: ", char_index)
+	
 	_update_player_list(players)
 	_update_start_game_button()
 	_update_character_grid_lock(players)
@@ -371,8 +383,8 @@ func _on_start_game_button_pressed():
 		NetworkManager.start_game()
 
 func _on_game_started(_player_data):
-	print("[LobbyWaitRoom] game_started received. Loading world.tscn...")
-	SceneChanger.change_scene_to_file("res://scenes/world.tscn")
+	print("[LobbyWaitRoom] game_started received. Loading world_new.tscn...")
+	SceneChanger.change_scene_to_file("res://scenes/world_new.tscn")
 
 func _on_leave_lobby_button_pressed():
 	NetworkManager.leave_lobby()

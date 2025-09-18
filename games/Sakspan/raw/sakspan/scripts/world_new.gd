@@ -336,10 +336,8 @@ func _sync_input_log(player_id: int, player_name: String, direction: String) -> 
 func _toggle_debug_ui() -> void:
 	_debug_visible = !_debug_visible
 	if debug_ui:
-			auth_text += "Server"
-		else:
-			auth_text += "Client"
-		authority_label.text = auth_text
+		debug_ui.visible = _debug_visible
+	_update_debug_ui()
 
 # NetworkManager signal handlers
 func _on_player_list_changed(players: Dictionary) -> void:
@@ -374,3 +372,81 @@ func _on_game_started(player_data: Dictionary) -> void:
 func _process(_delta: float) -> void:
 	if _debug_visible:
 		_update_debug_info()
+
+# Role assignment for multiplayer
+func _assign_player_roles() -> void:
+	if not multiplayer.is_server():
+		return
+	
+	var all_players: Array[Node] = players_container.get_children()
+	if all_players.is_empty():
+		print("[World] No players found for role assignment")
+		return
+	
+	print("[World] Assigning roles to ", all_players.size(), " players")
+	
+	# Randomly select one seeker, rest are hiders
+	var seeker_index: int = randi() % all_players.size()
+	
+	for i in range(all_players.size()):
+		var player: Node = all_players[i]
+		if not player or not player.has_method("assign_role"):
+			print("[World] WARNING: Player ", i, " doesn't have assign_role method")
+			continue
+			
+		if i == seeker_index:
+			player.assign_role(0) # PlayerRole.SEEKER
+			_sync_player_role.rpc(player.get_multiplayer_authority(), 0)
+			print("[World] Assigned SEEKER role to player ", player.get_multiplayer_authority())
+		else:
+			player.assign_role(1) # PlayerRole.HIDER
+			_sync_player_role.rpc(player.get_multiplayer_authority(), 1)
+			print("[World] Assigned HIDER role to player ", player.get_multiplayer_authority())
+
+@rpc("authority", "call_local", "reliable")
+func _sync_player_role(player_id: int, role: int) -> void:
+	var player: Node = players_container.get_node_or_null("Player_" + str(player_id))
+	if player and player.has_method("assign_role"):
+		player.assign_role(role)
+		print("[World] Synced role ", role, " to player ", player_id)
+	else:
+		print("[World] WARNING: Could not sync role to player ", player_id)
+
+func _initialize_game_mechanics() -> void:
+	if not multiplayer.is_server():
+		return
+	
+	print("[World] Initializing game mechanics...")
+	
+	# Wait a moment for roles to be assigned
+	await get_tree().create_timer(0.5).timeout
+	
+	# Get GameManager and initialize the game
+	var gm: Node = get_node_or_null("/root/GameManager")
+	if gm and gm.has_method("initialize_game"):
+		gm.initialize_game()
+		print("[World] Game mechanics initialized successfully")
+	else:
+		print("[World] WARNING: GameManager not found or doesn't have initialize_game method")
+		# Try to start the game anyway
+		if gm and gm.has_method("change_game_state"):
+			gm.change_game_state(1) # HIDER_HEADSTART
+
+func _update_debug_ui() -> void:
+	if not debug_ui or not _debug_visible:
+		return
+	
+	if player_count_label:
+		player_count_label.text = "Players: " + str(_spawned_players.size())
+	
+	if connection_label:
+		var status = "Server" if multiplayer.is_server() else "Client"
+		connection_label.text = "Role: " + status
+	
+	if authority_label:
+		authority_label.text = "Authority: " + str(multiplayer.get_unique_id())
+
+func _update_debug_info() -> void:
+	# Update debug information
+	if _debug_visible:
+		_update_debug_ui()

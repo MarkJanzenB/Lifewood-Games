@@ -62,7 +62,7 @@ func _deferred_change_scene(scene_path: String, init_data: Dictionary = {}):
 	var game_manager = get_node_or_null("/root/GameManager")
 	if game_manager and is_instance_valid(game_manager.game_ui_instance):
 		var file := scene_path.get_file()
-		var is_game_scene = (file == "game.tscn" or file == "world.tscn")
+		var is_game_scene = (file == "game.tscn" or file == "world.tscn" or file == "world_new.tscn")
 		game_manager.game_ui_instance.visible = is_game_scene
 
 	# If there is initialization data, try to pass it to the new scene using common hooks.

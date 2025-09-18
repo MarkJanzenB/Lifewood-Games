@@ -61,9 +61,8 @@ func _ready():
 	
 	# Setup MultiplayerSynchronizer
 	if sync:
-		sync.replication_config = null  # Will be set in editor
+		_setup_replication_config()
 		sync.visibility_update_mode = MultiplayerSynchronizer.VISIBILITY_PROCESS_PHYSICS
-		sync.visibility_public = true
 	
 	# Configure role-specific settings
 	if role == PlayerRole.HIDER:
@@ -88,6 +87,27 @@ func _configure_multiplayer_authority():
 		if camera:
 			camera.enabled = true
 			camera.make_current()
+
+func _setup_replication_config():
+	# Create and configure replication config for multiplayer synchronization
+	if not sync:
+		return
+		
+	var config = SceneReplicationConfig.new()
+	
+	# Add properties that need to be synchronized across clients
+	config.add_property(".:position")
+	config.add_property(".:rotation")
+	config.add_property(".:role")
+	config.add_property(".:player_state")
+	config.add_property(".:player_name")
+	config.add_property(".:health")
+	config.add_property(".:ammo")
+	config.add_property(".:is_main_player")
+	
+	# Set the config
+	sync.replication_config = config
+	print("[Player] Replication config set up for player: ", player_name)
 
 # Called by World script when spawning players
 func setup_multiplayer_player(player_data: Dictionary, is_local: bool):

@@ -344,15 +344,20 @@ func request_char_selection(index: int) -> void:
 		return
 	
 	if lobby_sync:
-		lobby_sync.rpc_request_char_selection(index)
+		print("[NetworkManager] Sending RPC to server for character selection: ", index)
+		lobby_sync.rpc_request_char_selection.rpc_id(1, index)  # Send to server (ID 1)
 	else:
-		print("[NetworkManager] LobbySync not available for character selection")
+		print("[NetworkManager] ERROR: LobbySync not available!") 
 
 func request_unlock() -> void:
 	# Client-side helper: send unlock (-1) to server
-	lobby_sync.rpc_request_char_selection(-1)
+	if lobby_sync:
+		print("[NetworkManager] Sending unlock RPC to server")
+		lobby_sync.rpc_request_char_selection.rpc_id(1, -1)  # Send to server (ID 1)
+	else:
+		print("[NetworkManager] ERROR: LobbySync not available for unlock!")
 
-# Get the selected character index for a player
+## ... (rest of the code remains the same)
 func get_player_character_index(player_id: int) -> int:
 	if players.has(player_id):
 		return int(players[player_id].get("char_index", -1))
