@@ -90,9 +90,9 @@ func _on_host_button_pressed():
 
 func _on_join_button_pressed():
 	if not is_hosting_mode:
-		_show_join_settings()
+		_join_lobby_by_ip()
 	else:
-		_show_host_settings()
+		_show_join_settings()
 
 func _show_host_settings():
 	is_hosting_mode = true

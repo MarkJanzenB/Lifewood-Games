@@ -297,6 +297,8 @@ func _broadcast_lobby() -> void:
 func _get_lobby_info_payload() -> Dictionary:
 	if multiplayer.multiplayer_peer == null or not multiplayer.is_server():
 		return {}
+	var host_ip = _get_lan_ipv4()
+	print("[NetworkManager] Broadcasting lobby from IP: ", host_ip)
 	return {
 		"magic": DISCOVERY_MAGIC,
 		"name": String(my_lobby_data.get("name", "")),
@@ -304,7 +306,7 @@ func _get_lobby_info_payload() -> Dictionary:
 		"max_players": int(my_lobby_data.get("max_players", 5)),
 		"current_players": players.size(),
 		"timer": String(my_lobby_data.get("timer_setting", "5 minutes")),
-		"host_ip": _get_lan_ipv4(),
+		"host_ip": host_ip,
 		"port": DEFAULT_PORT,
 		"status": ("full" if players.size() >= int(my_lobby_data.get("max_players", 5)) else "waiting")
 	}

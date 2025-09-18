@@ -47,8 +47,9 @@ func start_listening() -> void:
 	_listening = true
 	_discovered_lobbies.clear()
 	_poll_timer.start()
-	if debug:
-		print("[Discovery] Listening on UDP:", discovery_port)
+	var local_ip = _get_lan_ipv4()
+	print("[Discovery] Listening on UDP:", discovery_port, " from IP:", local_ip)
+	started.emit()
 	emit_signal("started")
 
 func stop_listening() -> void:
@@ -111,9 +112,11 @@ func _on_broadcast_tick() -> void:
 	var targets := _get_broadcast_candidates_ipv4()
 	for b in targets:
 		_udp_broadcaster.set_dest_address(b, discovery_port)
-		_udp_broadcaster.put_packet(bytes)
+		var err = _udp_broadcaster.put_packet(bytes)
+		if err != OK and debug:
+			print("[Discovery] Failed to send to ", b, " error: ", err)
 	if debug:
-		print("[Discovery] Broadcast tick to", targets.size(), "targets")
+		print("[Discovery] Broadcast tick to", targets.size(), "targets:", targets)
 
 # --- Helpers ---
 func _get_lan_ipv4() -> String:
