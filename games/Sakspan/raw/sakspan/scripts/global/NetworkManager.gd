@@ -338,12 +338,43 @@ func _save_local_name_to_config() -> void:
 	cfg.save("user://settings.cfg")
 
 func request_char_selection(index: int) -> void:
-	# Client-side helper: send selection request to server
-	lobby_sync.rpc_request_char_selection.rpc(index)
+	print("[NetworkManager] Requesting character selection: ", index)
+	if not CharacterFactory.is_valid_character_index(index):
+		print("[NetworkManager] Invalid character index: ", index)
+		return
+	
+	if lobby_sync:
+		lobby_sync.rpc_request_char_selection(index)
+	else:
+		print("[NetworkManager] LobbySync not available for character selection")
 
 func request_unlock() -> void:
 	# Client-side helper: send unlock (-1) to server
-	lobby_sync.rpc_request_char_selection.rpc(-1)
+	lobby_sync.rpc_request_char_selection(-1)
+
+# Get the selected character index for a player
+func get_player_character_index(player_id: int) -> int:
+	if players.has(player_id):
+		return int(players[player_id].get("char_index", -1))
+	return -1
+
+# Get the selected character name for a player
+func get_player_character_name(player_id: int) -> String:
+	var char_index = get_player_character_index(player_id)
+	if char_index >= 0:
+		return CharacterFactory.get_character_name(char_index)
+	return "No Selection"
+
+# Check if all players have selected characters
+func all_players_ready() -> bool:
+	if players.is_empty():
+		return false
+	
+	for player_id in players:
+		var char_index = int(players[player_id].get("char_index", -1))
+		if char_index < 0:
+			return false
+	return true
 
 func start_game() -> void:
 	# Host triggers the actual game start; server instructs all peers
