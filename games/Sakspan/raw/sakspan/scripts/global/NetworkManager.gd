@@ -85,16 +85,27 @@ func _ready() -> void:
 
 
 func create_lobby(player_name: String, _lobby_name: String, max_players: int, _timer_setting: String) -> void:
+	print("[CreateLobby] Creating server on port ", DEFAULT_PORT)
+	print("[CreateLobby] Max players: ", max_players, " (", max_players - 1, " peers)")
+	print("[CreateLobby] Host name: ", player_name)
+	
 	var peer = ENetMultiplayerPeer.new()
 	var error: int = peer.create_server(DEFAULT_PORT, max_players - 1) # Max peers is exclusive of host
 	if error != OK:
-		print("SERVER CREATION FAILED")
+		print("[CreateLobby] SERVER CREATION FAILED - Error code: ", error)
+		print("[CreateLobby] Possible causes:")
+		print("  - Port ", DEFAULT_PORT, " already in use")
+		print("  - Insufficient permissions")
+		print("  - Network adapter issues")
 		connection_failed.emit()
 		return
 
+	print("[CreateLobby] Server created successfully!")
 	multiplayer.multiplayer_peer = peer
 	# Host is always ID 1
-	_add_player_data(1, player_name)
+	var my_id = multiplayer.get_unique_id()
+	print("[CreateLobby] Host ID: ", my_id)
+	_add_player_data(my_id, player_name)
 	# Save lobby metadata and broadcast to UI
 	var code: String = _generate_room_code()
 	my_lobby_data = {
@@ -129,10 +140,6 @@ func join_lobby(player_name: String, ip: String) -> void:
 		print("  ERR_INVALID_PARAMETER (51): Invalid IP or port")
 		connection_failed.emit()
 		return
-	
-	# Set connection timeout AFTER creating the client successfully
-	if peer.get_host():
-		peer.get_host().set_timeout(5000, 5000, 5000)  # 5 second timeout
 	
 	print("[JoinLobby] ENet client created successfully, attempting connection...")
 	multiplayer.multiplayer_peer = peer
@@ -175,7 +182,8 @@ func _remove_player_data(id: int) -> void:
 # --- Signal Handlers ---
 
 func _on_peer_connected(id: int) -> void:
-	print("Peer connected: %s" % id)
+	print("[NetworkManager] Peer connected: %s" % id)
+	print("[NetworkManager] Total peers now: ", multiplayer.get_peers().size() + 1)  # +1 for self
 
 func _on_peer_disconnected(id: int) -> void:
 	print("Peer disconnected: %s" % id)
@@ -183,6 +191,8 @@ func _on_peer_disconnected(id: int) -> void:
 
 func _on_connected_to_server() -> void:
 	print("[NetworkManager] Successfully connected to the server!")
+	print("[NetworkManager] My client ID: ", multiplayer.get_unique_id())
+	print("[NetworkManager] Connected peers: ", multiplayer.get_peers())
 	
 	# Clean up connection timeout timer
 	_cleanup_connection_timer()
@@ -191,7 +201,14 @@ func _on_connected_to_server() -> void:
 	var nm: String = get_local_player_name()
 	var my_name: String = nm if not nm.is_empty() else ("Player" + str(multiplayer.get_unique_id()))
 	print("[NetworkManager] Registering with server as: ", my_name)
-	lobby_sync.register_with_server.rpc_id(1, my_name)
+	
+	# Ensure LobbySync is ready before calling RPC
+	if lobby_sync:
+		lobby_sync.register_with_server.rpc_id(1, my_name)
+		print("[NetworkManager] Registration RPC sent to server")
+	else:
+		print("[NetworkManager] ERROR: LobbySync not available!")
+	
 	connection_succeeded.emit()
 
 func _on_connection_failed() -> void:
@@ -233,6 +250,19 @@ func _cleanup_connection_timer() -> void:
 		if timer and is_instance_valid(timer):
 			timer.queue_free()
 		remove_meta("connection_timeout_timer")
+
+# Debug function to test connection status
+func debug_connection_status():
+	print("=== CONNECTION STATUS DEBUG ===")
+	print("Multiplayer peer: ", multiplayer.multiplayer_peer)
+	if multiplayer.multiplayer_peer:
+		print("Peer type: ", "Server" if multiplayer.is_server() else "Client")
+		print("My ID: ", multiplayer.get_unique_id())
+		print("Connected peers: ", multiplayer.get_peers())
+		print("Connection status: ", multiplayer.multiplayer_peer.get_connection_status())
+	print("Players in lobby: ", players)
+	print("Local player name: ", get_local_player_name())
+	print("=== END DEBUG ===")
 
 ## Removed: stop_lan_discovery_and_reset merged into simpler flows
 

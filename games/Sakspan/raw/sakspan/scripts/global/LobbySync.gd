@@ -6,22 +6,37 @@ class_name LobbySync
 
 @rpc("any_peer", "reliable")
 func register_with_server(player_name: String) -> void:
+	print("[LobbySync] Registration request received from: ", player_name)
+	print("[LobbySync] Is server: ", multiplayer.is_server())
+	
 	if not multiplayer.is_server():
+		print("[LobbySync] Not server, ignoring registration")
 		return
+		
 	var mgr := _get_manager()
 	if mgr == null:
+		print("[LobbySync] ERROR: Cannot get NetworkManager!")
 		return
+		
 	var sender_id: int = multiplayer.get_remote_sender_id()
+	print("[LobbySync] Registering player ", player_name, " with ID ", sender_id)
+	
 	_owner_add_player(sender_id, player_name)
+	
 	# Tell the new player about everyone already in the lobby
+	print("[LobbySync] Syncing existing players to new client...")
 	for existing_id in mgr.players:
 		if existing_id != sender_id:
+			print("[LobbySync] Telling new player about existing player: ", existing_id, " - ", mgr.players[existing_id]["name"])
 			sync_new_player.rpc_id(sender_id, existing_id, mgr.players[existing_id]["name"])
+	
 	# And announce the new player to everyone
+	print("[LobbySync] Announcing new player to all clients...")
 	sync_new_player.rpc(sender_id, player_name)
 
 @rpc("authority", "reliable")
 func sync_new_player(id: int, name: String) -> void:
+	print("[LobbySync] Syncing new player: ", id, " - ", name)
 	_owner_add_player(id, name)
 
 # Character selection
