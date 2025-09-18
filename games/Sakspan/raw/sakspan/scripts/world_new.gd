@@ -122,10 +122,9 @@ func _initialize_players() -> void:
 
 func _spawn_all_players() -> void:
 	if not multiplayer.is_server():
-		print("[World] Only server can spawn players")
 		return
 	
-	var players_dict = NetworkManager.players
+	var players_dict: Dictionary = NetworkManager.players
 	if players_dict.is_empty():
 		print("[World] No players to spawn")
 		return
@@ -141,6 +140,12 @@ func _spawn_all_players() -> void:
 		player_ids.append(int(key))
 	player_ids.sort()
 	
+	# Load player scene
+	var player_scene: PackedScene = preload("res://scenes/Player.tscn")
+	if not player_scene:
+		print("[World] ERROR: Could not load Player.tscn")
+		return
+	
 	# Spawn each player
 	for i in range(min(player_ids.size(), spawn_points.size())):
 		var player_id: int = player_ids[i]
@@ -149,17 +154,28 @@ func _spawn_all_players() -> void:
 		
 		print("[World] Spawning player ", player_id, " at ", spawn_pos)
 		
-		# Server-only spawn using MultiplayerSpawner
-		var new_player: Node = multiplayer_spawner.spawn(player_id)
+		# Create player instance directly
+		var new_player: Node = player_scene.instantiate()
 		if new_player == null:
-			print("[World] Failed to spawn player ", player_id)
+			print("[World] Failed to instantiate player ", player_id)
 			continue
+		
+		# Add to players container
+		players_container.add_child(new_player, true)
 		
 		# Configure the spawned player
 		_configure_player(new_player, player_id, player_data, spawn_pos)
+		
+		# Store spawned player reference
+		_spawned_players[player_id] = new_player
 	
 	print("[World] All players spawned successfully")
 	all_players_spawned.emit()
+	
+	# Initialize game mechanics after spawning
+	await get_tree().process_frame
+	_assign_player_roles()
+	_initialize_game_mechanics()
 
 func _configure_player(player: Node, player_id: int, player_data: Dictionary, spawn_pos: Vector2) -> void:
 	# Set player name and position
@@ -174,9 +190,15 @@ func _configure_player(player: Node, player_id: int, player_data: Dictionary, sp
 	
 	# Configure player properties
 	if player.has_method("setup_multiplayer_player"):
-		player.setup_multiplayer_player(player_data, player_id == multiplayer.get_unique_id())
+		var is_local_player: bool = (player_id == multiplayer.get_unique_id())
+		player.setup_multiplayer_player(player_data, is_local_player)
+		print("[World] Configured player ", player_id, " (local: ", is_local_player, ")")
+	else:
+		print("[World] WARNING: Player doesn't have setup_multiplayer_player method")
 	
-	# Set up camera and input for local player
+	# Set player name from data
+	if "player_name" in player:
+		player.player_name = player_data.get("name", "Player" + str(player_id))
 	var is_local_player := player_id == multiplayer.get_unique_id()
 	if is_local_player:
 		_setup_local_player(player)
@@ -207,9 +229,12 @@ func _setup_remote_player(player: Node) -> void:
 		player.get_node("Camera2D").enabled = false
 
 func _despawn_all_players() -> void:
+	print("[World] Despawning all existing players...")
 	for child in players_container.get_children():
 		child.queue_free()
 	_spawned_players.clear()
+	# Wait for nodes to be freed
+	await get_tree().process_frame
 
 func _show_loading_screen() -> void:
 	if loading_screen:
@@ -311,31 +336,6 @@ func _sync_input_log(player_id: int, player_name: String, direction: String) -> 
 func _toggle_debug_ui() -> void:
 	_debug_visible = !_debug_visible
 	if debug_ui:
-		debug_ui.visible = _debug_visible
-	
-	if _debug_visible:
-		_update_debug_info()
-
-func _update_debug_info() -> void:
-	if not _debug_visible or not debug_ui:
-		return
-	
-	# Update player count
-	if player_count_label:
-		player_count_label.text = "Players: " + str(NetworkManager.players.size())
-	
-	# Update connection status
-	if connection_label:
-		var status := "None"
-		if multiplayer.multiplayer_peer:
-			status = "Server" if multiplayer.is_server() else "Client"
-			status += " (ID: " + str(multiplayer.get_unique_id()) + ")"
-		connection_label.text = "Connection: " + status
-	
-	# Update authority info
-	if authority_label:
-		var auth_text := "Authority: "
-		if multiplayer.is_server():
 			auth_text += "Server"
 		else:
 			auth_text += "Client"

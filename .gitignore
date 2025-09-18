@@ -15,3 +15,4 @@ README.md
 
 # Mono-specific ignores (if you were using C#)
 .mono/
+/games/Sakspan/raw/sakspan/working_world

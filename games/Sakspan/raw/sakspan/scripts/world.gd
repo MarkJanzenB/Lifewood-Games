@@ -9,19 +9,19 @@ signal all_players_spawned()
 @onready var loading_screen := $LoadingScreen
 @onready var players_container: Node = $Players
 
-# Predefined spawn points for up to 5 players
-var spawn_points := [Vector2(39, -323), Vector2(-103, -335), Vector2(200, 100), Vector2(-200, 100), Vector2(0, 200)]
+# Predefined spawn points for up to 5 players (Statically Typed)
+var spawn_points: Array[Vector2] = [Vector2(39, -323), Vector2(-103, -335), Vector2(200, 100), Vector2(-200, 100), Vector2(0, 200)]
 
-# Server-side game state
-var game_state = {
+# Server-side game state (Statically Typed)
+var game_state: Dictionary = {
 	"current_round": 0,
 	"players": {},
 	"game_started": false
 }
-var _is_loading := true
+var _is_loading: bool = true
 var _spawned_players: Dictionary = {}
-var _spawn_attempts := 0
-var _max_spawn_attempts := 10
+var _spawn_attempts: int = 0
+var _max_spawn_attempts: int = 10
 
 func _ready():
 	if multiplayer.is_server():
@@ -151,10 +151,16 @@ func _spawn_all_players() -> void:
 		
 		# Use RPC to spawn player on all clients
 		_spawn_player_on_clients.rpc(id, player_data, spawn_points[i], i)
-		
+	
+	# Assign roles after all players are spawned
+	_assign_player_roles()
+
 	# Notify NetworkManager that game scene is loaded
 	NetworkManager.notify_game_scene_loaded()
 	all_players_spawned.emit()
+
+	# Initialize game mechanics
+	_initialize_game_mechanics()
 
 @rpc("authority", "call_local", "reliable")
 func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos: Vector2, spawn_index: int) -> void:
@@ -178,6 +184,10 @@ func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos
 	# Configure player properties
 	if new_player.has_method("setup_multiplayer_player"):
 		new_player.setup_multiplayer_player(player_data, player_id == multiplayer.get_unique_id())
+	
+	# Set player name
+	if "player_name" in new_player:
+		new_player.player_name = player_data.get("name", "Player" + str(player_id))
 	
 	# Set up camera and input for local player only
 	if player_id == multiplayer.get_unique_id():
@@ -247,6 +257,54 @@ func _despawn_player(player_id: int) -> void:
 	if p:
 		p.queue_free()
 
+# Role assignment for multiplayer (Statically Typed)
+func _assign_player_roles() -> void:
+	if not multiplayer.is_server():
+		return
+	
+	var all_players: Array[Node] = players_container.get_children()
+	if all_players.is_empty():
+		return
+	
+	print("[World] Assigning roles to ", all_players.size(), " players")
+	
+	# Randomly select one seeker, rest are hiders
+	var seeker_index: int = randi() % all_players.size()
+	
+	for i in range(all_players.size()):
+		var player: PlayerCharacter = all_players[i] as PlayerCharacter
+		if not player:
+			continue
+			
+		if i == seeker_index:
+			player.assign_role(PlayerCharacter.PlayerRole.SEEKER)
+			_sync_player_role.rpc(player.get_multiplayer_authority(), PlayerCharacter.PlayerRole.SEEKER)
+		else:
+			player.assign_role(PlayerCharacter.PlayerRole.HIDER)
+			_sync_player_role.rpc(player.get_multiplayer_authority(), PlayerCharacter.PlayerRole.HIDER)
+
+@rpc("authority", "call_local", "reliable")
+func _sync_player_role(player_id: int, role: PlayerCharacter.PlayerRole) -> void:
+	var player: PlayerCharacter = players_container.get_node_or_null("Player_" + str(player_id)) as PlayerCharacter
+	if player:
+		player.assign_role(role)
+
+func _initialize_game_mechanics() -> void:
+	if not multiplayer.is_server():
+		return
+	
+	print("[World] Initializing game mechanics...")
+	
+	# Wait a moment for roles to be assigned
+	await get_tree().create_timer(0.5).timeout
+	
+	# Get GameManager and initialize the game
+	var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
+	if gm and gm.has_method("initialize_game"):
+		gm.initialize_game()
+	else:
+		print("[World] GameManager not found or doesn't have initialize_game method")
+
 func _try_spawn_players(max_attempts: int = 10, delay: float = 0.2) -> void:
 	print("[World] Attempting to spawn players...")
 	
@@ -276,7 +334,7 @@ func _try_spawn_players(max_attempts: int = 10, delay: float = 0.2) -> void:
 			timer.stop()
 			timer.queue_free()
 			# Notify the player that we couldn't find any players
-			if loading_screen:
+			if loading_screen and loading_screen.has_method("update_progress"):
 				loading_screen.update_progress(0.3, "Failed to find players. Please try again.")
 	
 	timer.timeout.connect(_on_timeout, CONNECT_DEFERRED)
