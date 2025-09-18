@@ -23,8 +23,9 @@ const ALTERNATIVE_PORTS: Array[int] = [8080, 7777, 9999, 12345, 25565]
 const DISCOVERY_PORT := 9001
 const DISCOVERY_MAGIC := "SAKSPAN_V1"
 const DISCOVERY_DEBUG := true
-const USE_DEV_TEST_TEMP := true
+const USE_DEV_TEST_TEMP := false
 const DEV_TEST_SCENE_PATH := "res://scenes/dev/dev_test.tscn"
+const WORLD_SCENE_PATH := "res://scenes/world_new.tscn"
 
 # UDP sockets and timers for LAN discovery
 var _udp_listener: PacketPeerUDP = PacketPeerUDP.new()
@@ -356,8 +357,9 @@ func rpc_start_game(lobby_info: Dictionary) -> void:
 	is_game_started = true
 	game_scene_loaded = false
 	emit_signal("game_started", players)
-	# Switch everyone to the dev test scene temporarily (toggleable)
-	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else "res://scenes/world.tscn"
+	# Switch everyone to the appropriate game scene
+	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else WORLD_SCENE_PATH
+	print("[NetworkManager] Starting game - switching to scene: ", target_scene)
 	SceneChanger.change_scene_to_file(target_scene)
 
 func leave_lobby() -> void:
