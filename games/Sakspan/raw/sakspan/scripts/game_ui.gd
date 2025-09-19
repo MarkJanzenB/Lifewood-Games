@@ -4,12 +4,13 @@ class_name GameUI
 extends CanvasLayer
 
 # --- NODE REFERENCES ---
+# Match GameUI.tscn layout precisely
 @onready var countdown_label: Label = get_node_or_null("MarginContainer/CountdownLabel")
 @onready var ammo_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer2/AmmoLabel")
-@onready var hiders_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer2/HidersLabel")
+@onready var hiders_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HidersLabel")
 @onready var kill_feed_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer/KillFeedLabel")
 @onready var status_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer/StatusLabel")
-@onready var spotted_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer2/SpottedLabel")
+@onready var spotted_label: Label = get_node_or_null("MarginContainer/SpottedLabel")
 @onready var spotted_timer: Timer = Timer.new()
 
 var local_player_role: PlayerCharacter.PlayerRole
@@ -77,14 +78,23 @@ func update_status(text: String, is_visible: bool):
 		else:
 			status_label.visible = false
 
+# Called by GameManager when the match ends
+func show_game_over(did_i_win: bool, message: String) -> void:
+	if status_label:
+		status_label.visible = true
+		status_label.modulate.a = 1.0
+		status_label.text = message
+	if countdown_label:
+		countdown_label.visible = false
+
 # --- REUSABLE FADE FUNCTION ---
 func fade_out_label(label_node: Label, text: String):
-		if label_node:
-			label_node.text = text
-			label_node.modulate.a = 1.0
-			var tween = create_tween()
-			tween.tween_interval(3.0)
-			tween.tween_property(label_node, "modulate:a", 0, 1.0)
+	if label_node:
+		label_node.text = text
+		label_node.modulate.a = 1.0
+		var tween = create_tween()
+		tween.tween_interval(3.0)
+		tween.tween_property(label_node, "modulate:a", 0, 1.0)
 
 func _exit_tree():
 	# Deregister when this HUD is removed to prevent stale references

@@ -2,66 +2,62 @@
 extends Node
 class_name CharacterFactory
 
-# Character scene paths - fallback to base player scene if character scenes don't exist
 const BASE_PLAYER_SCENE = preload("res://scenes/player.tscn")
-
-# Try to load character scenes, fallback to base player scene
-static func _get_character_scenes() -> Dictionary:
-	var scenes = {}
-	var scene_paths = [
-		"res://scenes/characters/PinkCharacter.tscn",
-		"res://scenes/characters/RedCharacter.tscn", 
-		"res://scenes/characters/BlueCharacter.tscn",
-		"res://scenes/characters/GreenCharacter.tscn",
-		"res://scenes/characters/YellowCharacter.tscn"
-	]
-	
-	for i in range(scene_paths.size()):
-		var scene_path = scene_paths[i]
-		if ResourceLoader.exists(scene_path):
-			scenes[i] = load(scene_path)
-		else:
-			print("[CharacterFactory] Character scene not found: ", scene_path, " - using base player scene")
-			scenes[i] = BASE_PLAYER_SCENE
-	
-	return scenes
 
 const CHARACTER_NAMES = ["Pink", "Red", "Blue", "Green", "Yellow"]
 const CHARACTER_COLORS = [Color.MAGENTA, Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW]
 
 # Create a character instance based on the selected character index
 static func create_character(character_index: int) -> PlayerCharacter:
-	var character_scenes = _get_character_scenes()
-	
-	if character_index < 0 or character_index >= character_scenes.size():
-		print("[CharacterFactory] Invalid character index: ", character_index, ", using default")
+	if character_index < 0 or character_index >= CHARACTER_NAMES.size():
 		character_index = 0
 	
-	var character_scene = character_scenes[character_index]
-	if not character_scene:
-		print("[CharacterFactory] Character scene not found for index: ", character_index)
-		return null
+	print("[CharacterFactory] Creating character with index: ", character_index, " (", CHARACTER_NAMES[character_index], ")")
 	
-	var character_instance = character_scene.instantiate() as PlayerCharacter
+	# Instantiate base player scene
+	var character_instance = BASE_PLAYER_SCENE.instantiate() as PlayerCharacter
 	if not character_instance:
-		print("[CharacterFactory] Failed to instantiate character for index: ", character_index)
+		print("[CharacterFactory] ERROR: Failed to instantiate base player scene")
 		return null
 	
-	# Apply character color if using base player scene
-	if character_scene == BASE_PLAYER_SCENE:
-		_apply_character_appearance(character_instance, character_index)
+	# Set the character index - appearance will be applied in setup_multiplayer_player
+	character_instance.character_index = character_index
 	
-	print("[CharacterFactory] Created character: ", CHARACTER_NAMES[character_index])
+	print("[CharacterFactory] Created ", CHARACTER_NAMES[character_index], " character successfully")
 	return character_instance
 
 # Apply character appearance to base player scene
 static func _apply_character_appearance(player: PlayerCharacter, character_index: int):
-	if character_index >= 0 and character_index < CHARACTER_COLORS.size():
-		var color = CHARACTER_COLORS[character_index]
-		if player.has_node("AnimatedSprite2D"):
-			var sprite = player.get_node("AnimatedSprite2D")
-			sprite.modulate = color
-		print("[CharacterFactory] Applied ", CHARACTER_NAMES[character_index], " appearance to base player")
+	if character_index < 0 or character_index >= CHARACTER_COLORS.size():
+		print("[CharacterFactory] Invalid character index: ", character_index)
+		return
+	
+	var color = CHARACTER_COLORS[character_index]
+	var character_name = CHARACTER_NAMES[character_index]
+	
+	print("[CharacterFactory] Applying ", character_name, " appearance with color: ", color)
+	
+	# Try to find the animated sprite node
+	var sprite_node = null
+	if player.has_node("AnimatedSprite2D"):
+		sprite_node = player.get_node("AnimatedSprite2D")
+		print("[CharacterFactory] Found AnimatedSprite2D node")
+	elif player.get("animated_sprite"):
+		sprite_node = player.animated_sprite
+		print("[CharacterFactory] Found animated_sprite property")
+	else:
+		print("[CharacterFactory] ERROR: No animated sprite found on player!")
+		print("[CharacterFactory] Player children: ", player.get_children())
+		return
+	
+	if sprite_node:
+		sprite_node.modulate = color
+		print("[CharacterFactory] Successfully applied ", character_name, " color: ", color)
+		print("[CharacterFactory] Sprite modulate is now: ", sprite_node.modulate)
+	
+	# Ensure character index is set
+	player.character_index = character_index
+	print("[CharacterFactory] Character setup complete for ", character_name)
 
 # Get character info without instantiating
 static func get_character_name(character_index: int) -> String:

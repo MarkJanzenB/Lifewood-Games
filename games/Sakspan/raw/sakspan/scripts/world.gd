@@ -5,8 +5,7 @@ class_name GameWorld
 signal world_loaded()
 signal all_players_spawned()
 
-@onready var multiplayer_spawner = $MultiplayerSpawner
-@onready var loading_screen := $LoadingScreen
+@onready var loading_screen := get_node_or_null("LoadingScreen")
 @onready var players_container: Node = $Players
 
 # Predefined spawn points for up to 5 players (Statically Typed)
@@ -23,22 +22,31 @@ var _spawned_players: Dictionary = {}
 var _spawn_attempts: int = 0
 var _max_spawn_attempts: int = 10
 
-func _ready():
-	if multiplayer.is_server():
-		# Initialize server state
-		game_state.players = NetworkManager.players.duplicate()
-		
+func _ready() -> void:
+	print("[World] World scene starting...")
+	
 	# Connect to NetworkManager signals
-	NetworkManager.player_list_changed.connect(_on_player_list_changed)
-	NetworkManager.player_joined.connect(_on_player_joined)
-	NetworkManager.player_left.connect(_on_player_left)
+	if NetworkManager.player_list_changed.connect(_on_player_list_changed) != OK:
+		print("[World] Failed to connect to player_list_changed signal")
 	
-	if loading_screen:
-		loading_screen.visible = true
-		loading_screen.update_progress(0.1, "Initializing...")
+	# Connect to network events
+	if multiplayer.peer_connected.connect(_on_peer_connected) != OK:
+		print("[World] Failed to connect to peer_connected signal")
+	if multiplayer.peer_disconnected.connect(_on_peer_disconnected) != OK:
+		print("[World] Failed to connect to peer_disconnected signal")
 	
-	await get_tree().process_frame
-	_load_world_async()
+	# Start spawning players
+	_spawn_all_players()
+
+func _input(event):
+	# Debug key to check players
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_F1:
+			print("[World] === F1 DEBUG: Checking all players ===")
+			_debug_check_all_players()
+		elif event.keycode == KEY_F2:
+			print("[World] === F2 DEBUG: Manually applying colors ===")
+			_debug_apply_colors_manually()
 
 # Server-only function to validate and execute player actions
 @rpc("any_peer", "call_local", "reliable")
@@ -115,44 +123,43 @@ func _on_world_loaded() -> void:
 	world_loaded.emit()
 
 func _on_player_list_changed(players: Dictionary) -> void:
-	if multiplayer.is_server():
+	# Prevent recursive spawning during game
+	if multiplayer.is_server() and not game_state["game_started"]:
 		_despawn_all_players()
 		_spawn_all_players()
 
 func _spawn_all_players() -> void:
 	if not multiplayer.is_server():
 		return
-		
-	print("[World] Starting player spawn process...")
-	var players_dict = NetworkManager.players
-	
+
+	# Pull canonical spawn data (includes char_index and spawn order)
+	var players_dict = NetworkManager.get_spawn_data()
+
 	if players_dict.is_empty():
-		print("[World] No players to spawn")
 		return
-	
+
 	# Clear existing spawned players
 	_spawned_players.clear()
 	_despawn_all_players()
-	
+
 	# Convert keys to integers and sort for deterministic spawn order
 	var int_ids: Array[int] = []
 	for key in players_dict.keys():
 		int_ids.append(int(key))
 	int_ids.sort()
-	
-	print("[World] Spawning players: ", int_ids)
-	
-	# Spawn each player via MultiplayerSpawner so it replicates to clients
+
+	# Spawn each player via RPC
 	for i in range(min(int_ids.size(), spawn_points.size())):
 		var id: int = int_ids[i]
-		var player_data = players_dict[id]
-		
-		print("[World] Spawning player ", id, " at position ", spawn_points[i])
-		
+		var player_data: Dictionary = players_dict[id]
 		# Use RPC to spawn player on all clients
 		_spawn_player_on_clients.rpc(id, player_data, spawn_points[i], i)
-	
+
+	# Mark game as started to prevent respawning
+	game_state["game_started"] = true
+
 	# Assign roles after all players are spawned
+	await get_tree().process_frame
 	_assign_player_roles()
 
 	# Notify NetworkManager that game scene is loaded
@@ -164,18 +171,23 @@ func _spawn_all_players() -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos: Vector2, spawn_index: int) -> void:
-	print("[World] Spawning player ", player_id, " on client")
+	# Get character index from player data
+	var character_index: int = int(player_data.get("char_index", 0))
+	var player_name: String = str(player_data.get("name", "Player" + str(player_id)))
 	
-	# Create player instance
-	var new_player: Node = multiplayer_spawner.spawn(player_id)
+	# Create character using the factory
+	var new_player: PlayerCharacter = CharacterFactory.create_character(character_index)
 	if new_player == null:
-		print("[World] Failed to spawn player ", player_id)
+		print("[World] ERROR: Failed to create character for player ", player_id)
 		return
-		
+	
+	# Add to the scene
+	players_container.add_child(new_player, true)
 	new_player.name = "Player_" + str(player_id)
 	
 	# Set multiplayer authority - each player controls their own character
 	new_player.set_multiplayer_authority(player_id, true)
+	print("[World] Set multiplayer authority for player ", player_id, " to ", player_id)
 	
 	# Position the player
 	if new_player is Node2D:
@@ -183,11 +195,14 @@ func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos
 	
 	# Configure player properties
 	if new_player.has_method("setup_multiplayer_player"):
-		new_player.setup_multiplayer_player(player_data, player_id == multiplayer.get_unique_id())
+		var is_local_player = (player_id == multiplayer.get_unique_id())
+		print("[World] Setting up player ", player_id, " as local: ", is_local_player)
+		new_player.setup_multiplayer_player(player_data, is_local_player)
 	
 	# Set player name
 	if "player_name" in new_player:
 		new_player.player_name = player_data.get("name", "Player" + str(player_id))
+		print("[World] Set player name to: ", new_player.player_name)
 	
 	# Set up camera and input for local player only
 	if player_id == multiplayer.get_unique_id():
@@ -201,13 +216,10 @@ func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos
 			new_player.set_is_main_player(true)
 		elif "is_main_player" in new_player:
 			new_player.is_main_player = true
-			
-		print("[World] Local player ", player_id, " spawned and configured")
 	else:
 		# Disable camera for remote players
 		if new_player.has_node("Camera2D"):
 			new_player.get_node("Camera2D").enabled = false
-		print("[World] Remote player ", player_id, " spawned")
 	
 	_spawned_players[player_id] = new_player
 
@@ -244,7 +256,7 @@ func _on_player_joined(player_id: int, player_data: Dictionary) -> void:
 	print("Player joined:", player_id, " Data:", player_data)
 	# Handle player joined event
 	if multiplayer.is_server():
-		_try_spawn_players()
+		_spawn_all_players()
 
 func _on_player_left(player_id: int) -> void:
 	print("Player left:", player_id)
@@ -252,8 +264,9 @@ func _on_player_left(player_id: int) -> void:
 	if multiplayer.is_server():
 		_despawn_player(player_id)
 
+
 func _despawn_player(player_id: int) -> void:
-	var p := players_container.get_node_or_null(str(player_id))
+	var p := players_container.get_node_or_null("Player_" + str(player_id))
 	if p:
 		p.queue_free()
 
@@ -266,8 +279,6 @@ func _assign_player_roles() -> void:
 	if all_players.is_empty():
 		return
 	
-	print("[World] Assigning roles to ", all_players.size(), " players")
-	
 	# Randomly select one seeker, rest are hiders
 	var seeker_index: int = randi() % all_players.size()
 	
@@ -277,13 +288,15 @@ func _assign_player_roles() -> void:
 			continue
 			
 		if i == seeker_index:
+			# Assign SEEKER role
 			player.assign_role(PlayerCharacter.PlayerRole.SEEKER)
 			_sync_player_role.rpc(player.get_multiplayer_authority(), PlayerCharacter.PlayerRole.SEEKER)
 		else:
+			# Assign HIDER role
 			player.assign_role(PlayerCharacter.PlayerRole.HIDER)
 			_sync_player_role.rpc(player.get_multiplayer_authority(), PlayerCharacter.PlayerRole.HIDER)
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _sync_player_role(player_id: int, role: PlayerCharacter.PlayerRole) -> void:
 	var player: PlayerCharacter = players_container.get_node_or_null("Player_" + str(player_id)) as PlayerCharacter
 	if player:
@@ -295,8 +308,50 @@ func _initialize_game_mechanics() -> void:
 	
 	print("[World] Initializing game mechanics...")
 	
+	# Debug: Check all spawned players
+	_debug_check_all_players()
+	
 	# Wait a moment for roles to be assigned
 	await get_tree().create_timer(0.5).timeout
+
+# Debug function to check all players
+func _debug_check_all_players():
+	print("[World] === DEBUGGING ALL PLAYERS ===")
+	var all_players = players_container.get_children()
+	print("[World] Total players in scene: ", all_players.size())
+	
+	for i in range(all_players.size()):
+		var player = all_players[i] as PlayerCharacter
+		if player:
+			print("[World] Player ", i, ":")
+			print("  - Name: ", player.player_name)
+			print("  - Character Index: ", player.character_index)
+			print("  - Character Name: ", player.get_character_name())
+			print("  - Has AnimatedSprite2D: ", player.has_node("AnimatedSprite2D"))
+			if player.has_node("AnimatedSprite2D"):
+				var sprite = player.get_node("AnimatedSprite2D")
+				print("  - Sprite Modulate: ", sprite.modulate)
+			print("  - Multiplayer Authority: ", player.get_multiplayer_authority())
+			print("  - Is Local Player: ", player.is_main_player)
+		else:
+			print("[World] Player ", i, " is not a PlayerCharacter!")
+
+# Debug function to manually apply colors
+func _debug_apply_colors_manually():
+	print("[World] Manually applying colors to all players...")
+	var all_players = players_container.get_children()
+	
+	for i in range(all_players.size()):
+		var player = all_players[i] as PlayerCharacter
+		if player and player.has_node("AnimatedSprite2D"):
+			var sprite = player.get_node("AnimatedSprite2D")
+			var char_index = player.character_index
+			if char_index >= 0 and char_index < CharacterFactory.CHARACTER_COLORS.size():
+				var color = CharacterFactory.get_character_color(char_index)
+				sprite.modulate = color
+				print("[World] Applied color ", color, " to player ", i, " (", CharacterFactory.get_character_name(char_index), ")")
+			else:
+				print("[World] Invalid character index for player ", i, ": ", char_index)
 	
 	# Get GameManager and initialize the game
 	var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
@@ -305,37 +360,15 @@ func _initialize_game_mechanics() -> void:
 	else:
 		print("[World] GameManager not found or doesn't have initialize_game method")
 
-func _try_spawn_players(max_attempts: int = 10, delay: float = 0.2) -> void:
-	print("[World] Attempting to spawn players...")
-	
-	# If we already have players, spawn them immediately
-	if not NetworkManager.players.is_empty():
-		print("[World] Players already available, spawning...")
+# Handle peer connected
+func _on_peer_connected(id: int):
+	print("[World] Peer connected: ", id)
+	# Respawn players when new peer connects
+	if multiplayer.is_server():
 		_spawn_all_players()
-		return
-		
-	print("[World] No players found, starting retry timer...")
-	var attempts = 0
-	var timer = Timer.new()
-	timer.one_shot = false
-	add_child(timer)
-	
-	var _on_timeout = func():
-		attempts += 1
-		print("[World] Attempt ", attempts, " to find players...")
-		
-		if not NetworkManager.players.is_empty():
-			print("[World] Players found after ", attempts, " attempts")
-			timer.stop()
-			timer.queue_free() 
-			_spawn_all_players()
-		elif attempts >= max_attempts:
-			print("[World] Failed to find players after ", max_attempts, " attempts")
-			timer.stop()
-			timer.queue_free()
-			# Notify the player that we couldn't find any players
-			if loading_screen and loading_screen.has_method("update_progress"):
-				loading_screen.update_progress(0.3, "Failed to find players. Please try again.")
-	
-	timer.timeout.connect(_on_timeout, CONNECT_DEFERRED)
-	timer.start(delay)
+
+# Handle peer disconnected  
+func _on_peer_disconnected(id: int):
+	print("[World] Peer disconnected: ", id)
+	# Clean up disconnected player
+	_despawn_player(id)

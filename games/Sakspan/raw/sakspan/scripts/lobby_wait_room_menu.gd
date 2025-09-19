@@ -190,14 +190,21 @@ func _setup_character_grid():
 
 # --- UI UPDATE AND SIGNAL HANDLER FUNCTIONS ---
 func _on_character_selected(idx: int):
-	if locked_in: return
+	if locked_in: 
+		print("[LobbyWaitRoom] Character selection ignored - already locked in")
+		return
+		
 	selected_char_index = idx
 	_update_character_grid_highlight()
+	
 	# Update selection label for local feedback before locking in
 	if selection_label:
 		var cname: String = CHARACTER_NAMES[idx] if (idx >= 0 and idx < CHARACTER_NAMES.size()) else "#%d" % idx
 		selection_label.text = "You selected: %s (press LOCK IN to confirm)" % cname
+	
 	print("[LobbyWaitRoom] Selected character index=", idx, " (", CHARACTER_NAMES[idx], ")")
+	print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
+	print("[LobbyWaitRoom] Is server: ", multiplayer.is_server())
 
 # This function now correctly uses the custom "set_selected" method on your buttons.
 func _update_character_grid_highlight():
@@ -302,10 +309,18 @@ func _on_lock_in_button_pressed():
 			return
 		
 		var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
+		print("[LobbyWaitRoom] === LOCK IN BUTTON PRESSED ===")
 		print("[LobbyWaitRoom] Locking in character: ", character_name, " (index ", selected_char_index, ")")
+		print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
+		print("[LobbyWaitRoom] Is server: ", multiplayer.is_server())
+		print("[LobbyWaitRoom] Multiplayer peer: ", multiplayer.multiplayer_peer)
+		print("[LobbyWaitRoom] Connected peers: ", multiplayer.get_peers())
+		print("[LobbyWaitRoom] Current NetworkManager players before lock-in: ", NetworkManager.players)
 		
-		print("[LobbyWaitRoom] Lock in sent for index=", selected_char_index)
+		print("[LobbyWaitRoom] Calling NetworkManager.request_char_selection(", selected_char_index, ")")
 		NetworkManager.request_char_selection(selected_char_index)
+		print("[LobbyWaitRoom] NetworkManager.request_char_selection() call completed")
+		
 		locked_in = true
 		lock_in_button.text = "UNLOCK"
 		
@@ -350,13 +365,54 @@ func _update_status(message: String):
 	print("[LobbyWaitRoom] ", message)
 	# You can add a status label to show messages to the player if needed
 
+# Debug function to manually refresh UI
+func _input(event):
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_F5:
+			print("[LobbyWaitRoom] F5 pressed - Manual UI refresh")
+			print("[LobbyWaitRoom] Current players: ", NetworkManager.players)
+			_update_player_list(NetworkManager.players)
+			_update_character_grid_lock(NetworkManager.players)
+			_update_start_game_button()
+
 func _on_player_list_changed(players: Dictionary):
+	print("[LobbyWaitRoom] === PLAYER LIST CHANGED ===")
 	print("[LobbyWaitRoom] Player list changed: ", players)
+	print("[LobbyWaitRoom] Called on: ", "Host" if multiplayer.is_server() else "Client")
+	print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
+	print("[LobbyWaitRoom] Signal source: ", get_stack()[1] if get_stack().size() > 1 else "Unknown")
+	
 	# Debug: Print each player's character selection status
 	for id in players:
 		var char_index = int(players[id].get("char_index", -1))
 		var name = players[id].get("name", "Unknown")
-		print("[LobbyWaitRoom] Player ", id, " (", name, ") char_index: ", char_index)
+		var is_host = players[id].get("is_host", false)
+		var status = "Selecting..." if char_index == -1 else CHARACTER_NAMES[char_index] + " ✓"
+		var is_me = (id == multiplayer.get_unique_id())
+		print("[LobbyWaitRoom] Player ", id, " (", name, ") ", "[HOST] " if is_host else "", "[ME] " if is_me else "", "char_index: ", char_index, " -> ", status)
+	
+	# Update local state if this is our character selection
+	var my_id = multiplayer.get_unique_id()
+	if players.has(my_id):
+		var my_char_index = int(players[my_id].get("char_index", -1))
+		if my_char_index >= 0 and my_char_index != selected_char_index:
+			print("[LobbyWaitRoom] Updating local character selection from server: ", my_char_index)
+			selected_char_index = my_char_index
+			locked_in = true
+			lock_in_button.text = "UNLOCK"
+			_update_character_grid_highlight()
+			
+			# Update selection label
+			if selection_label:
+				var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
+				selection_label.text = "Locked in as: " + character_name + " ✓"
+		elif my_char_index == -1 and locked_in:
+			print("[LobbyWaitRoom] Character unlocked by server")
+			locked_in = false
+			lock_in_button.text = "LOCK IN"
+			if selection_label and selected_char_index >= 0:
+				var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
+				selection_label.text = "You selected: " + character_name + " (press LOCK IN to confirm)"
 	
 	_update_player_list(players)
 	_update_start_game_button()
@@ -383,8 +439,8 @@ func _on_start_game_button_pressed():
 		NetworkManager.start_game()
 
 func _on_game_started(_player_data):
-	print("[LobbyWaitRoom] game_started received. Loading world_new.tscn...")
-	SceneChanger.change_scene_to_file("res://scenes/world_new.tscn")
+	print("[LobbyWaitRoom] game_started received. Loading world.tscn...")
+	SceneChanger.change_scene_to_file("res://scenes/world.tscn")
 
 func _on_leave_lobby_button_pressed():
 	NetworkManager.leave_lobby()

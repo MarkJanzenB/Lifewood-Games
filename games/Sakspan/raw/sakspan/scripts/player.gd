@@ -16,7 +16,8 @@ const ROCK_PROJECTILE_SCENE = preload("res://scenes/RockProjectile.tscn")
 @export var is_main_player: bool = false
 @export var role: PlayerRole = PlayerRole.HIDER
 @export var player_name: String = "Player"
-@export var ammo: int = 0 
+@export var ammo: int = 0
+@export var character_index: int = 0 
 
 # --- NODE REFERENCES ---
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
@@ -37,8 +38,8 @@ var previously_visible_hiders: Array[PlayerCharacter] = []
 var is_in_action: bool = false
 var target_for_sak: PlayerCharacter = null
 var is_dying: bool = false
-var can_move: bool = false
-var can_attack: bool = false
+var can_move: bool = true  # Enable movement by default
+var can_attack: bool = true  # Enable attacks by default
 
 # Collision layers:
 # 1 - Default (players, obstacles)
@@ -51,13 +52,13 @@ var can_attack: bool = false
 func _ready():
 	await get_tree().process_frame
 	
+	# Initialize player state
+	current_state = PlayerState.ALIVE
+	
 	# Connect to GameManager signals
 	var gm = get_node_or_null("/root/GameManager")
 	if gm:
 		gm.game_state_changed.connect(_on_game_state_changed)
-	
-	# Configure multiplayer authority
-	_configure_multiplayer_authority()
 	
 	# Setup MultiplayerSynchronizer
 	if sync:
@@ -67,11 +68,46 @@ func _ready():
 	# Configure role-specific settings
 	if role == PlayerRole.HIDER:
 		vision_light.energy = 0.5
+	
+	# Debug: Check if we have a character index set and apply appearance
+	print("[Player] _ready() called for player: ", player_name)
+	print("[Player] Character index: ", character_index)
+	print("[Player] AnimatedSprite2D available: ", animated_sprite != null)
+	
+	# If we have a character index but no color applied yet, apply it now
+	if character_index >= 0 and animated_sprite:
+		var color = CharacterFactory.get_character_color(character_index)
+		animated_sprite.modulate = color
+		print("[Player] Applied character color in _ready(): ", color, " for ", CharacterFactory.get_character_name(character_index))
 
 func _configure_multiplayer_authority():
-	# Only the authority processes input and physics for this player
-	if not is_multiplayer_authority():
-		set_physics_process(false)
+	# Check if this is the local player (the one we control)
+	var my_id = multiplayer.get_unique_id()
+	var player_authority = get_multiplayer_authority()
+	
+	print("[Player] Configuring authority - My ID: ", my_id, ", Player authority: ", player_authority)
+	
+	if player_authority == my_id:
+		# This is the local player we control
+		is_main_player = true
+		set_physics_process(true)
+		set_process_unhandled_input(true)
+		if camera:
+			camera.enabled = true
+			camera.make_current()
+		if vision_light:
+			vision_light.visible = true
+		if vision_cone:
+			vision_cone.monitoring = true
+		if melee_range:
+			melee_range.monitoring = true
+		print("[Player] Configured as LOCAL player (controllable)")
+	else:
+		# This is a remote player
+		is_main_player = false
+		# Keep physics processing ON so we can interpolate remote players locally.
+		# Only disable input processing and local-only visuals.
+		set_physics_process(true)
 		set_process_unhandled_input(false)
 		if camera:
 			camera.enabled = false
@@ -81,12 +117,7 @@ func _configure_multiplayer_authority():
 			vision_cone.monitoring = false
 		if melee_range:
 			melee_range.monitoring = false
-	else:
-		# This is the local player
-		is_main_player = true
-		if camera:
-			camera.enabled = true
-			camera.make_current()
+		print("[Player] Configured as REMOTE player (not controllable)")
 
 func _setup_replication_config():
 	# Create and configure replication config for multiplayer synchronization
@@ -114,17 +145,61 @@ func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
 	player_name = player_data.get("name", "Player")
 	is_main_player = is_local
 	
-	# Configure based on whether this is the local player
-	if is_local:
-		if camera:
-			camera.enabled = true
-			camera.make_current()
-	else:
-		if camera:
-			camera.enabled = false
-		# Disable input processing for remote players
-		set_physics_process(false)
-		set_process_unhandled_input(false)
+	print("[Player] Setting up multiplayer player: ", player_name, " (local: ", is_local, ")")
+	
+	# Apply character appearance if this is a base player
+	var character_index = int(player_data.get("char_index", 0))
+	_apply_character_setup(character_index)
+	
+	# Configure multiplayer authority properly
+	_configure_multiplayer_authority()
+
+# Apply character-specific setup (can be overridden by character classes)
+func _apply_character_setup(char_index: int):
+	set_character_index(char_index)
+	
+	print("[Player] Applying character setup for index: ", char_index, " (", CharacterFactory.get_character_name(char_index), ")")
+	
+	# If @onready variables aren't ready yet, defer the appearance setup
+	if not animated_sprite:
+		print("[Player] AnimatedSprite2D not ready yet, deferring character setup...")
+		call_deferred("_apply_character_appearance_deferred", char_index)
+		return
+	
+	# Apply character appearance directly
+	if char_index >= 0 and char_index < CharacterFactory.CHARACTER_COLORS.size():
+		var color = CharacterFactory.get_character_color(char_index)
+		
+		animated_sprite.modulate = color
+		print("[Player] Applied character color: ", color, " to ", CharacterFactory.get_character_name(char_index))
+
+# Deferred character appearance application
+func _apply_character_appearance_deferred(char_index: int):
+	print("[Player] Applying deferred character appearance for index: ", char_index)
+	
+	# Try to get the AnimatedSprite2D node directly if @onready failed
+	var sprite_node = get_node_or_null("AnimatedSprite2D")
+	if not sprite_node:
+		print("[Player] ERROR: Could not find AnimatedSprite2D node!")
+		return
+	
+	if char_index >= 0 and char_index < CharacterFactory.CHARACTER_COLORS.size():
+		var color = CharacterFactory.get_character_color(char_index)
+		sprite_node.modulate = color
+		print("[Player] Successfully applied deferred character color: ", color, " to ", CharacterFactory.get_character_name(char_index))
+
+# Get character info (can be overridden by character classes)
+func get_character_index() -> int:
+	return character_index
+
+func set_character_index(index: int) -> void:
+	character_index = index
+
+func get_character_name() -> String:
+	return CharacterFactory.get_character_name(get_character_index())
+
+func get_character_color() -> Color:
+	return CharacterFactory.get_character_color(get_character_index())
 
 func set_is_main_player(value: bool):
 	is_main_player = value
@@ -148,15 +223,17 @@ func _physics_process(delta: float):
 	if is_dying: return
 	
 	# Only the multiplayer authority simulates input and movement
-	if is_multiplayer_authority() and is_main_player:
+	if is_multiplayer_authority():
 		handle_movement()
 		if current_state == PlayerState.GHOST: return
 		handle_visuals()
+		# Re-enable vision systems now that performance is fixed
 		update_all_players_in_cone()
 		check_line_of_sight()
 		
-		# Sync position to other clients
-		_sync_player_position.rpc(global_position, velocity)
+		# Sync position to other clients (less frequently to avoid spam)
+		if Engine.get_physics_frames() % 10 == 0:  # Only sync every 10th frame
+			_sync_player_position.rpc(global_position, velocity)
 	else:
 		# Non-authority players just interpolate to synced position
 		if _sync_position != Vector2.ZERO:
@@ -228,10 +305,12 @@ func execute_sak_attack(target: PlayerCharacter) -> void:
 	print("Performing SAK attack on ", target.player_name)
 
 func handle_movement() -> void:
-	if not can_move or is_in_action:
+	if is_in_action:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
+	
+	# Allow movement regardless of can_move flag for testing
 	var input_direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var current_speed = run_speed if Input.is_action_pressed("run") else walk_speed
 	velocity = input_direction * current_speed
@@ -262,6 +341,10 @@ func update_all_players_in_cone() -> void:
 			hiders_in_cone.append(player)
 
 func check_line_of_sight() -> void:
+	# Only check line of sight occasionally to reduce RPC spam
+	if Engine.get_physics_frames() % 10 != 0:
+		return
+		
 	var space_state: PhysicsDirectSpaceState2D = get_world_2d().direct_space_state
 	var shape_query: PhysicsShapeQueryParameters2D = PhysicsShapeQueryParameters2D.new()
 	shape_query.shape = collision_shape.shape
@@ -280,16 +363,8 @@ func check_line_of_sight() -> void:
 		var ray_query: PhysicsRayQueryParameters2D = PhysicsRayQueryParameters2D.create(global_position, player.global_position, 2)
 		var result: Dictionary = space_state.intersect_ray(ray_query)
 		if result.is_empty():
-			# Send vision data to GameManager instead of handling directly
-			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-			if gm:
-				gm.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), true)
 			currently_visible_players.append(player)
-		else:
-			# Player is not visible
-			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-			if gm:
-				gm.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), false)
+		# Removed excessive RPC calls to GameManager
 	
 	# Update local visibility for immediate feedback
 	for player in previously_visible_hiders:
