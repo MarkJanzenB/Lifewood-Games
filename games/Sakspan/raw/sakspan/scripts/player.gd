@@ -16,7 +16,8 @@ const ROCK_PROJECTILE_SCENE = preload("res://scenes/RockProjectile.tscn")
 @export var is_main_player: bool = false
 @export var role: PlayerRole = PlayerRole.HIDER
 @export var player_name: String = "Player"
-@export var ammo: int = 0 
+@export var ammo: int = 0
+@export var character_index: int = 0 
 
 # --- NODE REFERENCES ---
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
@@ -27,6 +28,11 @@ const ROCK_PROJECTILE_SCENE = preload("res://scenes/RockProjectile.tscn")
 @onready var camera: Camera2D = $Camera2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 @onready var sync: MultiplayerSynchronizer = $MultiplayerSynchronizer
+
+# Role overlay UI
+var role_overlay: Control = null
+var role_label: Label = null
+var role_timer: Timer = null
 
 # --- STATE VARIABLES (Statically Typed) ---
 var _sync_position: Vector2 = Vector2.ZERO
@@ -155,13 +161,183 @@ func assign_role(new_role: PlayerRole):
 		add_to_group("seeker")
 		if is_in_group("hider"): remove_from_group("hider")
 		melee_range.monitoring = false
+		# Give seeker some ammo for testing
+		if ammo <= 0:
+			ammo = 5
+			print("[Player] Seeker assigned, setting ammo to: ", ammo)
 	else:
 		add_to_group("hider")
 		vision_light.energy = 0.5
 	print(player_name, " has been assigned the role of: ", PlayerRole.keys()[role])
+	
+	# Show role overlay for the local player
+	if is_main_player:
+		# Delay slightly to ensure everything is set up
+		await get_tree().process_frame
+		display_role_for_round()
 
 func set_ammo(new_ammo_count: int) -> void:
 	ammo = new_ammo_count
+
+func get_character_name() -> String:
+	return CharacterFactory.get_character_name(character_index)
+
+# Create role overlay UI
+func _create_role_overlay() -> void:
+	if not is_main_player:
+		return  # Only show overlay for the local player
+	
+	# Create overlay container
+	role_overlay = Control.new()
+	role_overlay.name = "RoleOverlay"
+	role_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	role_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# Create background panel
+	var background = ColorRect.new()
+	background.color = Color(0, 0, 0, 0.7)  # Semi-transparent black
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	role_overlay.add_child(background)
+	
+	# Create role label
+	role_label = Label.new()
+	role_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	role_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	role_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	
+	# Style the label
+	var font_size = 72
+	role_label.add_theme_font_size_override("font_size", font_size)
+	role_label.add_theme_color_override("font_color", Color.WHITE)
+	role_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	role_label.add_theme_constant_override("shadow_offset_x", 3)
+	role_label.add_theme_constant_override("shadow_offset_y", 3)
+	
+	role_overlay.add_child(role_label)
+	
+	# Create timer
+	role_timer = Timer.new()
+	role_timer.wait_time = 3.0
+	role_timer.one_shot = true
+	role_timer.timeout.connect(_hide_role_overlay)
+	role_overlay.add_child(role_timer)
+	
+	# Add to camera so it follows the player
+	if camera:
+		camera.add_child(role_overlay)
+	else:
+		add_child(role_overlay)
+	
+	print("[Player] Role overlay created for ", player_name)
+
+# Show role overlay with appropriate styling
+func show_role_overlay() -> void:
+	if not is_main_player or not role_label:
+		return
+	
+	# Set role text and color based on role
+	if role == PlayerRole.SEEKER:
+		role_label.text = "YOU ARE THE SEEKER"
+		role_label.add_theme_color_override("font_color", Color.RED)
+		role_label.add_theme_color_override("font_outline_color", Color.DARK_RED)
+		print("[Player] Showing SEEKER overlay for ", player_name)
+	else:
+		role_label.text = "YOU ARE A HIDER"
+		role_label.add_theme_color_override("font_color", Color.CYAN)
+		role_label.add_theme_color_override("font_outline_color", Color.BLUE)
+		print("[Player] Showing HIDER overlay for ", player_name)
+	
+	# Add outline for better visibility
+	role_label.add_theme_constant_override("outline_size", 2)
+	
+	# Show overlay and start timer
+	if role_overlay:
+		role_overlay.visible = true
+		role_timer.start()
+		print("[Player] Role overlay shown, timer started for 3 seconds")
+
+# Hide role overlay
+func _hide_role_overlay() -> void:
+	if role_overlay:
+		role_overlay.visible = false
+		print("[Player] Role overlay hidden for ", player_name)
+
+# Public function to trigger role display
+func display_role_for_round() -> void:
+	if not is_main_player:
+		return
+		
+	# Create overlay if it doesn't exist
+	if not role_overlay:
+		_create_role_overlay()
+	
+	# Show the overlay
+	show_role_overlay()
+
+# Direct fire function (fallback when GameManager not available)
+func _direct_fire_projectile() -> void:
+	if role != PlayerRole.SEEKER or ammo <= 0 or is_in_action:
+		return
+	
+	print("[Player] Direct fire - reducing ammo from ", ammo, " to ", ammo - 1)
+	ammo -= 1
+	execute_fire_projectile()
+
+# Direct SAK function (fallback when GameManager not available)  
+func _direct_sak_attack() -> void:
+	if role != PlayerRole.HIDER or is_in_action:
+		return
+	
+	# Find target in melee range
+	var nearby_players: Array[Node2D] = melee_range.get_overlapping_bodies()
+	var target: PlayerCharacter = null
+	
+	for body in nearby_players:
+		var potential_target: PlayerCharacter = body as PlayerCharacter
+		if potential_target and potential_target != self and potential_target.current_state == PlayerState.ALIVE:
+			target = potential_target
+			break
+	
+	if target:
+		print("[Player] Direct SAK attack on ", target.player_name)
+		execute_sak_attack(target)
+	else:
+		print("[Player] No valid SAK target found")
+
+# Direct projectile creation (fallback)
+func _create_projectile_direct() -> void:
+	if not ROCK_PROJECTILE_SCENE:
+		print("[Player] ERROR: ROCK_PROJECTILE_SCENE not loaded!")
+		return
+		
+	var rock = ROCK_PROJECTILE_SCENE.instantiate()
+	if "owner_player" in rock:
+		rock.owner_player = self
+	rock.global_position = muzzle.global_position
+	rock.rotation = vision_cone.global_rotation
+	
+	# Ensure rock is visible on all layers
+	if rock.has_node("Sprite2D"):
+		var sprite = rock.get_node("Sprite2D")
+		sprite.visible = true
+		sprite.modulate = Color.WHITE
+		print("[Player] Rock sprite visibility set to: ", sprite.visible)
+	
+	# Add to current scene instead of root for better organization
+	var current_scene = get_tree().current_scene
+	if current_scene:
+		current_scene.add_child(rock)
+	else:
+		get_tree().root.add_child(rock)
+	
+	print("[Player] Created projectile at ", muzzle.global_position, " with rotation ", rock.rotation)
+
+# Direct elimination (fallback)
+func _eliminate_target_direct(target: PlayerCharacter) -> void:
+	if not is_instance_valid(target):
+		return
+	print("[Player] Directly eliminating ", target.player_name)
+	target.eliminate(self)
 
 func _physics_process(delta: float):
 	if is_dying: return
@@ -223,19 +399,105 @@ func _sync_player_position(pos: Vector2, vel: Vector2):
 	_sync_player_state(pos, vel, "", false)
 
 func _input(event: InputEvent) -> void:
-	if is_dying or current_state == PlayerState.GHOST: return
+	# Debug ALL input events first
+	if event is InputEventMouseButton and event.pressed:
+		print("[Player] RAW MOUSE INPUT - Button: ", event.button_index, " Player: ", player_name, " Authority: ", is_multiplayer_authority(), " Main: ", is_main_player)
+	
+	if is_dying or current_state == PlayerState.GHOST: 
+		print("[Player] Input blocked - dying or ghost state")
+		return
 	# Only the authority handles inputs
-	if not is_multiplayer_authority(): return
-	if not is_main_player: return
+	if not is_multiplayer_authority(): 
+		return
+	if not is_main_player: 
+		return
+	
+	# Test if fire action is recognized
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		print("[Player] LEFT MOUSE DETECTED! Checking fire action...")
+		if Input.is_action_just_pressed("fire"):
+			print("[Player] FIRE ACTION CONFIRMED!")
+		else:
+			print("[Player] FIRE ACTION NOT TRIGGERED - checking input map...")
+	
+	# Test with SPACE key as alternative
+	if Input.is_action_just_pressed("ui_accept") or event.is_action_pressed("ui_accept"):
+		print("[Player] SPACE KEY FIRE TEST! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
+		_handle_fire_sak_input()
+	
 	if Input.is_action_just_pressed("fire"):
-		if not can_attack: return
+		print("[Player] FIRE ACTION TRIGGERED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
+		if not can_attack: 
+			print("[Player] Cannot attack - can_attack is false")
+			return
+		if is_in_action:
+			print("[Player] Cannot attack - already in action")
+			return
+			
 		# Request action from GameManager instead of handling directly
 		var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-		if gm:
-			if role == PlayerRole.SEEKER and ammo > 0:
+		if not gm:
+			# Try alternative paths
+			gm = get_node_or_null("../GameManager") as GameManager
+			if not gm:
+				gm = get_tree().get_first_node_in_group("game_manager") as GameManager
+			if not gm:
+				print("[Player] ERROR: GameManager not found in any location!")
+				print("[Player] Available root children: ")
+				for child in get_tree().root.get_children():
+					print("  - ", child.name, " (", child.get_class(), ")")
+				return
+			else:
+				print("[Player] Found GameManager at alternative location: ", gm.get_path())
+			
+		if role == PlayerRole.SEEKER and ammo > 0:
+			print("[Player] Requesting fire action - Ammo: ", ammo)
+			if gm and gm.has_method("request_player_action"):
 				gm.request_player_action.rpc_id(1, multiplayer.get_unique_id(), "fire_projectile", {})
-			if role == PlayerRole.HIDER:
+			else:
+				print("[Player] GameManager not available, using direct fire")
+				_direct_fire_projectile()
+		elif role == PlayerRole.SEEKER and ammo <= 0:
+			print("[Player] Cannot fire - out of ammo")
+		elif role == PlayerRole.HIDER:
+			print("[Player] Requesting SAK action")
+			if gm and gm.has_method("request_player_action"):
 				gm.request_player_action.rpc_id(1, multiplayer.get_unique_id(), "sak_attack", {})
+			else:
+				print("[Player] GameManager not available, using direct SAK")
+				_direct_sak_attack()
+		else:
+			print("[Player] Invalid role or conditions for attack")
+
+# Alternative input handler in case _input is being consumed
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		print("[Player] UNHANDLED MOUSE INPUT - Player: ", player_name, " Authority: ", is_multiplayer_authority(), " Main: ", is_main_player)
+		if is_multiplayer_authority() and is_main_player and not is_dying and current_state != PlayerState.GHOST:
+			print("[Player] Processing unhandled left click as fire/sak")
+			_handle_fire_sak_input()
+
+# Helper function to handle fire/sak input
+func _handle_fire_sak_input() -> void:
+	if not can_attack:
+		print("[Player] Cannot attack - can_attack is false")
+		return
+	if is_in_action:
+		print("[Player] Cannot attack - already in action")
+		return
+		
+	print("[Player] Handling fire/sak input - Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
+	
+	if role == PlayerRole.SEEKER and ammo > 0:
+		print("[Player] Executing seeker fire")
+		_direct_fire_projectile()
+	elif role == PlayerRole.SEEKER and ammo <= 0:
+		print("[Player] Cannot fire - out of ammo")
+	elif role == PlayerRole.HIDER:
+		print("[Player] Executing hider SAK")
+		_direct_sak_attack()
+	else:
+		print("[Player] Invalid role or conditions for attack")
 
 func eliminate(attacker: PlayerCharacter) -> void:
 	if is_dying or current_state == PlayerState.GHOST: return
@@ -243,7 +505,12 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
 	if gm:
 		gm.player_eliminated.emit(self, attacker)
+	
+	# Force stop current animation and play death
+	animated_sprite.stop()
 	animated_sprite.play("death")
+	print("[Player] Playing death animation for ", player_name, " - current: ", animated_sprite.animation)
+	
 	collision_shape.disabled = true
 	melee_range.monitoring = false
 	vision_cone.monitoring = false
@@ -268,18 +535,41 @@ func become_ghost() -> void:
 
 # Called by GameManager when fire action is approved
 func execute_fire_projectile() -> void:
-	if is_in_action: return
+	if is_in_action: 
+		print("[Player] Cannot execute fire - already in action")
+		return
+	if role != PlayerRole.SEEKER:
+		print("[Player] ERROR: Non-seeker trying to fire!")
+		return
+		
+	print("[Player] Executing fire projectile - ", player_name)
 	is_in_action = true
+	
+	# Force stop current animation and play seeker_bang
+	animated_sprite.stop()
 	animated_sprite.play("seeker_bang")
-	print("Firing projectile!")
+	print("[Player] Playing seeker_bang animation - current: ", animated_sprite.animation)
 
 # Called by GameManager when SAK action is approved
 func execute_sak_attack(target: PlayerCharacter) -> void:
-	if is_in_action: return
+	if is_in_action: 
+		print("[Player] Cannot execute SAK - already in action")
+		return
+	if role != PlayerRole.HIDER:
+		print("[Player] ERROR: Non-hider trying to SAK!")
+		return
+	if not is_instance_valid(target):
+		print("[Player] ERROR: Invalid SAK target!")
+		return
+		
+	print("[Player] Executing SAK attack - ", player_name, " -> ", target.player_name)
 	target_for_sak = target
 	is_in_action = true
+	
+	# Force stop current animation and play hider_sak
+	animated_sprite.stop()
 	animated_sprite.play("hider_sak")
-	print("Performing SAK attack on ", target.player_name)
+	print("[Player] Playing hider_sak animation - current: ", animated_sprite.animation)
 
 func handle_movement() -> void:
 	if is_in_action:
@@ -301,7 +591,11 @@ func handle_visuals() -> void:
 	var mouse_position = get_global_mouse_position()
 	vision_cone.look_at(mouse_position)
 	animated_sprite.flip_h = (mouse_position.x < global_position.x)
-	if is_in_action: return
+	
+	# Don't change animations during action sequences
+	if is_in_action: 
+		print("[Player] Skipping visual update - in action. Current animation: ", animated_sprite.animation)
+		return
 	var is_aiming_up = (mouse_position.y < global_position.y)
 	if velocity.length() > 0:
 		var is_running = Input.is_action_pressed("run")
@@ -439,17 +733,30 @@ func _on_animated_sprite_2d_animation_finished() -> void:
 		target_for_sak = null 
 
 func _on_animated_sprite_2d_frame_changed() -> void:
+	print("[Player] Frame changed - Animation: ", animated_sprite.animation, " Frame: ", animated_sprite.frame)
+	
 	if animated_sprite.animation == "seeker_bang":
 		if animated_sprite.frame == 2:
-			# Let GameManager handle projectile creation
+			print("[Player] SEEKER_BANG frame 2 - creating projectile!")
+			# Try GameManager first, then fallback to direct creation
 			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-			if gm:
+			if gm and gm.has_method("create_projectile"):
 				gm.create_projectile.rpc_id(1, multiplayer.get_unique_id(), muzzle.global_position, vision_cone.global_rotation)
+			else:
+				print("[Player] Creating projectile directly")
+				_create_projectile_direct()
+				
 	if animated_sprite.animation == "hider_sak":
 		if animated_sprite.frame == 2:
+			print("[Player] HIDER_SAK frame 2 - executing elimination!")
 			if is_instance_valid(target_for_sak):
-				# Let GameManager handle the elimination
+				# Try GameManager first, then fallback to direct elimination
 				var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-				if gm:
+				if gm and gm.has_method("execute_elimination"):
 					gm.execute_elimination.rpc_id(1, target_for_sak.get_multiplayer_authority(), multiplayer.get_unique_id())
+				else:
+					print("[Player] Executing elimination directly")
+					_eliminate_target_direct(target_for_sak)
 				target_for_sak = null
+			else:
+				print("[Player] No valid SAK target!")

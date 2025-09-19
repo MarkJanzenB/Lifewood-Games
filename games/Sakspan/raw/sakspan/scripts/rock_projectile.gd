@@ -9,8 +9,20 @@ const SPEED: int = 700
 # This will store a reference to the player who fired the rock.
 var owner_player: PlayerCharacter
 
+func _ready() -> void:
+	print("[RockProjectile] Rock created at position: ", global_position)
+	# Ensure visibility
+	if has_node("Sprite2D"):
+		var sprite = get_node("Sprite2D")
+		sprite.visible = true
+		sprite.modulate = Color.WHITE
+		print("[RockProjectile] Sprite visibility: ", sprite.visible, " modulate: ", sprite.modulate)
+
 func _physics_process(delta: float) -> void:
 	position += transform.x * SPEED * delta
+	# Debug position occasionally
+	if randf() < 0.1:
+		print("[RockProjectile] Moving - Position: ", global_position, " Speed: ", SPEED)
 
 func _on_body_entered(body: Node2D) -> void:
 	var was_hit_processed = false

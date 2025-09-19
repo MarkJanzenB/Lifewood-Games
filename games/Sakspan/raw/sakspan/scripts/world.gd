@@ -23,7 +23,16 @@ var _spawn_attempts: int = 0
 var _max_spawn_attempts: int = 10
 
 func _ready() -> void:
-	print("[World] World scene starting...")
+	print("[DevWorld] Starting dev test world")
+	
+	# Configure MultiplayerSpawner
+	var spawner = $MultiplayerManager/MultiplayerSpawner
+	spawner.spawn_function = _spawn_player_with_data
+	print("[DevWorld] MultiplayerSpawner configured")
+	
+	# Auto-assign roles after a short delay to ensure all players are spawned
+	await get_tree().create_timer(2.0).timeout
+	_auto_assign_roles()
 	
 	# Connect to NetworkManager signals
 	if NetworkManager.player_list_changed.connect(_on_player_list_changed) != OK:
@@ -57,6 +66,27 @@ func _input(event):
 		elif event.keycode == KEY_F6:
 			print("[World] === F6 DEBUG: Testing username display ===")
 			_test_username_display()
+		elif event.keycode == KEY_F8:
+			print("[World] === F8 DEBUG: Testing fire/sak functions ===")
+			_test_fire_sak_functions()
+		elif event.keycode == KEY_F9:
+			print("[World] === F9 DEBUG: Manual role assignment for testing ===")
+			_manual_role_assignment()
+		elif event.keycode == KEY_F10:
+			print("[World] === F10 DEBUG: Check player states ===")
+			_check_player_states()
+		elif event.keycode == KEY_F11:
+			print("[World] === F11 DEBUG: Test animations directly ===")
+			_test_animations_directly()
+		elif event.keycode == KEY_F12:
+			print("[World] === F12 DEBUG: Test role overlay ===")
+			_test_role_overlay()
+		elif event.keycode == KEY_R:
+			print("[World] === R KEY: Quick role assignment ===")
+			_quick_role_assignment()
+		elif event.keycode == KEY_G:
+			print("[World] === G KEY: Check scene structure ===")
+			_debug_scene_structure()
 		elif event.keycode == KEY_F2:
 			print("[World] === F2 DEBUG: Manually applying colors ===")
 			_debug_apply_colors_manually()
@@ -167,6 +197,26 @@ func _spawn_all_players() -> void:
 		var player_data: Dictionary = players_dict[id]
 		# Use RPC to spawn player on all clients
 		_spawn_player_on_clients.rpc(id, player_data, spawn_points[i], i)
+
+# MultiplayerSpawner callback function
+func _spawn_player_with_data(data: Variant) -> Node:
+	print("[DevWorld] _spawn_player_with_data called with: ", data)
+	
+	# Create player instance
+	var player_scene = preload("res://scenes/player/Player.tscn")
+	var player = player_scene.instantiate()
+	
+	# Set up player with data if provided
+	if data is Dictionary:
+		var player_data = data as Dictionary
+		if "player_id" in player_data:
+			player.name = "Player_" + str(player_data["player_id"])
+		if "player_name" in player_data:
+			player.player_name = player_data["player_name"]
+		if "char_index" in player_data:
+			player.character_index = player_data["char_index"]
+	
+	return player
 
 	# Mark game as started to prevent respawning
 	game_state["game_started"] = true
@@ -448,6 +498,188 @@ func _test_username_display():
 				if p.has_method("_create_username_label"):
 					p._create_username_label()
 					print("  - Created username label")
+
+func _test_fire_sak_functions():
+	print("[World] === FIRE/SAK FUNCTION TEST ===")
+	var all_players = players_container.get_children()
+	
+	for player in all_players:
+		if player is PlayerCharacter:
+			var p = player as PlayerCharacter
+			print("[World] Player: ", p.player_name)
+			print("  - Role: ", PlayerCharacter.PlayerRole.keys()[p.role])
+			print("  - Has execute_fire_projectile: ", p.has_method("execute_fire_projectile"))
+			print("  - Has execute_sak_attack: ", p.has_method("execute_sak_attack"))
+			print("  - Has set_ammo: ", p.has_method("set_ammo"))
+			print("  - Has eliminate: ", p.has_method("eliminate"))
+			print("  - Current ammo: ", p.ammo)
+			print("  - Can attack: ", p.can_attack)
+			print("  - Can move: ", p.can_move)
+			
+			# Check GameManager connection
+			var gm = get_node_or_null("/root/GameManager")
+			if gm:
+				print("  - GameManager found: ", gm.name)
+				print("  - GameManager has request_player_action: ", gm.has_method("request_player_action"))
+			else:
+				print("  - ❌ GameManager NOT found!")
+
+func _manual_role_assignment():
+	print("[World] === MANUAL ROLE ASSIGNMENT ===")
+	var all_players = players_container.get_children()
+	
+	if all_players.size() == 0:
+		print("[World] No players found!")
+		return
+	
+	for i in range(all_players.size()):
+		var player = all_players[i] as PlayerCharacter
+		if player:
+			# First player becomes seeker, rest become hiders
+			if i == 0:
+				player.assign_role(PlayerCharacter.PlayerRole.SEEKER)
+				player.can_attack = true
+				player.can_move = true
+				print("[World] Assigned SEEKER role to: ", player.player_name)
+			else:
+				player.assign_role(PlayerCharacter.PlayerRole.HIDER)
+				player.can_attack = true
+				player.can_move = true
+				print("[World] Assigned HIDER role to: ", player.player_name)
+	
+	print("[World] Role assignment complete - overlays should be showing for main players")
+
+func _check_player_states():
+	print("[World] === PLAYER STATE CHECK ===")
+	var all_players = players_container.get_children()
+	
+	for player in all_players:
+		if player is PlayerCharacter:
+			var p = player as PlayerCharacter
+			print("[World] Player: ", p.player_name)
+			print("  - Role: ", PlayerCharacter.PlayerRole.keys()[p.role])
+			print("  - Ammo: ", p.ammo)
+			print("  - Can attack: ", p.can_attack)
+			print("  - Can move: ", p.can_move)
+			print("  - Is main player: ", p.is_main_player)
+			print("  - Is multiplayer authority: ", p.is_multiplayer_authority())
+			print("  - Current state: ", PlayerCharacter.PlayerState.keys()[p.current_state])
+			print("  - Is dying: ", p.is_dying)
+			print("  - Is in action: ", p.is_in_action)
+			print("  - Script class: ", p.get_script().get_global_name() if p.get_script() else "No script")
+
+func _test_animations_directly():
+	print("[World] === ANIMATION TEST ===")
+	var all_players = players_container.get_children()
+	
+	for i in range(all_players.size()):
+		var player = all_players[i] as PlayerCharacter
+		if player:
+			print("[World] Testing animations for: ", player.player_name)
+			
+			# Test seeker_bang animation
+			if i == 0:  # First player
+				print("[World] Testing SEEKER_BANG animation")
+				player.animated_sprite.stop()
+				player.animated_sprite.play("seeker_bang")
+				player.is_in_action = true
+				print("[World] Animation started: ", player.animated_sprite.animation, " playing: ", player.animated_sprite.is_playing())
+			
+			# Test hider_sak animation  
+			elif i == 1:  # Second player
+				print("[World] Testing HIDER_SAK animation")
+				player.animated_sprite.stop()
+				player.animated_sprite.play("hider_sak")
+				player.is_in_action = true
+				print("[World] Animation started: ", player.animated_sprite.animation, " playing: ", player.animated_sprite.is_playing())
+			
+			# Test death animation
+			elif i == 2:  # Third player
+				print("[World] Testing DEATH animation")
+				player.animated_sprite.stop()
+				player.animated_sprite.play("death")
+				print("[World] Animation started: ", player.animated_sprite.animation, " playing: ", player.animated_sprite.is_playing())
+
+func _test_role_overlay():
+	print("[World] === ROLE OVERLAY TEST ===")
+	var all_players = players_container.get_children()
+	
+	for player in all_players:
+		if player is PlayerCharacter:
+			var p = player as PlayerCharacter
+			if p.is_main_player:
+				print("[World] Testing role overlay for main player: ", p.player_name)
+				print("[World] Player role: ", PlayerCharacter.PlayerRole.keys()[p.role])
+				p.display_role_for_round()
+				break
+
+func _quick_role_assignment():
+	print("[World] === QUICK ROLE ASSIGNMENT ===")
+	var all_players = players_container.get_children()
+	
+	if all_players.size() == 0:
+		print("[World] No players found in players_container!")
+		return
+	
+	print("[World] Found ", all_players.size(), " players")
+	
+	# Assign first player as seeker, rest as hiders
+	for i in range(all_players.size()):
+		var player = all_players[i] as PlayerCharacter
+		if player:
+			print("[World] Processing player ", i, ": ", player.player_name)
+			if i == 0:
+				# First player becomes seeker
+				player.assign_role(PlayerCharacter.PlayerRole.SEEKER)
+				player.can_attack = true
+				player.can_move = true
+				print("[World] ✅ Assigned SEEKER to: ", player.player_name, " (Ammo: ", player.ammo, ")")
+			else:
+				# Rest become hiders
+				player.assign_role(PlayerCharacter.PlayerRole.HIDER)
+				player.can_attack = true
+				player.can_move = true
+				print("[World] ✅ Assigned HIDER to: ", player.player_name)
+		else:
+			print("[World] ❌ Player ", i, " is not a PlayerCharacter!")
+	
+	print("[World] Role assignment complete! Press F12 to test role overlays")
+	print("[World] Press SPACE to use fire/sak actions")
+
+func _auto_assign_roles():
+	print("[World] === AUTO ROLE ASSIGNMENT ===")
+	var all_players = players_container.get_children()
+	
+	if all_players.size() >= 2:
+		print("[World] Auto-assigning roles to ", all_players.size(), " players")
+		_quick_role_assignment()
+	else:
+		print("[World] Waiting for more players... (", all_players.size(), "/2)")
+
+func _debug_scene_structure():
+	print("[World] === SCENE STRUCTURE DEBUG ===")
+	print("[World] Current scene: ", get_tree().current_scene.name)
+	print("[World] Root children:")
+	for child in get_tree().root.get_children():
+		print("  - ", child.name, " (", child.get_class(), ")")
+	
+	print("[World] DevWorld children:")
+	for child in get_children():
+		print("  - ", child.name, " (", child.get_class(), ")")
+	
+	# Check for GameManager specifically
+	var gm = get_node_or_null("/root/GameManager")
+	if gm:
+		print("[World] ✅ GameManager found at /root/GameManager")
+	else:
+		print("[World] ❌ GameManager NOT found at /root/GameManager")
+		
+	# Check if we can find it elsewhere
+	var gm_alt = get_tree().get_first_node_in_group("game_manager")
+	if gm_alt:
+		print("[World] ✅ GameManager found in group: ", gm_alt.get_path())
+	else:
+		print("[World] ❌ GameManager not found in 'game_manager' group")
 
 # Debug function to manually apply colors
 func _debug_apply_colors_manually():
