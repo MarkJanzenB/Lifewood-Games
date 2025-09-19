@@ -59,10 +59,10 @@ func _ready():
 	# Configure multiplayer authority
 	_configure_multiplayer_authority()
 	
-	# Setup MultiplayerSynchronizer
+	# Setup MultiplayerSynchronizer with empty config (for spawning only)
 	if sync:
-		_setup_replication_config()
-		sync.visibility_update_mode = MultiplayerSynchronizer.VISIBILITY_PROCESS_PHYSICS
+		sync.set_multiplayer_authority(get_multiplayer_authority())
+		print("[Player] MultiplayerSynchronizer set up for spawning: ", player_name)
 	
 	# Configure role-specific settings
 	if role == PlayerRole.HIDER:
@@ -87,27 +87,6 @@ func _configure_multiplayer_authority():
 		if camera:
 			camera.enabled = true
 			camera.make_current()
-
-func _setup_replication_config():
-	# Create and configure replication config for multiplayer synchronization
-	if not sync:
-		return
-		
-	var config = SceneReplicationConfig.new()
-	
-	# Add properties that need to be synchronized across clients
-	config.add_property(".:position")
-	config.add_property(".:rotation")
-	config.add_property(".:role")
-	config.add_property(".:player_state")
-	config.add_property(".:player_name")
-	config.add_property(".:health")
-	config.add_property(".:ammo")
-	config.add_property(".:is_main_player")
-	
-	# Set the config
-	sync.replication_config = config
-	print("[Player] Replication config set up for player: ", player_name)
 
 # Called by World script when spawning players
 func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
@@ -148,7 +127,7 @@ func _physics_process(delta: float):
 	if is_dying: return
 	
 	# Only the multiplayer authority simulates input and movement
-	if is_multiplayer_authority() and is_main_player:
+	if is_multiplayer_authority():
 		handle_movement()
 		if current_state == PlayerState.GHOST: return
 		handle_visuals()
@@ -157,16 +136,32 @@ func _physics_process(delta: float):
 		
 		# Sync position to other clients
 		_sync_player_position.rpc(global_position, velocity)
+		# Debug: Show RPC send occasionally
+		if randf() < 0.02:
+			print("[Player][SEND] ", name, " / ", player_name, " auth:", get_multiplayer_authority(), " pos:", global_position)
 	else:
-		# Non-authority players just interpolate to synced position
+		# Non-authority players snap to synced position (diagnostic mode)
 		if _sync_position != Vector2.ZERO:
-			global_position = global_position.lerp(_sync_position, delta * 10.0)
+			global_position = _sync_position
+			# Debug: Show snap occasionally
+			if randf() < 0.02:
+				print("[Player][SNAP] ", name, " / ", player_name, " set to:", global_position)
 
-@rpc("any_peer", "unreliable")
+@rpc("authority", "unreliable", "call_remote")
 func _sync_player_position(pos: Vector2, vel: Vector2):
+	# Route updates only to the node that matches the sender's player ID
+	var sender_id := multiplayer.get_remote_sender_id()
+	var this_node_authority := get_multiplayer_authority()
+	# Ignore if this update is not intended for this node (prevents self-echo/misrouting)
+	if sender_id != this_node_authority:
+		return
+	# Only non-authority nodes should apply remote position
 	if not is_multiplayer_authority():
 		_sync_position = pos
 		velocity = vel
+		# Debug: Show RPC receive occasionally
+		if randf() < 0.05:
+			print("[Player][RECV] ", name, " / ", player_name, " auth:", this_node_authority, " from:", sender_id, " pos:", pos)
 
 func _input(event: InputEvent) -> void:
 	if is_dying or current_state == PlayerState.GHOST: return

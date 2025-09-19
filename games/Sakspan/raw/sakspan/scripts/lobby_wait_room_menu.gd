@@ -10,6 +10,7 @@ extends Control
 @onready var root_vbox: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer
 @onready var lock_in_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LockInButton
 @onready var start_game_button: Button = $PanelContainer/MarginContainer/VBoxContainer/StartGameButton
+@onready var dev_test_button: Button = $PanelContainer/MarginContainer/VBoxContainer/DevTestButton
 @onready var leave_lobby_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LeaveLobbyButton
 var _heartbeat_timer := Timer.new()
 
@@ -84,6 +85,8 @@ func _ready():
 			network_manager.request_players_resync()
 	if start_game_button:
 		start_game_button.pressed.connect(_on_start_game_button_pressed)
+	if dev_test_button:
+		dev_test_button.pressed.connect(_on_dev_test_button_pressed)
 	if lock_in_button:
 		lock_in_button.pressed.connect(_on_lock_in_button_pressed)
 	if leave_lobby_button:
@@ -381,6 +384,18 @@ func _on_start_game_button_pressed():
 	if is_host:
 		print("[LobbyWaitRoom] Start Game pressed by host. Sending RPC...")
 		NetworkManager.start_game()
+
+func _on_dev_test_button_pressed():
+	if is_host:
+		print("[LobbyWaitRoom] Host starting dev test. Syncing to all clients...")
+		_start_dev_test.rpc()
+	else:
+		print("[LobbyWaitRoom] Only host can start dev test.")
+
+@rpc("authority", "call_local", "reliable")
+func _start_dev_test():
+	print("[LobbyWaitRoom] Loading dev world...")
+	SceneChanger.change_scene_to_file("res://scenes/dev/dev_world.tscn")
 
 func _on_game_started(_player_data):
 	print("[LobbyWaitRoom] game_started received. Loading world_new.tscn...")

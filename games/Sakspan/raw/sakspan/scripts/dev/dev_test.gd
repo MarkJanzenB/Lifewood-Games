@@ -6,6 +6,7 @@ extends Control
 @onready var host_button: Button = $Panel/Margin/VBox/TopHBox/HostButton
 @onready var join_button: Button = $Panel/Margin/VBox/TopHBox/JoinButton
 @onready var leave_button: Button = $Panel/Margin/VBox/TopHBox/LeaveButton
+@onready var test_world_button: Button = $Panel/Margin/VBox/TestWorldButton
 @onready var players_label: Label = $Panel/Margin/VBox/PlayersHBox/PlayersLabel
 @onready var players_list: ItemList = $Panel/Margin/VBox/PlayersHBox/PlayersList
 @onready var log_output: RichTextLabel = $Panel/Margin/VBox/Log
@@ -25,6 +26,7 @@ func _ready() -> void:
 	host_button.pressed.connect(_on_host_pressed)
 	join_button.pressed.connect(_on_join_pressed)
 	leave_button.pressed.connect(_on_leave_pressed)
+	test_world_button.pressed.connect(_on_test_world_pressed)
 	
 	# Connect NetworkManager signals
 	NetworkManager.connection_succeeded.connect(func(): _log("✅ Connection succeeded"))
@@ -78,7 +80,7 @@ func _on_join_pressed() -> void:
 		return
 	_log("🔗 Joining '" + ip + "' as '" + name + "'")
 	NetworkManager.join_lobby(name, ip)
-	_in_session = true
+	_in_session = true	
 	_disable_text_inputs()
 	get_viewport().gui_release_focus()
 
@@ -88,6 +90,14 @@ func _on_leave_pressed() -> void:
 	_in_session = false
 	_enable_text_inputs()
 	get_viewport().gui_release_focus()
+
+func _on_test_world_pressed() -> void:
+	if not _in_session:
+		_log("❌ Not connected to a session. Host or join first.")
+		return
+	
+	_log("🌍 Loading dev test world...")
+	SceneChanger.change_scene_to_file("res://scenes/dev/dev_world.tscn")
 
 func _disable_text_inputs() -> void:
 	name_line.editable = false

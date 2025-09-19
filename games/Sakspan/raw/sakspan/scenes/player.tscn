@@ -1,4 +1,4 @@
-[gd_scene load_steps=51 format=3 uid="uid://b75j5af55anqv"]
+[gd_scene load_steps=52 format=3 uid="uid://c4e6jku2f1hj8"]
 
 [ext_resource type="Script" uid="uid://dbipxepmrkfqw" path="res://scripts/player.gd" id="1_tuyoq"]
 [ext_resource type="Texture2D" uid="uid://c0xrcda5p33ew" path="res://sprites/Pink_Monster/Pink_Monster_Climb_4.png" id="2_fjrip"]
@@ -372,14 +372,13 @@ animations = [{
 [sub_resource type="CircleShape2D" id="CircleShape2D_fjrip"]
 radius = 25.0
 
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_ur7pv"]
+
 [node name="player" type="CharacterBody2D"]
 scale = Vector2(1.5, 1.5)
 collision_mask = 3
 input_pickable = true
 script = ExtResource("1_tuyoq")
-
-[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
-root_path = NodePath(".")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(1.19209e-07, 5)
@@ -393,7 +392,8 @@ sprite_frames = SubResource("SpriteFrames_ibah8")
 animation = &"front_backward_walk"
 
 [node name="Camera2D" type="Camera2D" parent="."]
-zoom = Vector2(0.5, 0.5)
+position = Vector2(1.33333, -0.666667)
+zoom = Vector2(1.86, 1.86)
 
 [node name="VisionCone" type="Area2D" parent="."]
 position = Vector2(0, 2.38419e-07)
@@ -401,12 +401,13 @@ scale = Vector2(1.01585, 1.01537)
 collision_layer = 0
 
 [node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="VisionCone"]
-position = Vector2(-3.46691, 15.0684)
-scale = Vector2(3.5563, 1.72284)
+position = Vector2(-1.31253, 5.2526)
+scale = Vector2(1.19853, 0.580622)
 polygon = PackedVector2Array(0.830412, -9.14641, 190.164, -177.212, 190.164, 160.634)
 
 [node name="PointLight2D" type="PointLight2D" parent="VisionCone"]
-position = Vector2(100, 0)
+position = Vector2(3.38813e-21, -2.38419e-07)
+scale = Vector2(0.586235, 0.260778)
 color = Color(1, 1, 1, 0.8)
 energy = 1.5
 shadow_enabled = true
@@ -421,6 +422,9 @@ shape = SubResource("CircleShape2D_fjrip")
 
 [node name="Muzzle" type="Marker2D" parent="."]
 position = Vector2(8, 1)
+
+[node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_ur7pv")
 
 [connection signal="animation_finished" from="AnimatedSprite2D" to="." method="_on_animated_sprite_2d_animation_finished"]
 [connection signal="frame_changed" from="AnimatedSprite2D" to="." method="_on_animated_sprite_2d_frame_changed"]
