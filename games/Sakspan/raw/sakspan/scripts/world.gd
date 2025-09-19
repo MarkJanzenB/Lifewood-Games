@@ -51,6 +51,9 @@ func _input(event):
 		elif event.keycode == KEY_F4:
 			print("[World] === F4 DEBUG: Testing movement sync ===")
 			_test_movement_sync()
+		elif event.keycode == KEY_F5:
+			print("[World] === F5 DEBUG: Testing visual sync ===")
+			_test_visual_sync()
 		elif event.keycode == KEY_F2:
 			print("[World] === F2 DEBUG: Manually applying colors ===")
 			_debug_apply_colors_manually()
@@ -208,10 +211,17 @@ func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos
 	
 	# Set player name
 	if "player_name" in new_player:
-		new_player.player_name = player_data.get("name", "Player" + str(player_id))
+		new_player.player_name = player_name
 		print("[World] Set player name to: ", new_player.player_name)
 	
-	# Set up camera and input for local player only
+	# Apply character appearance (color) based on character index
+	_apply_character_appearance(new_player, character_index)
+	
+	# Store spawned player
+	_spawned_players[player_id] = new_player
+	
+	print("[World] Successfully created player ", player_id, " (", player_name, ") at ", spawn_pos)
+	
 	if player_id == multiplayer.get_unique_id():
 		if new_player.has_node("Camera2D"):
 			var camera = new_player.get_node("Camera2D")
@@ -345,6 +355,28 @@ func _debug_check_all_players():
 		else:
 			print("[World] Player ", i, " is not a PlayerCharacter!")
 
+func _apply_character_appearance(player: PlayerCharacter, character_index: int):
+	if character_index < 0 or character_index >= CharacterFactory.get_character_count():
+		print("[World] Invalid character index: ", character_index)
+		return
+	
+	var color = CharacterFactory.get_character_color(character_index)
+	var character_name = CharacterFactory.get_character_name(character_index)
+	
+	print("[World] Applying ", character_name, " appearance with color: ", color)
+	
+	# Apply color to animated sprite
+	if player.has_node("AnimatedSprite2D"):
+		var sprite = player.get_node("AnimatedSprite2D")
+		sprite.modulate = color
+		print("[World] Successfully applied ", character_name, " color: ", color)
+	else:
+		print("[World] ERROR: No AnimatedSprite2D found on player!")
+	
+	# Ensure character index is set
+	player.character_index = character_index
+	print("[World] Character appearance applied for ", character_name)
+
 func _test_movement_sync():
 	print("[World] === MOVEMENT SYNC TEST ===")
 	var all_players = players_container.get_children()
@@ -360,6 +392,25 @@ func _test_movement_sync():
 			print("  - Physics Process: ", p.is_physics_processing())
 			print("  - Position: ", p.global_position)
 			print("  - Velocity: ", p.velocity)
+
+func _test_visual_sync():
+	print("[World] === VISUAL SYNC TEST ===")
+	var all_players = players_container.get_children()
+	
+	for player in all_players:
+		if player is PlayerCharacter:
+			var p = player as PlayerCharacter
+			print("[World] Player: ", p.player_name)
+			print("  - Character Index: ", p.character_index)
+			print("  - Character Name: ", p.get_character_name())
+			if p.has_node("AnimatedSprite2D"):
+				var sprite = p.get_node("AnimatedSprite2D")
+				print("  - Sprite Color: ", sprite.modulate)
+				print("  - Current Animation: ", sprite.animation)
+				print("  - Is Flipped: ", sprite.flip_h)
+				print("  - Is Playing: ", sprite.is_playing())
+			else:
+				print("  - ERROR: No AnimatedSprite2D found!")
 
 # Debug function to manually apply colors
 func _debug_apply_colors_manually():

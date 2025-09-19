@@ -142,20 +142,36 @@ func _physics_process(delta: float):
 		update_all_players_in_cone()
 		check_line_of_sight()
 		
-		# Sync position to other clients more frequently for better responsiveness
+		# Sync position and animation state to other clients
 		if Engine.get_physics_frames() % 2 == 0:  # Sync every 2nd frame
-			_sync_player_position.rpc(global_position, velocity)
+			var current_animation = animated_sprite.animation if animated_sprite else ""
+			var is_flipped = animated_sprite.flip_h if animated_sprite else false
+			_sync_player_state.rpc(global_position, velocity, current_animation, is_flipped)
 	else:
 		# Non-authority players smoothly interpolate to synced position
 		if _sync_position != Vector2.ZERO:
 			global_position = global_position.lerp(_sync_position, delta * 15.0)  # Faster interpolation
+		
+		# Handle animations for remote players based on movement
+		handle_remote_visuals()
 
 @rpc("any_peer", "unreliable")
-func _sync_player_position(pos: Vector2, vel: Vector2):
-	# Only apply position updates to non-authority nodes
+func _sync_player_state(pos: Vector2, vel: Vector2, animation: String, flipped: bool):
+	# Only apply updates to non-authority nodes
 	if not is_multiplayer_authority():
 		_sync_position = pos
 		velocity = vel
+		
+		# Apply animation state
+		if animated_sprite and animation != "":
+			if animated_sprite.sprite_frames.has_animation(animation):
+				animated_sprite.play(animation)
+			animated_sprite.flip_h = flipped
+
+# Legacy function for compatibility
+@rpc("any_peer", "unreliable")
+func _sync_player_position(pos: Vector2, vel: Vector2):
+	_sync_player_state(pos, vel, "", false)
 
 func _input(event: InputEvent) -> void:
 	if is_dying or current_state == PlayerState.GHOST: return
@@ -247,6 +263,35 @@ func handle_visuals() -> void:
 	else:
 		if is_aiming_up: animated_sprite.play("back_idle")
 		else: animated_sprite.play("idle")
+
+func handle_remote_visuals() -> void:
+	# Handle animations for remote players based on velocity
+	if is_in_action: return
+	
+	if velocity.length() > 0:
+		# Determine if running based on velocity magnitude
+		var is_running = velocity.length() > walk_speed * 1.5
+		var anim_to_play = ""
+		
+		# Simple animation logic based on movement direction
+		if abs(velocity.y) > abs(velocity.x):
+			# Moving more vertically
+			if velocity.y < 0:
+				anim_to_play = "back_run" if is_running else "back_walk"
+			else:
+				anim_to_play = "front_run" if is_running else "front_walk"
+		else:
+			# Moving more horizontally or diagonally
+			anim_to_play = "front_run" if is_running else "front_walk"
+		
+		# Set sprite direction based on velocity
+		if velocity.x != 0:
+			animated_sprite.flip_h = velocity.x < 0
+		
+		animated_sprite.play(anim_to_play)
+	else:
+		# Idle animation
+		animated_sprite.play("idle")
 
 func update_all_players_in_cone() -> void:
 	var overlapping_bodies: Array[Node2D] = vision_cone.get_overlapping_bodies()
