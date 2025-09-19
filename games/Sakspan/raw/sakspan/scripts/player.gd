@@ -37,8 +37,8 @@ var previously_visible_hiders: Array[PlayerCharacter] = []
 var is_in_action: bool = false
 var target_for_sak: PlayerCharacter = null
 var is_dying: bool = false
-var can_move: bool = false
-var can_attack: bool = false
+var can_move: bool = true  # Allow movement by default
+var can_attack: bool = true  # Allow attacks by default
 
 # Collision layers:
 # 1 - Default (players, obstacles)
@@ -69,9 +69,9 @@ func _ready():
 		vision_light.energy = 0.5
 
 func _configure_multiplayer_authority():
-	# Only the authority processes input and physics for this player
+	# Configure based on multiplayer authority
 	if not is_multiplayer_authority():
-		set_physics_process(false)
+		# Remote players: disable input but keep physics for movement sync
 		set_process_unhandled_input(false)
 		if camera:
 			camera.enabled = false
@@ -82,8 +82,10 @@ func _configure_multiplayer_authority():
 		if melee_range:
 			melee_range.monitoring = false
 	else:
-		# This is the local player
+		# This is the local player - enable everything
 		is_main_player = true
+		can_move = true
+		can_attack = true
 		if camera:
 			camera.enabled = true
 			camera.make_current()
@@ -93,17 +95,23 @@ func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
 	player_name = player_data.get("name", "Player")
 	is_main_player = is_local
 	
+	# Enable movement and attacks for all players
+	can_move = true
+	can_attack = true
+	
 	# Configure based on whether this is the local player
 	if is_local:
 		if camera:
 			camera.enabled = true
 			camera.make_current()
+		print("[Player] Set up LOCAL player: ", player_name)
 	else:
 		if camera:
 			camera.enabled = false
-		# Disable input processing for remote players
-		set_physics_process(false)
+		# Keep physics processing enabled for remote players so they can move
+		# Only disable unhandled input for remote players
 		set_process_unhandled_input(false)
+		print("[Player] Set up REMOTE player: ", player_name)
 
 func set_is_main_player(value: bool):
 	is_main_player = value
@@ -134,34 +142,20 @@ func _physics_process(delta: float):
 		update_all_players_in_cone()
 		check_line_of_sight()
 		
-		# Sync position to other clients
-		_sync_player_position.rpc(global_position, velocity)
-		# Debug: Show RPC send occasionally
-		if randf() < 0.02:
-			print("[Player][SEND] ", name, " / ", player_name, " auth:", get_multiplayer_authority(), " pos:", global_position)
+		# Sync position to other clients more frequently for better responsiveness
+		if Engine.get_physics_frames() % 2 == 0:  # Sync every 2nd frame
+			_sync_player_position.rpc(global_position, velocity)
 	else:
-		# Non-authority players snap to synced position (diagnostic mode)
+		# Non-authority players smoothly interpolate to synced position
 		if _sync_position != Vector2.ZERO:
-			global_position = _sync_position
-			# Debug: Show snap occasionally
-			if randf() < 0.02:
-				print("[Player][SNAP] ", name, " / ", player_name, " set to:", global_position)
+			global_position = global_position.lerp(_sync_position, delta * 15.0)  # Faster interpolation
 
-@rpc("authority", "unreliable", "call_remote")
+@rpc("any_peer", "unreliable")
 func _sync_player_position(pos: Vector2, vel: Vector2):
-	# Route updates only to the node that matches the sender's player ID
-	var sender_id := multiplayer.get_remote_sender_id()
-	var this_node_authority := get_multiplayer_authority()
-	# Ignore if this update is not intended for this node (prevents self-echo/misrouting)
-	if sender_id != this_node_authority:
-		return
-	# Only non-authority nodes should apply remote position
+	# Only apply position updates to non-authority nodes
 	if not is_multiplayer_authority():
 		_sync_position = pos
 		velocity = vel
-		# Debug: Show RPC receive occasionally
-		if randf() < 0.05:
-			print("[Player][RECV] ", name, " / ", player_name, " auth:", this_node_authority, " from:", sender_id, " pos:", pos)
 
 func _input(event: InputEvent) -> void:
 	if is_dying or current_state == PlayerState.GHOST: return
@@ -223,14 +217,20 @@ func execute_sak_attack(target: PlayerCharacter) -> void:
 	print("Performing SAK attack on ", target.player_name)
 
 func handle_movement() -> void:
-	if not can_move or is_in_action:
+	if is_in_action:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
+	
+	# Get input and apply movement
 	var input_direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var current_speed = run_speed if Input.is_action_pressed("run") else walk_speed
 	velocity = input_direction * current_speed
 	move_and_slide()
+	
+	# Debug output for movement
+	if input_direction != Vector2.ZERO and randf() < 0.05:
+		print("[Player] ", player_name, " moving with input: ", input_direction, " velocity: ", velocity, " position: ", global_position)
 
 func handle_visuals() -> void:
 	var mouse_position = get_global_mouse_position()

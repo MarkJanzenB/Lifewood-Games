@@ -44,6 +44,13 @@ func _input(event):
 		if event.keycode == KEY_F1:
 			print("[World] === F1 DEBUG: Checking all players ===")
 			_debug_check_all_players()
+		elif event.keycode == KEY_F3:
+			print("[World] === F3 DEBUG: Reassigning roles ===")
+			if multiplayer.is_server():
+				_assign_player_roles()
+		elif event.keycode == KEY_F4:
+			print("[World] === F4 DEBUG: Testing movement sync ===")
+			_test_movement_sync()
 		elif event.keycode == KEY_F2:
 			print("[World] === F2 DEBUG: Manually applying colors ===")
 			_debug_apply_colors_manually()
@@ -327,14 +334,32 @@ func _debug_check_all_players():
 			print("  - Name: ", player.player_name)
 			print("  - Character Index: ", player.character_index)
 			print("  - Character Name: ", player.get_character_name())
-			print("  - Has AnimatedSprite2D: ", player.has_node("AnimatedSprite2D"))
-			if player.has_node("AnimatedSprite2D"):
-				var sprite = player.get_node("AnimatedSprite2D")
-				print("  - Sprite Modulate: ", sprite.modulate)
+			print("  - Role: ", PlayerCharacter.PlayerRole.keys()[player.role])
 			print("  - Multiplayer Authority: ", player.get_multiplayer_authority())
+			print("  - Is Multiplayer Authority: ", player.is_multiplayer_authority())
 			print("  - Is Local Player: ", player.is_main_player)
+			print("  - Can Move: ", player.can_move)
+			print("  - Can Attack: ", player.can_attack)
+			print("  - Global Position: ", player.global_position)
+			print("  - Current Unique ID: ", multiplayer.get_unique_id())
 		else:
 			print("[World] Player ", i, " is not a PlayerCharacter!")
+
+func _test_movement_sync():
+	print("[World] === MOVEMENT SYNC TEST ===")
+	var all_players = players_container.get_children()
+	
+	for player in all_players:
+		if player is PlayerCharacter:
+			var p = player as PlayerCharacter
+			print("[World] Player: ", p.player_name)
+			print("  - Authority: ", p.get_multiplayer_authority())
+			print("  - Is Authority: ", p.is_multiplayer_authority())
+			print("  - Is Main Player: ", p.is_main_player)
+			print("  - Can Move: ", p.can_move)
+			print("  - Physics Process: ", p.is_physics_processing())
+			print("  - Position: ", p.global_position)
+			print("  - Velocity: ", p.velocity)
 
 # Debug function to manually apply colors
 func _debug_apply_colors_manually():
