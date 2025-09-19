@@ -40,34 +40,81 @@ func sync_new_player(id: int, name: String) -> void:
 	_owner_add_player(id, name)
 
 # Character selection
-@rpc("any_peer", "call_local", "reliable")
+@rpc("any_peer", "reliable")
 func rpc_request_char_selection(index: int) -> void:
+	print("[LobbySync] === RPC CHARACTER SELECTION RECEIVED ===")
+	print("[LobbySync] Character selection request received: index=", index)
+	print("[LobbySync] Is server: ", multiplayer.is_server())
+	print("[LobbySync] Remote sender ID: ", multiplayer.get_remote_sender_id())
+	print("[LobbySync] My unique ID: ", multiplayer.get_unique_id())
+	print("[LobbySync] Multiplayer peer: ", multiplayer.multiplayer_peer)
+	print("[LobbySync] Connected peers: ", multiplayer.get_peers())
+	
 	if not multiplayer.is_server():
+		print("[LobbySync] Not server, ignoring character selection")
 		return
+		
 	var mgr := _get_manager()
 	if mgr == null:
+		print("[LobbySync] ERROR: Cannot get NetworkManager!")
 		return
+		
 	var sender_id: int = multiplayer.get_remote_sender_id()
 	if sender_id == 0:
 		sender_id = multiplayer.get_unique_id()
+	
+	print("[LobbySync] Processing character selection for player ", sender_id, " -> character ", index)
+	print("[LobbySync] Current players before update: ", mgr.players)
+	
 	if index < -1 or index > 10:
+		print("[LobbySync] Invalid character index: ", index)
 		return
+		
 	if mgr.players.has(sender_id):
 		mgr.players[sender_id]["char_index"] = index
-		print("[LobbySync] Player ", sender_id, " selected character ", index)
-		sync_char_selection.rpc(sender_id, index)
+		print("[LobbySync] Updated player ", sender_id, " character to ", index)
+		print("[LobbySync] Players after update: ", mgr.players)
+		
+		# Emit signal to update UI on server FIRST (before RPC)
+		print("[LobbySync] Emitting player_list_changed signal on server")
 		mgr.player_list_changed.emit(mgr.players)
+		
+		# Then sync to all clients (including the sender via call_local)
+		print("[LobbySync] Sending sync_char_selection RPC to all clients...")
+		sync_char_selection.rpc(sender_id, index)
+		
+		print("[LobbySync] Character selection synced and UI updated")
+	else:
+		print("[LobbySync] ERROR: Player ", sender_id, " not found in players list")
+		print("[LobbySync] Available players: ", mgr.players.keys())
 
 @rpc("authority", "call_local", "reliable")
 func sync_char_selection(id: int, index: int) -> void:
+	print("[LobbySync] === SYNC CHARACTER SELECTION ===")
+	print("[LobbySync] sync_char_selection called for player ", id, " -> character ", index)
+	print("[LobbySync] Called on: ", "Server" if multiplayer.is_server() else "Client")
+	print("[LobbySync] My unique ID: ", multiplayer.get_unique_id())
+	print("[LobbySync] Is this for me? ", id == multiplayer.get_unique_id())
+	
 	var mgr := _get_manager()
 	if mgr == null:
+		print("[LobbySync] ERROR: Cannot get NetworkManager in sync_char_selection!")
 		return
 	if not mgr.players.has(id):
+		print("[LobbySync] ERROR: Player ", id, " not found in players list during sync")
+		print("[LobbySync] Available players: ", mgr.players.keys())
 		return
+	
+	# Update the player's character selection
+	var old_index = mgr.players[id].get("char_index", -1)
 	mgr.players[id]["char_index"] = index
-	print("[LobbySync] Synced character selection: Player ", id, " -> character ", index)
+	print("[LobbySync] Updated player ", id, " character from ", old_index, " to ", index)
+	print("[LobbySync] Current players state: ", mgr.players)
+	
+	# Emit signal to update UI on both server and clients
+	print("[LobbySync] Emitting player_list_changed signal to update UI")
 	mgr.player_list_changed.emit(mgr.players)
+	print("[LobbySync] UI update signal emitted successfully")
 
 func _owner_add_player(id: int, name: String) -> void:
 	var mgr := _get_manager()

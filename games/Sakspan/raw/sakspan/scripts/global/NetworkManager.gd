@@ -25,7 +25,7 @@ const DISCOVERY_MAGIC := "SAKSPAN_V1"
 const DISCOVERY_DEBUG := true
 const USE_DEV_TEST_TEMP := false
 const DEV_TEST_SCENE_PATH := "res://scenes/dev/dev_test.tscn"
-const WORLD_SCENE_PATH := "res://scenes/world_new.tscn"
+const WORLD_SCENE_PATH := "res://scenes/world.tscn"
 
 # UDP sockets and timers for LAN discovery
 var _udp_listener: PacketPeerUDP = PacketPeerUDP.new()
@@ -338,22 +338,67 @@ func _save_local_name_to_config() -> void:
 	cfg.save("user://settings.cfg")
 
 func request_char_selection(index: int) -> void:
+	print("[NetworkManager] === CHARACTER SELECTION REQUEST ===")
 	print("[NetworkManager] Requesting character selection: ", index)
+	print("[NetworkManager] My player ID: ", multiplayer.get_unique_id())
+	print("[NetworkManager] Is server: ", multiplayer.is_server())
+	print("[NetworkManager] Current players: ", players)
+	print("[NetworkManager] Multiplayer peer: ", multiplayer.multiplayer_peer)
+	print("[NetworkManager] Multiplayer peer status: ", multiplayer.multiplayer_peer.get_connection_status() if multiplayer.multiplayer_peer else "NULL")
+	print("[NetworkManager] Connected peers: ", multiplayer.get_peers())
+	
 	if not CharacterFactory.is_valid_character_index(index):
-		print("[NetworkManager] Invalid character index: ", index)
+		print("[NetworkManager] ERROR: Invalid character index: ", index)
+		return
+	
+	if not multiplayer.multiplayer_peer:
+		print("[NetworkManager] ERROR: No multiplayer peer connection!")
+		return
+	
+	# For servers, the connection status might be different, so let's be more flexible
+	var connection_status = multiplayer.multiplayer_peer.get_connection_status()
+	if not multiplayer.is_server() and connection_status != MultiplayerPeer.CONNECTION_CONNECTED:
+		print("[NetworkManager] ERROR: Client not connected to server! Status: ", connection_status)
+		return
+	elif multiplayer.is_server() and connection_status not in [MultiplayerPeer.CONNECTION_CONNECTED, MultiplayerPeer.CONNECTION_CONNECTING]:
+		print("[NetworkManager] ERROR: Server peer not in valid state! Status: ", connection_status)
 		return
 	
 	if lobby_sync:
-		print("[NetworkManager] Sending RPC to server for character selection: ", index)
-		lobby_sync.rpc_request_char_selection.rpc_id(1, index)  # Send to server (ID 1)
+		print("[NetworkManager] LobbySync found, attempting to send RPC to server...")
+		print("[NetworkManager] LobbySync node: ", lobby_sync)
+		print("[NetworkManager] LobbySync has rpc_request_char_selection method: ", lobby_sync.has_method("rpc_request_char_selection"))
+		
+		if multiplayer.is_server():
+			# If we're the server, call the function directly instead of using RPC
+			print("[NetworkManager] We are server - calling rpc_request_char_selection directly")
+			lobby_sync.rpc_request_char_selection(index)
+		else:
+			# If we're a client, send RPC to server
+			print("[NetworkManager] We are client - sending RPC to server")
+			lobby_sync.rpc_request_char_selection.rpc(index)
+		
+		print("[NetworkManager] Character selection request completed successfully")
+		
+		# Don't update local state immediately - let the server handle it and sync back
+		# This ensures consistent state across all clients and the host
+		print("[NetworkManager] Waiting for server response to update character selection")
 	else:
-		print("[NetworkManager] ERROR: LobbySync not available!") 
+		print("[NetworkManager] ERROR: LobbySync not available!")
+		print("[NetworkManager] Available children: ", get_children()) 
 
 func request_unlock() -> void:
-	# Client-side helper: send unlock (-1) to server
+	# Helper: send unlock (-1) to server
 	if lobby_sync:
-		print("[NetworkManager] Sending unlock RPC to server")
-		lobby_sync.rpc_request_char_selection.rpc_id(1, -1)  # Send to server (ID 1)
+		print("[NetworkManager] Sending unlock request to server")
+		if multiplayer.is_server():
+			# If we're the server, call the function directly
+			print("[NetworkManager] We are server - calling rpc_request_char_selection directly for unlock")
+			lobby_sync.rpc_request_char_selection(-1)
+		else:
+			# If we're a client, send RPC to server
+			print("[NetworkManager] We are client - sending unlock RPC to server")
+			lobby_sync.rpc_request_char_selection.rpc(-1)
 	else:
 		print("[NetworkManager] ERROR: LobbySync not available for unlock!")
 
@@ -511,6 +556,12 @@ func are_all_players_ready() -> bool:
 func get_player_count() -> int:
 	return players.size()
 
+func update_player_role(id: int, role: String) -> void:
+	# Helper used by GameManager to mirror role assignment in our players dict
+	if players.has(id):
+		players[id]["role"] = role
+		player_list_changed.emit(players)
+
 func reset_game_state() -> void:
 	is_game_started = false
 	game_scene_loaded = false
@@ -528,10 +579,13 @@ func get_spawn_data() -> Dictionary:
 	var spawn_data = {}
 	var index = 0
 	for id in players.keys():
+		var char_index = int(players[id].get("char_index", 0))
 		spawn_data[id] = {
 			"name": players[id]["name"],
 			"spawn_index": index,
-			"char_index": players[id].get("char_index", 0)
+			"char_index": char_index,
+			"character_name": CharacterFactory.get_character_name(char_index),
+			"is_host": players[id].get("is_host", false)
 		}
 		index += 1
 	return spawn_data

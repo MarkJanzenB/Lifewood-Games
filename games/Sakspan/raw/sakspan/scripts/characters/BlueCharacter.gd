@@ -13,9 +13,15 @@ func _ready():
 func _setup_character_appearance():
 	# Set character-specific properties
 	if animated_sprite:
-		# You can set a modulate color or load specific animations
+		# Set the character color
 		animated_sprite.modulate = CHARACTER_COLOR
-	
+		print("[BlueCharacter] Applied blue color to sprite: ", CHARACTER_COLOR)
+		
+		# TODO: Load character-specific animations from Blue_Monster sprites
+		# For now, keep the default animations but with blue color
+	else:
+		print("[BlueCharacter] ERROR: animated_sprite not found!")
+		
 	# Set any character-specific stats if needed
 	# walk_speed = 200.0  # Default speed
 	# run_speed = 350.0   # Default speed
