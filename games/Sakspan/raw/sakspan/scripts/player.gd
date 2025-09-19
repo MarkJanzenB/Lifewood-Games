@@ -30,6 +30,10 @@ const ROCK_PROJECTILE_SCENE = preload("res://scenes/RockProjectile.tscn")
 
 # --- STATE VARIABLES (Statically Typed) ---
 var _sync_position: Vector2 = Vector2.ZERO
+var _sync_animation: String = ""
+var _sync_flip: bool = false
+var _last_animation: String = ""
+var _animation_transition_time: float = 0.0
 var current_state: PlayerState = PlayerState.ALIVE
 var hiders_in_cone: Array[PlayerCharacter] = []
 var visible_targets: Array[PlayerCharacter] = []
@@ -39,6 +43,9 @@ var target_for_sak: PlayerCharacter = null
 var is_dying: bool = false
 var can_move: bool = true  # Allow movement by default
 var can_attack: bool = true  # Allow attacks by default
+
+# Username display
+var username_label: Label = null
 
 # Collision layers:
 # 1 - Default (players, obstacles)
@@ -58,6 +65,9 @@ func _ready():
 	
 	# Configure multiplayer authority
 	_configure_multiplayer_authority()
+	
+	# Create username label
+	_create_username_label()
 	
 	# Setup MultiplayerSynchronizer with empty config (for spawning only)
 	if sync:
@@ -99,6 +109,9 @@ func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
 	can_move = true
 	can_attack = true
 	
+	# Update username display
+	update_username_display()
+	
 	# Configure based on whether this is the local player
 	if is_local:
 		if camera:
@@ -112,6 +125,25 @@ func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
 		# Only disable unhandled input for remote players
 		set_process_unhandled_input(false)
 		print("[Player] Set up REMOTE player: ", player_name)
+
+func _create_username_label():
+	# Create username label above the player
+	username_label = Label.new()
+	username_label.text = player_name if player_name != "" else "Player"
+	username_label.position = Vector2(-25, -40)  # Position above the character
+	username_label.add_theme_font_size_override("font_size", 14)
+	username_label.add_theme_color_override("font_color", Color.WHITE)
+	username_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	username_label.add_theme_constant_override("shadow_offset_x", 1)
+	username_label.add_theme_constant_override("shadow_offset_y", 1)
+	username_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(username_label)
+	print("[Player] Created username label: ", username_label.text)
+
+func update_username_display():
+	if username_label:
+		username_label.text = player_name if player_name != "" else "Player"
+		print("[Player] Updated username display to: ", username_label.text)
 
 func set_is_main_player(value: bool):
 	is_main_player = value
@@ -150,7 +182,16 @@ func _physics_process(delta: float):
 	else:
 		# Non-authority players smoothly interpolate to synced position
 		if _sync_position != Vector2.ZERO:
-			global_position = global_position.lerp(_sync_position, delta * 15.0)  # Faster interpolation
+			var distance = global_position.distance_to(_sync_position)
+			var lerp_speed = 20.0  # Base interpolation speed
+			
+			# Adjust interpolation speed based on distance for smoother movement
+			if distance > 100.0:
+				lerp_speed = 30.0  # Faster catch-up for large distances
+			elif distance < 10.0:
+				lerp_speed = 10.0  # Slower for fine adjustments
+			
+			global_position = global_position.lerp(_sync_position, delta * lerp_speed)
 		
 		# Handle animations for remote players based on movement
 		handle_remote_visuals()
@@ -162,10 +203,18 @@ func _sync_player_state(pos: Vector2, vel: Vector2, animation: String, flipped: 
 		_sync_position = pos
 		velocity = vel
 		
-		# Apply animation state
+		# Store animation state for smooth transitions
+		_sync_animation = animation
+		_sync_flip = flipped
+		
+		# Apply animation state with smooth transitions
 		if animated_sprite and animation != "":
 			if animated_sprite.sprite_frames.has_animation(animation):
-				animated_sprite.play(animation)
+				# Only change animation if it's different to avoid stuttering
+				if animated_sprite.animation != animation:
+					animated_sprite.play(animation)
+					_last_animation = animation
+					_animation_transition_time = 0.0
 			animated_sprite.flip_h = flipped
 
 # Legacy function for compatibility
@@ -265,33 +314,50 @@ func handle_visuals() -> void:
 		else: animated_sprite.play("idle")
 
 func handle_remote_visuals() -> void:
-	# Handle animations for remote players based on velocity
+	# Handle animations for remote players based on velocity and synced state
 	if is_in_action: return
 	
-	if velocity.length() > 0:
-		# Determine if running based on velocity magnitude
-		var is_running = velocity.length() > walk_speed * 1.5
-		var anim_to_play = ""
-		
-		# Simple animation logic based on movement direction
-		if abs(velocity.y) > abs(velocity.x):
-			# Moving more vertically
-			if velocity.y < 0:
-				anim_to_play = "back_run" if is_running else "back_walk"
-			else:
-				anim_to_play = "front_run" if is_running else "front_walk"
-		else:
-			# Moving more horizontally or diagonally
-			anim_to_play = "front_run" if is_running else "front_walk"
-		
-		# Set sprite direction based on velocity
-		if velocity.x != 0:
-			animated_sprite.flip_h = velocity.x < 0
-		
-		animated_sprite.play(anim_to_play)
+	# Update animation transition time
+	_animation_transition_time += get_physics_process_delta_time()
+	
+	# Use synced animation if available, otherwise fall back to velocity-based
+	if _sync_animation != "" and _animation_transition_time < 0.5:
+		# Use synced animation state for better accuracy
+		if animated_sprite.animation != _sync_animation:
+			if animated_sprite.sprite_frames.has_animation(_sync_animation):
+				animated_sprite.play(_sync_animation)
+		animated_sprite.flip_h = _sync_flip
 	else:
-		# Idle animation
-		animated_sprite.play("idle")
+		# Fallback to velocity-based animations with smoother logic
+		if velocity.length() > 10.0:  # Small threshold to avoid micro-movements
+			# Determine if running based on velocity magnitude
+			var is_running = velocity.length() > walk_speed * 1.2  # Lower threshold for smoother transition
+			var anim_to_play = ""
+			
+			# Improved animation logic based on movement direction
+			var vel_normalized = velocity.normalized()
+			
+			# Determine primary direction
+			if abs(vel_normalized.y) > 0.7:  # Mostly vertical movement
+				if vel_normalized.y < 0:
+					anim_to_play = "back_run" if is_running else "back_walk"
+				else:
+					anim_to_play = "front_run" if is_running else "front_walk"
+			else:
+				# Horizontal or diagonal movement
+				anim_to_play = "front_run" if is_running else "front_walk"
+			
+			# Set sprite direction based on velocity with hysteresis to avoid flipping
+			if abs(velocity.x) > 20.0:  # Only flip if moving significantly horizontally
+				animated_sprite.flip_h = velocity.x < 0
+			
+			# Only change animation if it's different to avoid stuttering
+			if animated_sprite.animation != anim_to_play:
+				animated_sprite.play(anim_to_play)
+		else:
+			# Idle animation with smooth transition
+			if animated_sprite.animation != "idle":
+				animated_sprite.play("idle")
 
 func update_all_players_in_cone() -> void:
 	var overlapping_bodies: Array[Node2D] = vision_cone.get_overlapping_bodies()

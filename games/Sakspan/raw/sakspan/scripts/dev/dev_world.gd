@@ -6,6 +6,7 @@ extends Node2D
 @onready var players_container: Node2D = $PlayersContainer
 @onready var multiplayer_spawner: MultiplayerSpawner = $MultiplayerSpawner
 @onready var players_label: Label = $UI/InfoPanel/VBox/PlayersLabel
+@onready var title_label: Label = $UI/InfoPanel/VBox/TitleLabel
 @onready var grid_lines: Node2D = $GridLines
 
 # Player scene to spawn
@@ -33,6 +34,12 @@ func _ready():
 	
 	# Draw grid for reference
 	_draw_grid()
+	
+	# Hide UI labels since we show usernames above characters
+	if players_label:
+		players_label.visible = false
+	if title_label:
+		title_label.visible = false
 	
 	# Connect NetworkManager signals
 	if NetworkManager:
@@ -163,10 +170,9 @@ func _spawn_player_with_spawner(player_id: int, player_info: Dictionary):
 	if player_instance.has_method("setup_multiplayer_player"):
 		player_instance.setup_multiplayer_player(player_info, is_local)
 	
-	# Set player color based on ID
-	var colors = [Color.CYAN, Color.YELLOW, Color.MAGENTA, Color.GREEN, Color.ORANGE]
-	var color_index = (player_id - 1) % colors.size()
-	player_instance.modulate = colors[color_index]
+	# Apply character appearance based on character selection
+	var character_index = player_info.get("char_index", 0)
+	_apply_character_appearance(player_instance, character_index)
 	
 	# Track spawned player
 	spawned_players[player_id] = player_instance
@@ -175,6 +181,28 @@ func _spawn_player_with_spawner(player_id: int, player_info: Dictionary):
 	_update_players_count()
 	
 	print("[DevWorld] Player spawned successfully with MultiplayerSpawner: ", player_id)
+
+func _apply_character_appearance(player: Node, character_index: int):
+	# Use CharacterFactory to get the correct color
+	if character_index < 0 or character_index >= CharacterFactory.get_character_count():
+		character_index = 0  # Default to first character
+	
+	var color = CharacterFactory.get_character_color(character_index)
+	var character_name = CharacterFactory.get_character_name(character_index)
+	
+	print("[DevWorld] Applying ", character_name, " appearance with color: ", color)
+	
+	# Apply color to animated sprite
+	if player.has_node("AnimatedSprite2D"):
+		var sprite = player.get_node("AnimatedSprite2D")
+		sprite.modulate = color
+		print("[DevWorld] Successfully applied ", character_name, " color: ", color)
+	else:
+		print("[DevWorld] ERROR: No AnimatedSprite2D found on player!")
+	
+	# Ensure character index is set
+	if "character_index" in player:
+		player.character_index = character_index
 
 func _on_peer_connected(id: int):
 	print("[DevWorld] Peer connected: ", id)
@@ -232,8 +260,14 @@ func _on_player_spawned(node: Node):
 		var player_info = player_data.get(player_id, {"name": "Unknown"})
 		var player_name = player_info.get("name", "Unknown")
 		
-		# Set player name
+		# Set player name and update display
 		node.player_name = player_name
+		if node.has_method("update_username_display"):
+			node.update_username_display()
+		
+		# Apply character appearance based on character selection
+		var character_index = player_info.get("char_index", 0)
+		_apply_character_appearance(node, character_index)
 		
 		# CRITICAL: Set correct spawn position on client
 		# Use player_id to determine consistent spawn position
@@ -283,7 +317,8 @@ func _on_player_despawned(node: Node):
 func _update_players_count():
 	var count = spawned_players.size()
 	if players_label:
-		players_label.text = "Players: " + str(count)
+		# Hide the players count label since we show usernames above characters
+		players_label.visible = false
 	
 	# Debug: Print all spawned players and their positions
 	print("[DevWorld] Current spawned players: ", count)
@@ -300,6 +335,37 @@ func _input(event):
 			print("[DevWorld] Returning to lobby")
 			# Return to multiplayer menu
 			SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+		elif event.keycode == KEY_F7:
+			print("[DevWorld] === F7 DEBUG: Testing character colors ===")
+			_test_character_colors()
+
+func _test_character_colors():
+	print("[DevWorld] === CHARACTER COLOR TEST ===")
+	
+	for player_id in spawned_players:
+		var player = spawned_players[player_id]
+		if is_instance_valid(player):
+			print("[DevWorld] Player ", player_id, ": ", player.player_name)
+			print("  - Character Index: ", player.character_index if "character_index" in player else "NOT SET")
+			print("  - Character Name: ", player.get_character_name() if player.has_method("get_character_name") else "NO METHOD")
+			
+			if player.has_node("AnimatedSprite2D"):
+				var sprite = player.get_node("AnimatedSprite2D")
+				print("  - Sprite Color: ", sprite.modulate)
+				
+				# Get expected color
+				var char_index = player.character_index if "character_index" in player else 0
+				var expected_color = CharacterFactory.get_character_color(char_index)
+				var expected_name = CharacterFactory.get_character_name(char_index)
+				print("  - Expected Color: ", expected_color, " (", expected_name, ")")
+				
+				if sprite.modulate.is_equal_approx(expected_color):
+					print("  - ✅ Color matches!")
+				else:
+					print("  - ❌ Color mismatch! Applying correct color...")
+					_apply_character_appearance(player, char_index)
+			else:
+				print("  - ❌ No AnimatedSprite2D found!")
 
 # Ensure input actions exist for player movement
 func _ensure_input_actions():

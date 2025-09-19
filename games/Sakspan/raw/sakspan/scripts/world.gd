@@ -54,6 +54,9 @@ func _input(event):
 		elif event.keycode == KEY_F5:
 			print("[World] === F5 DEBUG: Testing visual sync ===")
 			_test_visual_sync()
+		elif event.keycode == KEY_F6:
+			print("[World] === F6 DEBUG: Testing username display ===")
+			_test_username_display()
 		elif event.keycode == KEY_F2:
 			print("[World] === F2 DEBUG: Manually applying colors ===")
 			_debug_apply_colors_manually()
@@ -209,13 +212,16 @@ func _spawn_player_on_clients(player_id: int, player_data: Dictionary, spawn_pos
 		print("[World] Setting up player ", player_id, " as local: ", is_local_player)
 		new_player.setup_multiplayer_player(player_data, is_local_player)
 	
-	# Set player name
+	# Set player name and update display
 	if "player_name" in new_player:
 		new_player.player_name = player_name
 		print("[World] Set player name to: ", new_player.player_name)
+		# Update username display after setting the name
+		if new_player.has_method("update_username_display"):
+			new_player.update_username_display()
 	
-	# Apply character appearance (color) based on character index
-	_apply_character_appearance(new_player, character_index)
+	# Apply character appearance (color) based on character index - sync to all clients
+	_sync_character_appearance.rpc(player_id, character_index)
 	
 	# Store spawned player
 	_spawned_players[player_id] = new_player
@@ -355,6 +361,17 @@ func _debug_check_all_players():
 		else:
 			print("[World] Player ", i, " is not a PlayerCharacter!")
 
+@rpc("any_peer", "call_local", "reliable")
+func _sync_character_appearance(player_id: int, character_index: int):
+	print("[World] Syncing character appearance for player ", player_id, " with character index ", character_index)
+	
+	var player: PlayerCharacter = players_container.get_node_or_null("Player_" + str(player_id)) as PlayerCharacter
+	if not player:
+		print("[World] ERROR: Could not find player ", player_id, " for appearance sync")
+		return
+	
+	_apply_character_appearance(player, character_index)
+
 func _apply_character_appearance(player: PlayerCharacter, character_index: int):
 	if character_index < 0 or character_index >= CharacterFactory.get_character_count():
 		print("[World] Invalid character index: ", character_index)
@@ -411,6 +428,26 @@ func _test_visual_sync():
 				print("  - Is Playing: ", sprite.is_playing())
 			else:
 				print("  - ERROR: No AnimatedSprite2D found!")
+
+func _test_username_display():
+	print("[World] === USERNAME DISPLAY TEST ===")
+	var all_players = players_container.get_children()
+	
+	for player in all_players:
+		if player is PlayerCharacter:
+			var p = player as PlayerCharacter
+			print("[World] Player: ", p.player_name)
+			print("  - Has username_label: ", p.username_label != null)
+			if p.username_label:
+				print("  - Label text: '", p.username_label.text, "'")
+				print("  - Label position: ", p.username_label.position)
+				print("  - Label visible: ", p.username_label.visible)
+			else:
+				print("  - ERROR: No username label found!")
+				# Try to create it
+				if p.has_method("_create_username_label"):
+					p._create_username_label()
+					print("  - Created username label")
 
 # Debug function to manually apply colors
 func _debug_apply_colors_manually():
