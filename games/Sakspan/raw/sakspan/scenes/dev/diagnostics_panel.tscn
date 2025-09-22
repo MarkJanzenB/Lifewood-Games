@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://djmfschdqisq2"]
+[gd_scene load_steps=2 format=3 uid="uid://bvxutcwowo0p4"]
 
-[ext_resource type="Script" uid="uid://dgfhpk0skjogh" path="res://scripts/dev/diagnostics_panel.gd" id="1_3m1d6"]
+[ext_resource type="Script" path="res://scripts/dev/diagnostics_panel.gd" id="1_3m1d6"]
 
 [node name="DiagnosticsPanel" type="Panel"]
 anchors_preset = 1

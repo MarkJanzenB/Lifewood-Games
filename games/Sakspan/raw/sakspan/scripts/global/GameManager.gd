@@ -134,41 +134,46 @@ func check_win_conditions() -> void:
 @onready var world: Node2D = get_node_or_null("/root/World")
 
 func _ready() -> void:
-	print("[GameManager] GameManager singleton initialized for peer ", multiplayer.get_unique_id())
-	
-	# REMOVED: tree_changed signal connection - this was causing premature firing during menu navigation
-	# Signal will be connected by NetworkManager right before game start
-	
-	if not network_manager:
-		push_error("NetworkManager not found!")
-	
-	# Connect to network manager signals only if we have a multiplayer peer
-	if multiplayer.has_multiplayer_peer():
-		if not multiplayer.peer_connected.is_connected(_on_player_connected):
-			multiplayer.peer_connected.connect(_on_player_connected)
-		if not multiplayer.peer_disconnected.is_connected(_on_player_disconnected):
-			multiplayer.peer_disconnected.connect(_on_player_disconnected)
+	# This function runs ONCE when the app starts.
+	# Connect to tree_changed signal immediately - this is more reliable than external management
+	get_tree().tree_changed.connect(_on_tree_changed)
+	print("[GameManager] GameManager singleton is ready and listening for scene tree changes.")
 	
 	# Set process to handle game timing
 	set_process(false)
 
-# NEW FUNCTION - Called by NetworkManager right before game start to enable scene detection
-func enable_game_scene_detection() -> void:
-	print("[GameManager] Enabling game scene detection...")
-	if not get_tree().tree_changed.is_connected(_on_scene_changed):
-		get_tree().tree_changed.connect(_on_scene_changed)
-		print("[GameManager] Scene detection enabled")
-	else:
-		print("[GameManager] Scene detection already enabled")
+# ROBUST: Self-managing scene detection that only activates during multiplayer sessions
+func _on_tree_changed() -> void:
+	"""Robust entry point for game loop - only activates when multiplayer session exists"""
+	# We only care about this signal if a multiplayer session is active
+	if not multiplayer.has_multiplayer_peer():
+		return
+	
+	# We only care if the SERVER peer has just loaded the dev_world
+	if not multiplayer.is_server():
+		return
+	
+	var current_scene = get_tree().current_scene
+	if current_scene and current_scene.scene_file_path == "res://scenes/dev/dev_world.tscn":
+		# Disconnect the signal to prevent it from running multiple times
+		if get_tree().tree_changed.is_connected(_on_tree_changed):
+			get_tree().tree_changed.disconnect(_on_tree_changed)
+		
+		print("[GameManager] 🎯 Detected dev_world scene load on server. Initializing game...")
+		initialize_game_world()
 
-# NEW FUNCTION - Called by dev_world.gd when game scene loads
+# ROBUST: Self-contained game world initialization
 func initialize_game_world() -> void:
-	"""Initialize the game world - called by dev_world.gd when server loads the scene"""
+	"""Initialize the game world - called automatically when dev_world scene loads"""
 	if not multiplayer.is_server():
 		print("[GameManager] ❌ initialize_game_world() called on client - ignoring")
 		return
 	
 	print("[GameManager] 🏠 SERVER: Initializing game world...")
+	
+	# Initialize network manager reference
+	if not network_manager:
+		network_manager = get_node_or_null("/root/NetworkManager")
 	
 	if not network_manager:
 		push_error("NetworkManager not found!")
@@ -176,13 +181,17 @@ func initialize_game_world() -> void:
 	
 	print("[GameManager] ✅ NetworkManager found with ", network_manager.players.size(), " players")
 	
-	# Spawn all players first
+	# --- All game setup logic starts here ---
+	# 1. Initialize timers and signals
+	_initialize_game_timers()
+	
+	# 2. Spawn all players
 	_spawn_all_players()
 	
-	# Now perform the actual server initialization
+	# 3. Perform server initialization
 	_initialize_server()
 	
-	# Auto-start the game if we have players (for dev testing)
+	# 4. Auto-start the game if we have players (for dev testing)
 	if players.size() > 0:
 		print("[GameManager] 🎮 Auto-starting game with ", players.size(), " players")
 		# Wait a frame to ensure everything is initialized
@@ -191,7 +200,7 @@ func initialize_game_world() -> void:
 	else:
 		print("[GameManager] ⏳ Waiting for players to join before starting game")
 	
-	print("[GameManager] ✅ Game world initialization complete")
+	print("[GameManager] ✅ Game world initialization complete via robust scene detection")
 
 # Comprehensive player spawning system
 func _spawn_all_players() -> void:
@@ -242,7 +251,8 @@ func _spawn_player_on_all_clients(player_id: int, player_data: Dictionary, spawn
 		players_container = get_node_or_null("/root/DevWorld/PlayersContainer")
 	
 	if players_container:
-		players_container.add_child(new_player)
+		# The 'true' parameter allows the spawner to use the name we already assigned (the peer_id)
+		players_container.add_child(new_player, true)
 	else:
 		push_error("[GameManager] Could not find PlayersContainer!")
 		return
@@ -252,60 +262,49 @@ func _spawn_player_on_all_clients(player_id: int, player_data: Dictionary, spawn
 	
 	# Configure player properties with CORRECT data types
 	if new_player.has_method("setup_multiplayer_player"):
-		var is_local = (player_id == multiplayer.get_unique_id())
+		var is_local: bool = (player_id == multiplayer.get_unique_id())
 		# CRITICAL FIX: Pass Dictionary and boolean, not int and boolean
 		new_player.setup_multiplayer_player(player_data, is_local)
 	
+	# PHASE 1: Grant immediate movement and attack capabilities for MPS testing
+	if new_player.has_method("enable_basic_controls"):
+		new_player.enable_basic_controls()
+	else:
+		# Fallback: Set basic control flags directly
+		new_player.can_move = true
+		new_player.can_attack = true
+	
 	print("[GameManager] ✅ Successfully created player ", player_id, " (", player_data.get("name", "Unknown"), ") at ", spawn_pos)
 
-# Event-driven scene change handler - this is our robust entry point for the game loop
-var _last_scene_path: String = ""
+# REMOVED: Old _on_scene_changed function replaced with robust _on_tree_changed approach
 
-func _on_scene_changed():
-	# Guard against calling this without a multiplayer peer (prevents null reference errors)
-	if not multiplayer.has_multiplayer_peer():
-		print("[GameManager] ⚠️  Scene changed but no multiplayer peer - ignoring")
-		return
+# Initialize game timers and signals
+func _initialize_game_timers() -> void:
+	"""Initialize all timers and connect game-specific signals"""
+	print("[GameManager] 🕐 Initializing game timers...")
 	
-	# We only care if the server has loaded the correct scene
-	if not multiplayer.is_server():
-		return
+	# Create and configure phase timer if not exists
+	if not phase_timer:
+		phase_timer = Timer.new()
+		add_child(phase_timer)
+		phase_timer.one_shot = true
+		phase_timer.timeout.connect(_on_phase_timer_timeout)
 	
-	var current_scene = get_tree().current_scene
-	if not current_scene:
-		return
+	# Create and configure main timer if not exists
+	if not main_timer:
+		main_timer = Timer.new()
+		add_child(main_timer)
+		main_timer.one_shot = true
+		main_timer.timeout.connect(_on_main_timer_timeout)
 	
-	# Only process if the scene actually changed (tree_changed fires for many reasons)
-	var current_scene_path = current_scene.scene_file_path
-	if current_scene_path == _last_scene_path:
-		return
+	# Create and configure ammo cooldown timer if not exists
+	if not ammo_cooldown_timer:
+		ammo_cooldown_timer = Timer.new()
+		add_child(ammo_cooldown_timer)
+		ammo_cooldown_timer.one_shot = true
+		ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
 	
-	_last_scene_path = current_scene_path
-	
-	# Check if the new scene is our dev world
-	if current_scene_path == "res://scenes/dev/dev_world.tscn":
-		print("[GameManager] 🎯 Detected dev_world scene load. Initializing game...")
-		
-		# All game setup logic now lives here
-		if not network_manager:
-			push_error("NetworkManager not found!")
-			return
-		
-		print("[GameManager] ✅ NetworkManager found with ", network_manager.players.size(), " players")
-		
-		# Perform the actual server initialization
-		_initialize_server()
-		
-		# Auto-start the game if we have players (for dev testing)
-		if players.size() > 0:
-			print("[GameManager] 🎮 Auto-starting game with ", players.size(), " players")
-			# Wait a frame to ensure everything is initialized
-			await get_tree().process_frame
-			start_game()
-		else:
-			print("[GameManager] ⏳ Waiting for players to join before starting game")
-		
-		print("[GameManager] ✅ Game world initialization complete via scene detection")
+	print("[GameManager] ✅ Game timers initialized")
 
 # Called by GameUI when it's ready
 func register_game_ui(ui_instance: Node) -> void:

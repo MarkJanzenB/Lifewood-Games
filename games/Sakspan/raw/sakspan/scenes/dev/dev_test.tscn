@@ -1,7 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://bytds5q1o3omw"]
+[gd_scene load_steps=3 format=3 uid="uid://cakl6jhj2yg3b"]
 
-[ext_resource type="Script" uid="uid://he80jcb656n7" path="res://scripts/dev/dev_test.gd" id="1_6j6xv"]
-[ext_resource type="PackedScene" uid="uid://djmfschdqisq2" path="res://scenes/dev/diagnostics_panel.tscn" id="2_diag"]
+[ext_resource type="Script" path="res://scripts/dev/dev_test.gd" id="1_6j6xv"]
+[ext_resource type="PackedScene" uid="uid://bvxutcwowo0p4" path="res://scenes/dev/diagnostics_panel.tscn" id="2_diag"]
 
 [node name="DevTest" type="Control"]
 layout_mode = 3

@@ -434,9 +434,7 @@ func start_game() -> void:
 			print("[StartGame] Game start validation failed!")
 			return
 		
-		# CRITICAL FIX: Enable GameManager scene detection right before game start
-		if Engine.has_singleton("GameManager"):
-			GameManager.enable_game_scene_detection()
+		# GameManager now handles its own scene detection - no external configuration needed
 		
 		# Start pre-game countdown instead of immediate scene change
 		print("[NetworkManager] Starting pre-game countdown...")
@@ -516,6 +514,10 @@ func rpc_start_game(lobby_info: Dictionary) -> void:
 	get_tree().change_scene_to_file(target_scene)
 
 func leave_lobby() -> void:
+	# Change the scene FIRST, while the peer is still valid
+	get_tree().change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+	
+	# Now, clean up the network state after the transition is queued
 	multiplayer.multiplayer_peer = null
 	players.clear()
 	emit_signal("player_list_changed", players)

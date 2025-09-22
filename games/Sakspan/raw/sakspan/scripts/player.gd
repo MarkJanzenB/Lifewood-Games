@@ -127,10 +127,13 @@ func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
 	else:
 		if camera:
 			camera.enabled = false
-		# Keep physics processing enabled for remote players so they can move
-		# Only disable unhandled input for remote players
-		set_process_unhandled_input(false)
-		print("[Player] Set up REMOTE player: ", player_name)
+
+# PHASE 1: Basic controls enablement for MPS testing
+func enable_basic_controls() -> void:
+	"""Enable immediate movement and attack capabilities for testing"""
+	can_move = true
+	can_attack = true
+	print("[Player] ", player_name, " - Basic controls enabled for MPS testing")
 
 func _create_username_label():
 	# Create username label above the player
