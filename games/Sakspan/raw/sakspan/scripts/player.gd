@@ -399,12 +399,7 @@ func _sync_player_position(pos: Vector2, vel: Vector2):
 	_sync_player_state(pos, vel, "", false)
 
 func _input(event: InputEvent) -> void:
-	# Debug ALL input events first
-	if event is InputEventMouseButton and event.pressed:
-		print("[Player] RAW MOUSE INPUT - Button: ", event.button_index, " Player: ", player_name, " Authority: ", is_multiplayer_authority(), " Main: ", is_main_player)
-	
 	if is_dying or current_state == PlayerState.GHOST: 
-		print("[Player] Input blocked - dying or ghost state")
 		return
 	# Only the authority handles inputs
 	if not is_multiplayer_authority(): 
@@ -412,62 +407,10 @@ func _input(event: InputEvent) -> void:
 	if not is_main_player: 
 		return
 	
-	# Test if fire action is recognized
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		print("[Player] LEFT MOUSE DETECTED! Checking fire action...")
-		if Input.is_action_just_pressed("fire"):
-			print("[Player] FIRE ACTION CONFIRMED!")
-		else:
-			print("[Player] FIRE ACTION NOT TRIGGERED - checking input map...")
-	
-	# Test with SPACE key as alternative
-	if Input.is_action_just_pressed("ui_accept") or event.is_action_pressed("ui_accept"):
-		print("[Player] SPACE KEY FIRE TEST! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
-		_handle_fire_sak_input()
-	
+	# Handle fire input (both mouse and keyboard)
 	if Input.is_action_just_pressed("fire"):
-		print("[Player] FIRE ACTION TRIGGERED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
-		if not can_attack: 
-			print("[Player] Cannot attack - can_attack is false")
-			return
-		if is_in_action:
-			print("[Player] Cannot attack - already in action")
-			return
-			
-		# Request action from GameManager instead of handling directly
-		var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-		if not gm:
-			# Try alternative paths
-			gm = get_node_or_null("../GameManager") as GameManager
-			if not gm:
-				gm = get_tree().get_first_node_in_group("game_manager") as GameManager
-			if not gm:
-				print("[Player] ERROR: GameManager not found in any location!")
-				print("[Player] Available root children: ")
-				for child in get_tree().root.get_children():
-					print("  - ", child.name, " (", child.get_class(), ")")
-				return
-			else:
-				print("[Player] Found GameManager at alternative location: ", gm.get_path())
-			
-		if role == PlayerRole.SEEKER and ammo > 0:
-			print("[Player] Requesting fire action - Ammo: ", ammo)
-			if gm and gm.has_method("request_player_action"):
-				gm.request_player_action.rpc_id(1, multiplayer.get_unique_id(), "fire_projectile", {})
-			else:
-				print("[Player] GameManager not available, using direct fire")
-				_direct_fire_projectile()
-		elif role == PlayerRole.SEEKER and ammo <= 0:
-			print("[Player] Cannot fire - out of ammo")
-		elif role == PlayerRole.HIDER:
-			print("[Player] Requesting SAK action")
-			if gm and gm.has_method("request_player_action"):
-				gm.request_player_action.rpc_id(1, multiplayer.get_unique_id(), "sak_attack", {})
-			else:
-				print("[Player] GameManager not available, using direct SAK")
-				_direct_sak_attack()
-		else:
-			print("[Player] Invalid role or conditions for attack")
+		print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanAttack: ", can_attack)
+		_handle_fire_sak_input()
 
 # Alternative input handler in case _input is being consumed
 func _unhandled_input(event: InputEvent) -> void:
@@ -489,12 +432,12 @@ func _handle_fire_sak_input() -> void:
 	print("[Player] Handling fire/sak input - Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
 	
 	if role == PlayerRole.SEEKER and ammo > 0:
-		print("[Player] Executing seeker fire")
+		print("[Player] Executing seeker fire - using direct method")
 		_direct_fire_projectile()
 	elif role == PlayerRole.SEEKER and ammo <= 0:
 		print("[Player] Cannot fire - out of ammo")
 	elif role == PlayerRole.HIDER:
-		print("[Player] Executing hider SAK")
+		print("[Player] Executing hider SAK - using direct method")
 		_direct_sak_attack()
 	else:
 		print("[Player] Invalid role or conditions for attack")
@@ -671,6 +614,9 @@ func check_line_of_sight() -> void:
 	if not intersection_result.is_empty():
 		for player in previously_visible_hiders:
 			player.visible = false
+			# Hide spotted alert when LOS is broken
+			if role == PlayerRole.SEEKER:
+				_hide_spotted_alert_for_player(player)
 		previously_visible_hiders.clear()
 		visible_targets.clear()
 		return
@@ -684,17 +630,29 @@ func check_line_of_sight() -> void:
 			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
 			if gm:
 				gm.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), true)
+			
+			# Show spotted alert for Hiders when seen by Seeker
+			if role == PlayerRole.SEEKER and player.role == PlayerRole.HIDER:
+				_show_spotted_alert_for_player(player)
+			
 			currently_visible_players.append(player)
 		else:
 			# Player is not visible
 			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
 			if gm:
 				gm.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), false)
+			
+			# Hide spotted alert when LOS is broken
+			if role == PlayerRole.SEEKER:
+				_hide_spotted_alert_for_player(player)
 	
 	# Update local visibility for immediate feedback
 	for player in previously_visible_hiders:
 		if not player in currently_visible_players:
 			player.visible = false
+			# Hide spotted alert when player leaves vision
+			if role == PlayerRole.SEEKER:
+				_hide_spotted_alert_for_player(player)
 	for player in currently_visible_players:
 		player.visible = true
 	
@@ -702,11 +660,71 @@ func check_line_of_sight() -> void:
 	if role == PlayerRole.SEEKER:
 		visible_targets = currently_visible_players
 
+# --- SPOTTED ALERT SYSTEM ---
+
+func _show_spotted_alert_for_player(target_player: PlayerCharacter):
+	"""Show spotted alert on the target player's screen"""
+	if not target_player or target_player.role != PlayerRole.HIDER:
+		return
+	
+	# Send RPC to show spotted alert on the target's client
+	var target_id = target_player.get_multiplayer_authority()
+	_trigger_spotted_alert.rpc_id(target_id)
+
+func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
+	"""Hide spotted alert on the target player's screen"""
+	if not target_player or target_player.role != PlayerRole.HIDER:
+		return
+	
+	# Send RPC to hide spotted alert on the target's client
+	var target_id = target_player.get_multiplayer_authority()
+	_hide_spotted_alert.rpc_id(target_id)
+
+@rpc("any_peer", "call_local", "reliable")
+func _trigger_spotted_alert():
+	"""RPC to trigger spotted alert on this client"""
+	# Only show for Hiders
+	if role != PlayerRole.HIDER or not is_main_player:
+		return
+	
+	# Find GameUI and trigger spotted alert
+	var game_ui = _find_game_ui()
+	if game_ui and game_ui.has_method("show_spotted_alert"):
+		game_ui.show_spotted_alert()
+
+@rpc("any_peer", "call_local", "reliable")
+func _hide_spotted_alert():
+	"""RPC to hide spotted alert on this client"""
+	# Only for Hiders
+	if role != PlayerRole.HIDER or not is_main_player:
+		return
+	
+	# Find GameUI and hide spotted alert
+	var game_ui = _find_game_ui()
+	if game_ui and game_ui.has_method("_hide_spotted_alert"):
+		game_ui._hide_spotted_alert()
+
+func _find_game_ui() -> Control:
+	"""Find the GameUI node in the scene"""
+	# Try to find GameUI in the current scene
+	var world = get_tree().get_first_node_in_group("world")
+	if not world:
+		world = get_node("/root/DevWorld") # For dev_world.tscn
+	
+	if world and world.has_node("UI/GameUI"):
+		return world.get_node("UI/GameUI")
+	
+	return null
+
 # --- SIGNAL FUNCTIONS ---
 
 func _on_game_state_changed(new_state: int) -> void:
 	var game_manager: GameManager = get_node_or_null("/root/GameManager") as GameManager
 	if not game_manager:
+		# For dev_world, allow attacks by default
+		can_move = true
+		can_attack = true
+		print("[Player] No GameManager found - enabling attacks for dev testing")
 		return
 		
 	match new_state:
@@ -719,11 +737,10 @@ func _on_game_state_changed(new_state: int) -> void:
 			can_attack = false
 		game_manager.GameState.IN_PROGRESS:
 			can_move = true
-			if role == PlayerRole.SEEKER:
-				can_attack = true
+			can_attack = true  # Enable attacks for both roles
 		_:
-			can_move = false
-			can_attack = false
+			can_move = true
+			can_attack = true  # Default to enabled for dev testing
 
 func _on_animated_sprite_2d_animation_finished() -> void:
 	if animated_sprite.animation == "death":

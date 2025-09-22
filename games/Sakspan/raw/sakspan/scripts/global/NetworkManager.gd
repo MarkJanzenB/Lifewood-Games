@@ -23,8 +23,8 @@ const ALTERNATIVE_PORTS: Array[int] = [8080, 7777, 9999, 12345, 25565]
 const DISCOVERY_PORT := 9001
 const DISCOVERY_MAGIC := "SAKSPAN_V1"
 const DISCOVERY_DEBUG := true
-const USE_DEV_TEST_TEMP := false
-const DEV_TEST_SCENE_PATH := "res://scenes/dev/dev_test.tscn"
+const USE_DEV_TEST_TEMP := true  # Enable dev_test environment
+const DEV_TEST_SCENE_PATH := "res://scenes/dev/dev_world.tscn"
 const WORLD_SCENE_PATH := "res://scenes/world.tscn"
 
 # UDP sockets and timers for LAN discovery

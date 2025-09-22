@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://cyohslubumgn8"]
+[gd_scene load_steps=3 format=3 uid="uid://cyohslubumgn8"]
 
 [ext_resource type="Script" uid="uid://crbkvypgno8o" path="res://scripts/dev/dev_world.gd" id="1_dev_world"]
+[ext_resource type="Script" uid="uid://cw3xde7dpswlo" path="res://scripts/dev/dev_game_ui.gd" id="2_dev_game_ui"]
 
 [node name="DevWorld" type="Node2D"]
 script = ExtResource("1_dev_world")
@@ -13,6 +14,11 @@ offset_bottom = 1000.0
 color = Color(0.2, 0.3, 0.4, 1)
 
 [node name="GridLines" type="Node2D" parent="."]
+
+[node name="CanvasModulate" type="CanvasModulate" parent="."]
+color = Color(0.3, 0.3, 0.4, 1)
+
+[node name="ObstaclesContainer" type="Node2D" parent="."]
 
 [node name="PlayersContainer" type="Node2D" parent="."]
 
@@ -58,6 +64,58 @@ text = "Players: 0"
 
 [node name="InstructionsLabel" type="Label" parent="UI/InfoPanel/VBox"]
 layout_mode = 2
-text = "WASD to move
-ESC to return to lobby"
+text = "WASD to move, Mouse to aim
+F5: Debug Info | F6: Start Game | F7: Colors
+F8: LOS Test | F9: Toggle Darkness | ESC: Lobby"
 autowrap_mode = 2
+
+[node name="GameUI" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_dev_game_ui")
+
+[node name="KillFeed" type="VBoxContainer" parent="UI/GameUI"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -300.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 200.0
+grow_horizontal = 0
+
+[node name="SpottedAlert" type="Label" parent="UI/GameUI"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -100.0
+offset_top = -150.0
+offset_right = 100.0
+offset_bottom = -100.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "SPOTTED!"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="GameStatus" type="Label" parent="UI/GameUI"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -100.0
+offset_right = 300.0
+offset_bottom = -20.0
+grow_vertical = 0
+text = "Game Status"
+vertical_alignment = 1

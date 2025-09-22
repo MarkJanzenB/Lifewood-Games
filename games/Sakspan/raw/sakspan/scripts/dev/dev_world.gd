@@ -1,5 +1,5 @@
 # res://scripts/dev/dev_world.gd
-# Dev test world for multiplayer player interaction testing
+# Dev test world for multiplayer player interaction testing with full gameplay mechanics
 extends Node2D
 
 # Node references
@@ -8,6 +8,9 @@ extends Node2D
 @onready var players_label: Label = $UI/InfoPanel/VBox/PlayersLabel
 @onready var title_label: Label = $UI/InfoPanel/VBox/TitleLabel
 @onready var grid_lines: Node2D = $GridLines
+@onready var canvas_modulate: CanvasModulate = $CanvasModulate
+@onready var obstacles_container: Node2D = $ObstaclesContainer
+@onready var game_ui: Control = $GameUI
 
 # Player scene to spawn
 const PLAYER_SCENE = preload("res://scenes/player/Player.tscn")
@@ -24,7 +27,13 @@ var spawn_points: Array[Vector2] = [
 var spawned_players: Dictionary = {}
 
 func _ready():
-	print("[DevWorld] Starting dev test world")
+	print("[DevWorld] Starting dev test world with full gameplay mechanics")
+	
+	# Setup hybrid LOS system (global darkness)
+	_setup_hybrid_los_system()
+	
+	# Create sample obstacles for LOS testing
+	_create_sample_obstacles()
 	
 	# Ensure input actions exist
 	_ensure_input_actions()
@@ -34,6 +43,9 @@ func _ready():
 	
 	# Draw grid for reference
 	_draw_grid()
+	
+	# Setup GameManager integration
+	_setup_game_manager()
 	
 	# Hide UI labels since we show usernames above characters
 	if players_label:
@@ -58,8 +70,13 @@ func _ready():
 	if spawned_players.is_empty() and multiplayer.is_server():
 		print("[DevWorld] No players spawned, force spawning local player for testing")
 		var local_id = multiplayer.get_unique_id()
-		var test_data = {"name": "TestPlayer_" + str(local_id)}
+		var test_data = {"name": "TestPlayer_" + str(local_id), "char_index": 0}
 		_spawn_player_with_spawner(local_id, test_data)
+	
+	# Initialize game mechanics after players are spawned
+	await get_tree().create_timer(3.0).timeout
+	if multiplayer.is_server() and spawned_players.size() >= 1:
+		_initialize_gameplay()
 	
 	print("[DevWorld] Ready - Server: ", multiplayer.is_server())
 	
@@ -73,6 +90,187 @@ func _ready():
 				print("    Authority: ", child.get_multiplayer_authority())
 				print("    Is main: ", child.is_main_player if "is_main_player" in child else "no is_main_player")
 				print("    Can move: ", child.can_move if "can_move" in child else "no can_move")
+
+# --- HYBRID LOS SYSTEM SETUP ---
+
+func _setup_hybrid_los_system():
+	"""Setup the hybrid Line of Sight system with global darkness and personal FOV"""
+	print("[DevWorld] Setting up hybrid LOS system...")
+	
+	# Create CanvasModulate for global darkness if it doesn't exist
+	if not canvas_modulate:
+		canvas_modulate = CanvasModulate.new()
+		add_child(canvas_modulate)
+	
+	# Set global darkness (Among Us style) - lighter for better visibility
+	var darkness_color = Color(0.3, 0.3, 0.4, 1.0)
+	canvas_modulate.color = darkness_color
+	print("[DevWorld] Global darkness applied: ", canvas_modulate.color)
+	
+	# Sync darkness to all clients
+	if multiplayer.is_server():
+		_sync_darkness_to_clients.rpc(darkness_color)
+
+@rpc("authority", "call_local", "reliable")
+func _sync_darkness_to_clients(darkness_color: Color):
+	"""Sync CanvasModulate darkness to all clients"""
+	print("[DevWorld] Syncing darkness color: ", darkness_color)
+	
+	# Ensure CanvasModulate exists
+	if not canvas_modulate:
+		canvas_modulate = get_node_or_null("CanvasModulate")
+		if not canvas_modulate:
+			canvas_modulate = CanvasModulate.new()
+			add_child(canvas_modulate)
+	
+	# Apply darkness
+	canvas_modulate.color = darkness_color
+	print("[DevWorld] Darkness synchronized for client: ", multiplayer.get_unique_id())
+
+func _create_sample_obstacles():
+	"""Create sample obstacles with LightOccluder2D for shadow casting"""
+	print("[DevWorld] Creating sample obstacles for LOS testing...")
+	
+	# Create obstacles container if it doesn't exist
+	if not obstacles_container:
+		obstacles_container = Node2D.new()
+		obstacles_container.name = "ObstaclesContainer"
+		add_child(obstacles_container)
+	
+	# Create several wall obstacles
+	var wall_positions = [
+		Vector2(100, 100),
+		Vector2(-150, 50),
+		Vector2(50, -100),
+		Vector2(-100, -150),
+		Vector2(250, -50)
+	]
+	
+	for i in range(wall_positions.size()):
+		var wall = _create_wall_obstacle(wall_positions[i], Vector2(80, 20))
+		wall.name = "Wall_" + str(i)
+		obstacles_container.add_child(wall)
+	
+	print("[DevWorld] Created ", wall_positions.size(), " wall obstacles")
+
+func _create_wall_obstacle(pos: Vector2, size: Vector2) -> StaticBody2D:
+	"""Create a wall obstacle with collision and light occlusion"""
+	var wall = StaticBody2D.new()
+	wall.global_position = pos
+	
+	# Visual representation
+	var sprite = Sprite2D.new()
+	var texture = ImageTexture.new()
+	var image = Image.create(int(size.x), int(size.y), false, Image.FORMAT_RGB8)
+	image.fill(Color(0.3, 0.3, 0.3))  # Dark gray
+	texture.set_image(image)
+	sprite.texture = texture
+	wall.add_child(sprite)
+	
+	# Collision shape
+	var collision = CollisionShape2D.new()
+	var rect_shape = RectangleShape2D.new()
+	rect_shape.size = size
+	collision.shape = rect_shape
+	wall.add_child(collision)
+	
+	# Light occluder for shadow casting
+	var occluder = LightOccluder2D.new()
+	var occluder_shape = OccluderPolygon2D.new()
+	var half_size = size / 2
+	occluder_shape.polygon = PackedVector2Array([
+		Vector2(-half_size.x, -half_size.y),
+		Vector2(half_size.x, -half_size.y),
+		Vector2(half_size.x, half_size.y),
+		Vector2(-half_size.x, half_size.y)
+	])
+	occluder.occluder = occluder_shape
+	wall.add_child(occluder)
+	
+	# Set collision layers
+	wall.collision_layer = 4  # Obstacles layer
+	wall.collision_mask = 0   # Don't collide with anything
+	
+	return wall
+
+func _setup_game_manager():
+	"""Setup GameManager integration for server-authoritative gameplay"""
+	print("[DevWorld] Setting up GameManager integration...")
+	
+	# Connect to GameManager signals if it exists
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager:
+		print("[DevWorld] GameManager found, connecting signals...")
+		if not game_manager.game_state_changed.is_connected(_on_game_state_changed):
+			game_manager.game_state_changed.connect(_on_game_state_changed)
+		if not game_manager.player_eliminated.is_connected(_on_player_eliminated):
+			game_manager.player_eliminated.connect(_on_player_eliminated)
+	else:
+		print("[DevWorld] WARNING: GameManager not found as singleton!")
+
+func _initialize_gameplay():
+	"""Initialize gameplay by assigning roles and starting game flow"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[DevWorld] Initializing gameplay...")
+	
+	# Assign roles to players
+	_assign_player_roles()
+	
+	# Start game timer for testing (60 seconds)
+	_start_game_timer()
+	
+	# Start game immediately for dev testing
+	print("[DevWorld] Starting game immediately for dev testing")
+
+func _start_game_timer():
+	"""Start the main game timer"""
+	if not has_node("GameTimer"):
+		var timer = Timer.new()
+		timer.name = "GameTimer"
+		timer.wait_time = 60.0  # 60 second match
+		timer.one_shot = true
+		timer.timeout.connect(_on_game_timer_timeout)
+		add_child(timer)
+	
+	var timer = get_node("GameTimer")
+	timer.start()
+	print("[DevWorld] Game timer started - 60 seconds")
+
+func _on_game_timer_timeout():
+	"""Handle game timer timeout - Hiders win"""
+	print("[DevWorld] Game timer expired - Hiders win!")
+	_end_game("HIDERS", "Time expired! Hiders survived and won!")
+
+func _assign_player_roles():
+	"""Assign asymmetrical roles: 1 Seeker, rest Hiders"""
+	if not multiplayer.is_server():
+		return
+	
+	var player_ids = spawned_players.keys()
+	if player_ids.is_empty():
+		return
+	
+	print("[DevWorld] Assigning roles to ", player_ids.size(), " players...")
+	
+	# Randomly select one seeker
+	var seeker_id = player_ids[randi() % player_ids.size()]
+	
+	for player_id in player_ids:
+		var player = spawned_players[player_id]
+		if not is_instance_valid(player):
+			continue
+		
+		if player_id == seeker_id:
+			# Assign Seeker role
+			player.assign_role(PlayerCharacter.PlayerRole.SEEKER)
+			player.set_ammo(player_ids.size())  # Ammo based on hider count
+			print("[DevWorld] Assigned SEEKER role to ", player.player_name, " with ", player.ammo, " ammo")
+		else:
+			# Assign Hider role
+			player.assign_role(PlayerCharacter.PlayerRole.HIDER)
+			print("[DevWorld] Assigned HIDER role to ", player.player_name)
 
 func _setup_multiplayer_spawner():
 	if not multiplayer_spawner:
@@ -159,12 +357,17 @@ func _spawn_player_with_spawner(player_id: int, player_info: Dictionary):
 	# Set player name BEFORE replication config setup
 	player_instance.player_name = player_name
 	
-	# Enable movement and set as main player if local
+	# Enable movement and attacks for all players (dev testing)
 	player_instance.can_move = true
 	player_instance.can_attack = true
 	if is_local:
 		player_instance.is_main_player = true
 		print("[DevWorld] Set local player as main: ", player_name)
+	
+	# Force enable attacks for dev testing
+	await get_tree().process_frame
+	player_instance.can_attack = true
+	print("[DevWorld] Force enabled attacks for player: ", player_name)
 	
 	# Call setup function if it exists
 	if player_instance.has_method("setup_multiplayer_player"):
@@ -173,6 +376,9 @@ func _spawn_player_with_spawner(player_id: int, player_info: Dictionary):
 	# Apply character appearance based on character selection
 	var character_index = player_info.get("char_index", 0)
 	_apply_character_appearance(player_instance, character_index)
+	
+	# Setup personal FOV lighting (hybrid LOS system)
+	_setup_player_personal_fov(player_instance)
 	
 	# Track spawned player
 	spawned_players[player_id] = player_instance
@@ -203,6 +409,102 @@ func _apply_character_appearance(player: Node, character_index: int):
 	# Ensure character index is set
 	if "character_index" in player:
 		player.character_index = character_index
+
+func _setup_player_personal_fov(player: Node):
+	"""Setup personal Field of View lighting for the hybrid LOS system"""
+	if not player.has_node("VisionCone/PointLight2D"):
+		print("[DevWorld] WARNING: Player missing PointLight2D for personal FOV")
+		return
+	
+	var point_light = player.get_node("VisionCone/PointLight2D")
+	
+	# Configure personal FOV light (Among Us style circular light) - brighter for visibility
+	point_light.enabled = true
+	point_light.energy = 2.0  # Increased from 1.2
+	point_light.color = Color.WHITE
+	point_light.shadow_enabled = true
+	point_light.shadow_filter = Light2D.SHADOW_FILTER_PCF5
+	
+	# Set light radius for personal visibility - larger radius
+	if point_light.texture:
+		point_light.texture_scale = 4.0  # Increased from 2.5 for better visibility
+	
+	# Ensure player sprite is visible by setting proper light mask
+	if player.has_node("AnimatedSprite2D"):
+		var sprite = player.get_node("AnimatedSprite2D")
+		sprite.light_mask = 1  # Make sure sprite receives light
+		
+		# For the local player, ensure they're always visible to themselves
+		if player.is_main_player:
+			sprite.self_modulate = Color(1.2, 1.2, 1.2, 1.0)  # Slightly brighter for self
+			print("[DevWorld] Enhanced self-visibility for local player")
+	
+	print("[DevWorld] Personal FOV configured for player: ", player.name)
+
+# --- GAMEMANAGER SIGNAL HANDLERS ---
+
+func _on_game_state_changed(new_state: int):
+	"""Handle GameManager state changes"""
+	print("[DevWorld] Game state changed to: ", new_state)
+	
+	# Update all players based on game state
+	for player_id in spawned_players:
+		var player = spawned_players[player_id]
+		if is_instance_valid(player) and player.has_method("_on_game_state_changed"):
+			player._on_game_state_changed(new_state)
+
+func _on_player_eliminated(eliminated_player: Object, attacker: Object):
+	"""Handle player elimination events"""
+	if eliminated_player and attacker:
+		print("[DevWorld] Player eliminated: ", eliminated_player.player_name, " by ", attacker.player_name)
+		
+		# Could add visual effects, sounds, etc. here
+		_create_elimination_effect(eliminated_player.global_position)
+		
+		# Check win conditions after elimination
+		if multiplayer.is_server():
+			_check_win_conditions()
+
+func _create_elimination_effect(position: Vector2):
+	"""Create visual effect at elimination position"""
+	# Simple particle effect or flash
+	var effect = ColorRect.new()
+	effect.color = Color.RED
+	effect.size = Vector2(50, 50)
+	effect.position = position - effect.size / 2
+	add_child(effect)
+	
+	# Fade out effect
+	var tween = create_tween()
+	tween.tween_property(effect, "modulate:a", 0.0, 1.0)
+	tween.tween_callback(effect.queue_free)
+
+func _check_win_conditions():
+	"""Check if any team has won the game"""
+	if not multiplayer.is_server():
+		return
+	
+	var alive_seekers = 0
+	var alive_hiders = 0
+	
+	# Count alive players by role
+	for player_id in spawned_players:
+		var player = spawned_players[player_id]
+		if is_instance_valid(player) and player.current_state == PlayerCharacter.PlayerState.ALIVE:
+			if player.role == PlayerCharacter.PlayerRole.SEEKER:
+				alive_seekers += 1
+			else:
+				alive_hiders += 1
+	
+	print("[DevWorld] Win check - Alive Seekers: ", alive_seekers, " Alive Hiders: ", alive_hiders)
+	
+	# Check win conditions
+	if alive_seekers == 0:
+		# Seeker eliminated - Hiders win
+		_end_game("HIDERS", "The Seeker was eliminated! Hiders win!")
+	elif alive_hiders == 0:
+		# All Hiders eliminated - Seeker wins
+		_end_game("SEEKERS", "All Hiders eliminated! Seeker wins!")
 
 func _on_peer_connected(id: int):
 	print("[DevWorld] Peer connected: ", id)
@@ -268,6 +570,9 @@ func _on_player_spawned(node: Node):
 		# Apply character appearance based on character selection
 		var character_index = player_info.get("char_index", 0)
 		_apply_character_appearance(node, character_index)
+		
+		# Setup personal FOV lighting (hybrid LOS system)
+		_setup_player_personal_fov(node)
 		
 		# CRITICAL: Set correct spawn position on client
 		# Use player_id to determine consistent spawn position
@@ -335,9 +640,22 @@ func _input(event):
 			print("[DevWorld] Returning to lobby")
 			# Return to multiplayer menu
 			SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+		elif event.keycode == KEY_F5:
+			print("[DevWorld] === F5 DEBUG: Game State Info ===")
+			_debug_game_state()
+		elif event.keycode == KEY_F6:
+			print("[DevWorld] === F6 DEBUG: Force Start Game ===")
+			if multiplayer.is_server():
+				_initialize_gameplay()
 		elif event.keycode == KEY_F7:
 			print("[DevWorld] === F7 DEBUG: Testing character colors ===")
 			_test_character_colors()
+		elif event.keycode == KEY_F8:
+			print("[DevWorld] === F8 DEBUG: LOS System Test ===")
+			_debug_los_system()
+		elif event.keycode == KEY_F9:
+			print("[DevWorld] === F9 DEBUG: Toggle Global Darkness ===")
+			_toggle_global_darkness()
 
 func _test_character_colors():
 	print("[DevWorld] === CHARACTER COLOR TEST ===")
@@ -367,6 +685,69 @@ func _test_character_colors():
 			else:
 				print("  - ❌ No AnimatedSprite2D found!")
 
+func _debug_game_state():
+	"""Debug function to show current game state"""
+	print("[DevWorld] === GAME STATE DEBUG ===")
+	print("  - Server: ", multiplayer.is_server())
+	print("  - Spawned Players: ", spawned_players.size())
+	
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager:
+		print("  - GameManager State: ", game_manager.current_state)
+		print("  - GameManager Players: ", game_manager.players.size())
+	else:
+		print("  - GameManager: NOT FOUND")
+	
+	# Show player roles
+	for player_id in spawned_players:
+		var player = spawned_players[player_id]
+		if is_instance_valid(player):
+			var role_name = "UNKNOWN"
+			if "role" in player:
+				role_name = "SEEKER" if player.role == PlayerCharacter.PlayerRole.SEEKER else "HIDER"
+			print("  - Player ", player_id, " (", player.player_name, "): ", role_name)
+			if "ammo" in player:
+				print("    Ammo: ", player.ammo)
+
+func _debug_los_system():
+	"""Debug function to test Line of Sight system"""
+	print("[DevWorld] === LOS SYSTEM DEBUG ===")
+	print("  - Global Darkness: ", canvas_modulate.color if canvas_modulate else "NOT SET")
+	print("  - Obstacles: ", obstacles_container.get_child_count() if obstacles_container else 0)
+	
+	# Test each player's lighting
+	for player_id in spawned_players:
+		var player = spawned_players[player_id]
+		if is_instance_valid(player):
+			print("  - Player ", player.player_name, ":")
+			if player.has_node("VisionCone/PointLight2D"):
+				var light = player.get_node("VisionCone/PointLight2D")
+				print("    Personal Light: Enabled=", light.enabled, " Energy=", light.energy)
+				print("    Shadow Enabled: ", light.shadow_enabled)
+			else:
+				print("    Personal Light: MISSING")
+			
+			if player.has_node("VisionCone"):
+				var cone = player.get_node("VisionCone")
+				print("    Vision Cone: Monitoring=", cone.monitoring if "monitoring" in cone else "N/A")
+			else:
+				print("    Vision Cone: MISSING")
+
+func _toggle_global_darkness():
+	"""Toggle global darkness for testing"""
+	if not canvas_modulate:
+		print("[DevWorld] No CanvasModulate found!")
+		return
+	
+	if canvas_modulate.color.r > 0.5:
+		# Currently bright, make dark
+		canvas_modulate.color = Color(0.1, 0.1, 0.15, 1.0)
+		print("[DevWorld] Global darkness ENABLED")
+	else:
+		# Currently dark, make bright
+		canvas_modulate.color = Color.WHITE
+		print("[DevWorld] Global darkness DISABLED")
+
 # Ensure input actions exist for player movement
 func _ensure_input_actions():
 	var actions = [
@@ -374,7 +755,13 @@ func _ensure_input_actions():
 		{"name": "move_down", "key": KEY_S},
 		{"name": "move_left", "key": KEY_A},
 		{"name": "move_right", "key": KEY_D},
-		{"name": "run", "key": KEY_SHIFT}
+		{"name": "run", "key": KEY_SHIFT},
+		{"name": "fire", "key": KEY_SPACE}
+	]
+	
+	# Also add mouse button for fire action
+	var fire_mouse_actions = [
+		{"name": "fire", "mouse_button": MOUSE_BUTTON_LEFT}
 	]
 	
 	for action in actions:
@@ -384,3 +771,103 @@ func _ensure_input_actions():
 			event.keycode = action.key
 			InputMap.action_add_event(action.name, event)
 			print("[DevWorld] Created input action: ", action.name)
+	
+	# Add mouse button events for fire action
+	for action in fire_mouse_actions:
+		if InputMap.has_action(action.name):
+			var mouse_event = InputEventMouseButton.new()
+			mouse_event.button_index = action.mouse_button
+			InputMap.action_add_event(action.name, mouse_event)
+			print("[DevWorld] Added mouse button to fire action: ", action.mouse_button)
+
+# --- GAME OVER SYSTEM ---
+
+func _end_game(winning_team: String, message: String):
+	"""End the game and show results"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[DevWorld] Ending game - Winner: ", winning_team, " Message: ", message)
+	
+	# Send game over to all clients
+	_show_game_over.rpc(winning_team, message)
+
+@rpc("authority", "call_local", "reliable")
+func _show_game_over(winning_team: String, message: String):
+	"""Show game over screen to all players"""
+	print("[DevWorld] Showing game over - Winner: ", winning_team)
+	
+	# Find local player
+	var local_player = null
+	for player_id in spawned_players:
+		var player = spawned_players[player_id]
+		if is_instance_valid(player) and player.is_main_player:
+			local_player = player
+			break
+	
+	if not local_player:
+		print("[DevWorld] No local player found for game over screen")
+		return
+	
+	# Determine if local player won
+	var did_win = false
+	if winning_team == "SEEKERS" and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		did_win = true
+	elif winning_team == "HIDERS" and local_player.role == PlayerCharacter.PlayerRole.HIDER:
+		did_win = true
+	
+	# Create simple game over overlay
+	_create_game_over_overlay(did_win, message)
+
+func _create_game_over_overlay(did_win: bool, message: String):
+	"""Create a simple game over overlay"""
+	var overlay = Control.new()
+	overlay.name = "GameOverOverlay"
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	
+	# Background
+	var background = ColorRect.new()
+	background.color = Color(0, 0, 0, 0.8)
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(background)
+	
+	# Main container
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	vbox.size = Vector2(400, 200)
+	vbox.position = -vbox.size / 2
+	overlay.add_child(vbox)
+	
+	# Result label
+	var result_label = Label.new()
+	result_label.text = "VICTORY!" if did_win else "DEFEAT!"
+	result_label.add_theme_font_size_override("font_size", 48)
+	result_label.add_theme_color_override("font_color", Color.GREEN if did_win else Color.RED)
+	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(result_label)
+	
+	# Message label
+	var message_label = Label.new()
+	message_label.text = message
+	message_label.add_theme_font_size_override("font_size", 18)
+	message_label.add_theme_color_override("font_color", Color.WHITE)
+	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(message_label)
+	
+	# Return button
+	var return_button = Button.new()
+	return_button.text = "Return to Lobby"
+	return_button.pressed.connect(_return_to_lobby)
+	vbox.add_child(return_button)
+	
+	# Add to UI layer
+	var ui_layer = get_node("UI")
+	ui_layer.add_child(overlay)
+	
+	print("[DevWorld] Game over overlay created")
+
+func _return_to_lobby():
+	"""Return to multiplayer lobby"""
+	print("[DevWorld] Returning to lobby...")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
