@@ -29,14 +29,17 @@ var spawned_players: Dictionary = {}
 func _ready():
 	print("[DevWorld] Starting dev test world with full gameplay mechanics")
 	
-	# Setup hybrid LOS system (global darkness)
+	# Initialize hybrid LOS system
 	_setup_hybrid_los_system()
 	
-	# Create sample obstacles for LOS testing
+	# Create sample obstacles for testing
 	_create_sample_obstacles()
 	
-	# Ensure input actions exist
-	_ensure_input_actions()
+	# Initialize GameUI
+	_initialize_game_ui()
+	
+	# Initialize gameplay
+	_initialize_gameplay()
 	
 	# Configure multiplayer spawner
 	_setup_multiplayer_spawner()
@@ -110,6 +113,63 @@ func _setup_hybrid_los_system():
 	# Sync darkness to all clients
 	if multiplayer.is_server():
 		_sync_darkness_to_clients.rpc(darkness_color)
+
+func _initialize_game_ui():
+	"""Initialize and configure the GameUI"""
+	if not game_ui:
+		print("[DevWorld] WARNING: GameUI node not found!")
+		return
+	
+	print("[DevWorld] Initializing GameUI...")
+	
+	# Make sure GameUI is visible and properly configured
+	game_ui.visible = true
+	
+	# Connect to update loop
+	if not has_method("_update_game_ui"):
+		print("[DevWorld] Adding GameUI update to process")
+	
+	print("[DevWorld] GameUI initialized successfully")
+
+func _process(_delta):
+	"""Update GameUI with current game state"""
+	if game_ui and game_ui.has_method("update_game_status"):
+		_update_game_ui()
+
+func _update_game_ui():
+	"""Update GameUI with current player and game information"""
+	if not game_ui:
+		return
+	
+	# Find local player
+	var local_player = null
+	for player_id in spawned_players:
+		var player = spawned_players[player_id]
+		if is_instance_valid(player) and player.is_main_player:
+			local_player = player
+			break
+	
+	if not local_player:
+		return
+	
+	# Update role-specific information
+	if local_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		if game_ui.has_method("update_ammo"):
+			game_ui.update_ammo(local_player.ammo)
+		
+		# Count alive hiders
+		var alive_hiders = 0
+		for player_id in spawned_players:
+			var player = spawned_players[player_id]
+			if is_instance_valid(player) and player.current_state == PlayerCharacter.PlayerState.ALIVE and player.role == PlayerCharacter.PlayerRole.HIDER:
+				alive_hiders += 1
+		
+		if game_ui.has_method("update_hiders_left"):
+			game_ui.update_hiders_left(alive_hiders)
+	else:
+		# For hiders, show survival status
+		if game_ui.has_method("update_game_status"):
+			game_ui.update_game_status("Role: HIDER - Stay hidden!")
 
 @rpc("authority", "call_local", "reliable")
 func _sync_darkness_to_clients(darkness_color: Color):
@@ -461,8 +521,9 @@ func _on_player_eliminated(eliminated_player: Object, attacker: Object):
 		# Could add visual effects, sounds, etc. here
 		_create_elimination_effect(eliminated_player.global_position)
 		
-		# Check win conditions after elimination
+		# Check win conditions after elimination (with small delay for death animation)
 		if multiplayer.is_server():
+			await get_tree().create_timer(0.1).timeout
 			_check_win_conditions()
 
 func _create_elimination_effect(position: Vector2):
@@ -486,25 +547,35 @@ func _check_win_conditions():
 	
 	var alive_seekers = 0
 	var alive_hiders = 0
+	var total_seekers = 0
+	var total_hiders = 0
 	
 	# Count alive players by role
 	for player_id in spawned_players:
 		var player = spawned_players[player_id]
-		if is_instance_valid(player) and player.current_state == PlayerCharacter.PlayerState.ALIVE:
+		if is_instance_valid(player):
 			if player.role == PlayerCharacter.PlayerRole.SEEKER:
-				alive_seekers += 1
+				total_seekers += 1
+				if player.current_state == PlayerCharacter.PlayerState.ALIVE and not player.is_dying:
+					alive_seekers += 1
 			else:
-				alive_hiders += 1
+				total_hiders += 1
+				if player.current_state == PlayerCharacter.PlayerState.ALIVE and not player.is_dying:
+					alive_hiders += 1
 	
-	print("[DevWorld] Win check - Alive Seekers: ", alive_seekers, " Alive Hiders: ", alive_hiders)
+	print("[DevWorld] Win check - Alive Seekers: ", alive_seekers, "/", total_seekers, " Alive Hiders: ", alive_hiders, "/", total_hiders)
 	
-	# Check win conditions
-	if alive_seekers == 0:
+	# Check win conditions - must have decisive victory
+	if alive_seekers == 0 and total_seekers > 0:
 		# Seeker eliminated - Hiders win
+		print("[DevWorld] GAME OVER: Seeker eliminated!")
 		_end_game("HIDERS", "The Seeker was eliminated! Hiders win!")
-	elif alive_hiders == 0:
+	elif alive_hiders == 0 and total_hiders > 0:
 		# All Hiders eliminated - Seeker wins
+		print("[DevWorld] GAME OVER: All Hiders eliminated!")
 		_end_game("SEEKERS", "All Hiders eliminated! Seeker wins!")
+	else:
+		print("[DevWorld] Game continues...")
 
 func _on_peer_connected(id: int):
 	print("[DevWorld] Peer connected: ", id)
@@ -858,7 +929,7 @@ func _create_game_over_overlay(did_win: bool, message: String):
 	# Return button
 	var return_button = Button.new()
 	return_button.text = "Return to Lobby"
-	return_button.pressed.connect(_return_to_lobby)
+	return_button.pressed.connect(_request_return_to_lobby)
 	vbox.add_child(return_button)
 	
 	# Add to UI layer
@@ -867,7 +938,49 @@ func _create_game_over_overlay(did_win: bool, message: String):
 	
 	print("[DevWorld] Game over overlay created")
 
-func _return_to_lobby():
-	"""Return to multiplayer lobby"""
-	print("[DevWorld] Returning to lobby...")
-	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+func _request_return_to_lobby():
+	"""Request return to lobby from client"""
+	print("[DevWorld] Requesting return to lobby...")
+	if multiplayer.is_server():
+		_reset_lobby_and_return()
+	else:
+		_request_lobby_return.rpc_id(1)
+
+@rpc("any_peer", "call_local", "reliable")
+func _request_lobby_return():
+	"""RPC to request lobby return from server"""
+	if multiplayer.is_server():
+		print("[DevWorld] Client requested lobby return")
+		_reset_lobby_and_return()
+
+func _reset_lobby_and_return():
+	"""Reset lobby state and return all players to lobby"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[DevWorld] Resetting lobby state and returning all players...")
+	
+	# Reset all player states in NetworkManager
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
+		for player_id in network_manager.players:
+			var player_data = network_manager.players[player_id]
+			# Reset character selection and ready state
+			player_data["char_index"] = -1
+			player_data["ready"] = false
+			# Remove role assignment
+			if player_data.has("role"):
+				player_data.erase("role")
+		
+		# Sync updated player data
+		if network_manager.has_method("_sync_players_to_all"):
+			network_manager._sync_players_to_all()
+	
+	# Return all clients to lobby
+	_return_all_to_lobby.rpc()
+
+@rpc("authority", "call_local", "reliable")
+func _return_all_to_lobby():
+	"""RPC to return all players to lobby wait room"""
+	print("[DevWorld] Returning to lobby wait room...")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Lobby_Wait_Room/lobby_wait_room_menu.tscn")

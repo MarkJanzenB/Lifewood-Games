@@ -399,6 +399,7 @@ func _sync_player_position(pos: Vector2, vel: Vector2):
 	_sync_player_state(pos, vel, "", false)
 
 func _input(event: InputEvent) -> void:
+	# Block ALL input for dying or ghost players
 	if is_dying or current_state == PlayerState.GHOST: 
 		return
 	# Only the authority handles inputs
@@ -414,9 +415,13 @@ func _input(event: InputEvent) -> void:
 
 # Alternative input handler in case _input is being consumed
 func _unhandled_input(event: InputEvent) -> void:
+	# Block ALL unhandled input for dying or ghost players
+	if is_dying or current_state == PlayerState.GHOST:
+		return
+		
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		print("[Player] UNHANDLED MOUSE INPUT - Player: ", player_name, " Authority: ", is_multiplayer_authority(), " Main: ", is_main_player)
-		if is_multiplayer_authority() and is_main_player and not is_dying and current_state != PlayerState.GHOST:
+		if is_multiplayer_authority() and is_main_player:
 			print("[Player] Processing unhandled left click as fire/sak")
 			_handle_fire_sak_input()
 
@@ -443,20 +448,28 @@ func _handle_fire_sak_input() -> void:
 		print("[Player] Invalid role or conditions for attack")
 
 func eliminate(attacker: PlayerCharacter) -> void:
-	if is_dying or current_state == PlayerState.GHOST: return
+	if is_dying or current_state == PlayerState.GHOST: 
+		return
+	
+	print("[Player] Eliminating ", player_name, " - starting death sequence")
 	is_dying = true
+	
+	# Disable all interactions immediately
+	can_move = false
+	can_attack = false
+	collision_shape.disabled = true
+	melee_range.monitoring = false
+	vision_cone.monitoring = false
+	
+	# Notify GameManager of elimination
 	var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
 	if gm:
 		gm.player_eliminated.emit(self, attacker)
 	
-	# Force stop current animation and play death
+	# Play death animation - become_ghost() will be called when animation finishes
 	animated_sprite.stop()
 	animated_sprite.play("death")
 	print("[Player] Playing death animation for ", player_name, " - current: ", animated_sprite.animation)
-	
-	collision_shape.disabled = true
-	melee_range.monitoring = false
-	vision_cone.monitoring = false
 
 func become_ghost() -> void:
 	print(player_name, " has become a ghost!")

@@ -5,6 +5,7 @@ extends Control
 # These paths are based on your screenshot. Double-check them if you have issues.
 @onready var lobby_name_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/LobbyNameLabel
 @onready var players_count_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/PlayersCountLabel
+@onready var timer_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/TimerLabel
 @onready var player_list_container: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/PlayerListContainer
 @onready var character_grid: GridContainer = $PanelContainer/MarginContainer/VBoxContainer/CharacterGrid
 @onready var root_vbox: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer
@@ -136,6 +137,7 @@ func _ready():
 func _check_ui_nodes():
 	if not lobby_name_label: push_warning("[LobbyWaitRoom] LobbyNameLabel not found.")
 	if not players_count_label: push_warning("[LobbyWaitRoom] PlayersCountLabel not found.")
+	if not timer_label: push_warning("[LobbyWaitRoom] TimerLabel not found.")
 	if not player_list_container: push_warning("[LobbyWaitRoom] PlayerListContainer not found.")
 	if not character_grid: push_warning("[LobbyWaitRoom] CharacterGrid not found.")
 	if not lock_in_button: push_warning("[LobbyWaitRoom] LockInButton not found.")
@@ -146,6 +148,8 @@ func _resolve_nodes_if_missing():
 	# Fallback: try to find nodes by name anywhere under this scene if direct paths changed
 	if not players_count_label:
 		players_count_label = _find_node_by_name(self, "PlayersCountLabel") as Label
+	if not timer_label:
+		timer_label = _find_node_by_name(self, "TimerLabel") as Label
 	if not lobby_name_label:
 		lobby_name_label = _find_node_by_name(self, "LobbyNameLabel") as Label
 	if not player_list_container:
@@ -275,6 +279,11 @@ func _update_player_list(players: Dictionary):
 
 	if players_count_label:
 		players_count_label.text = "Players: %d/%d" % [count, lobby_data.get("max_players", 5)]
+	
+	# Update timer display
+	if timer_label:
+		var timer_setting = lobby_data.get("timer", "Default")
+		timer_label.text = "Timer: " + str(timer_setting)
 
 # NOTE: Removed duplicate alternate implementations of _setup_character_grid and
 # _update_character_grid_lock that conflicted with the CharacterButton-based grid above.
