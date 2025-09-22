@@ -267,8 +267,9 @@ func _spawn_player_on_all_clients(player_id: int, player_data: Dictionary, spawn
 		new_player.setup_multiplayer_player(player_data, is_local)
 	
 	# PHASE 1: Grant immediate movement and attack capabilities for MPS testing
-	if new_player.has_method("enable_basic_controls"):
-		new_player.enable_basic_controls()
+	# Use RPC to ensure all clients receive the control state
+	if new_player.has_method("set_player_state"):
+		new_player.set_player_state.rpc(true, true)  # can_move=true, can_attack=true
 	else:
 		# Fallback: Set basic control flags directly
 		new_player.can_move = true

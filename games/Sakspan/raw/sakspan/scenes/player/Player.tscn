@@ -379,6 +379,13 @@ scale = Vector2(1.5, 1.5)
 collision_mask = 3
 input_pickable = true
 script = ExtResource("1_abcde")
+walk_speed = null
+run_speed = null
+is_main_player = null
+role = null
+player_name = null
+ammo = null
+character_index = null
 
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 root_path = NodePath(".")

@@ -64,6 +64,9 @@ var username_label: Label = null
 func _ready():
 	await get_tree().process_frame
 	
+	# Add to player group for collision detection
+	add_to_group("player")
+	
 	# Connect to GameManager signals
 	var gm = get_node_or_null("/root/GameManager")
 	if gm:
@@ -375,6 +378,13 @@ func _physics_process(delta: float):
 		# Handle animations for remote players based on movement
 		handle_remote_visuals()
 
+@rpc("any_peer", "call_local", "reliable")
+func set_player_state(p_can_move: bool, p_can_attack: bool) -> void:
+	"""RPC to set player control state - called by GameManager during spawning"""
+	self.can_move = p_can_move
+	self.can_attack = p_can_attack
+	print("[Player] Control state updated - can_move: ", can_move, " can_attack: ", can_attack)
+
 @rpc("any_peer", "unreliable")
 func _sync_player_state(pos: Vector2, vel: Vector2, animation: String, flipped: bool):
 	# Only apply updates to non-authority nodes
@@ -414,7 +424,8 @@ func _input(event: InputEvent) -> void:
 	# Handle fire input (both mouse and keyboard)
 	if Input.is_action_just_pressed("fire"):
 		print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanAttack: ", can_attack)
-		_handle_fire_sak_input()
+		# PHASE 1: Use server-authoritative system for all attacks
+		_handle_phase1_fire_input()
 
 # Alternative input handler in case _input is being consumed
 func _unhandled_input(event: InputEvent) -> void:
@@ -426,7 +437,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		print("[Player] UNHANDLED MOUSE INPUT - Player: ", player_name, " Authority: ", is_multiplayer_authority(), " Main: ", is_main_player)
 		if is_multiplayer_authority() and is_main_player:
 			print("[Player] Processing unhandled left click as fire/sak")
-			_handle_fire_sak_input()
+			# PHASE 1: Use server-authoritative system for all attacks
+			_handle_phase1_fire_input()
+
+# PHASE 1: Simplified input handler for server-authoritative attacks
+func _handle_phase1_fire_input() -> void:
+	"""Phase 1: All players can fire projectiles regardless of role"""
+	if not can_attack:
+		print("[Player] Cannot attack - can_attack is false")
+		return
+	if is_in_action:
+		print("[Player] Cannot attack - already in action")
+		return
+	
+	print("[Player] Phase 1: Requesting projectile fire from server")
+	# The client sends a request to the server to fire
+	fire_projectile_rpc.rpc_id(1)
 
 # Helper function to handle fire/sak input
 func _handle_fire_sak_input() -> void:
@@ -811,3 +837,51 @@ func _on_animated_sprite_2d_frame_changed() -> void:
 				target_for_sak = null
 			else:
 				print("[Player] No valid SAK target!")
+
+# --- PHASE 1: SERVER-AUTHORITATIVE ATTACK SYSTEM ---
+
+# This RPC is sent from a client TO the server (peer_id = 1)
+@rpc("any_peer", "call_remote", "reliable")
+func fire_projectile_rpc() -> void:
+	"""Client requests to fire projectile - server validates and authorizes"""
+	# This code will only execute on the server's instance of this player
+	if not multiplayer.is_server():
+		return
+		
+	if is_in_action: 
+		print("[Player] Server rejected fire request - already in action")
+		return
+	
+	print("[Player] Server authorizing projectile fire for ", player_name)
+	# Server sets the state and tells all clients to spawn the projectile
+	is_in_action = true
+	spawn_projectile_on_clients_rpc.rpc(muzzle.global_position, vision_cone.global_rotation)
+	
+	# Add a simple cooldown timer to reset is_in_action
+	var cooldown_timer = Timer.new()
+	add_child(cooldown_timer)
+	cooldown_timer.wait_time = 1.0  # 1 second cooldown
+	cooldown_timer.one_shot = true
+	cooldown_timer.timeout.connect(func(): 
+		is_in_action = false
+		cooldown_timer.queue_free()
+		print("[Player] Attack cooldown finished for ", player_name)
+	)
+	cooldown_timer.start()
+
+# This RPC is sent FROM the server TO all clients
+@rpc("authority", "call_local", "reliable")
+func spawn_projectile_on_clients_rpc(spawn_pos: Vector2, spawn_rot: float) -> void:
+	"""Server commands all clients to spawn projectile at specified position/rotation"""
+	print("[Player] Spawning projectile at ", spawn_pos, " with rotation ", spawn_rot)
+	var rock: Area2D = ROCK_PROJECTILE_SCENE.instantiate()
+	rock.global_position = spawn_pos
+	rock.rotation = spawn_rot
+	
+	# Set the owner_player reference for collision detection
+	if rock.has_method("set") or "owner_player" in rock:
+		rock.owner_player = self
+	
+	# Add to the main scene tree so it's not a child of the player
+	get_tree().get_root().add_child(rock)
+	print("[Player] ✅ Projectile spawned successfully")
