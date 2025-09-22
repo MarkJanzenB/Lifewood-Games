@@ -5,13 +5,13 @@ extends Control
 # These paths are based on your screenshot. Double-check them if you have issues.
 @onready var lobby_name_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/LobbyNameLabel
 @onready var players_count_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/PlayersCountLabel
-@onready var timer_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/TimerLabel
+@onready var timer_label: Label = $PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/GameTimerLabel
 @onready var player_list_container: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer/ScrollContainer/PlayerListContainer
 @onready var character_grid: GridContainer = $PanelContainer/MarginContainer/VBoxContainer/CharacterGrid
 @onready var root_vbox: VBoxContainer = $PanelContainer/MarginContainer/VBoxContainer
 @onready var lock_in_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LockInButton
 @onready var start_game_button: Button = $PanelContainer/MarginContainer/VBoxContainer/StartGameButton
-@onready var dev_test_button: Button = $PanelContainer/MarginContainer/VBoxContainer/DevTestButton
+#@onready var dev_test_button: Button = $PanelContainer/MarginContainer/VBoxContainer/DevTestButton
 @onready var leave_lobby_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LeaveLobbyButton
 var _heartbeat_timer := Timer.new()
 
@@ -86,8 +86,8 @@ func _ready():
 			network_manager.request_players_resync()
 	if start_game_button:
 		start_game_button.pressed.connect(_on_start_game_button_pressed)
-	if dev_test_button:
-		dev_test_button.pressed.connect(_on_dev_test_button_pressed)
+	#if dev_test_button:
+		#dev_test_button.pressed.connect(_on_dev_test_button_pressed)
 	if lock_in_button:
 		lock_in_button.pressed.connect(_on_lock_in_button_pressed)
 	if leave_lobby_button:
@@ -464,7 +464,11 @@ func _start_dev_test():
 
 func _on_game_started(_player_data):
 	print("[LobbyWaitRoom] game_started received. Loading world.tscn...")
-	SceneChanger.change_scene_to_file("res://scenes/world.tscn")
+	# FIXED: Use NetworkManager's scene selection logic instead of hardcoded path
+	# This respects the USE_DEV_TEST_TEMP flag and loads dev_world.tscn when enabled
+	var target_scene: String = NetworkManager.DEV_TEST_SCENE_PATH if NetworkManager.USE_DEV_TEST_TEMP else NetworkManager.WORLD_SCENE_PATH
+	print("[LobbyWaitRoom] Target scene: ", target_scene)
+	get_tree().change_scene_to_file(target_scene)
 
 func _on_leave_lobby_button_pressed():
 	NetworkManager.leave_lobby()

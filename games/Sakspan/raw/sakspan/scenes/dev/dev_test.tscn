@@ -89,3 +89,9 @@ scroll_following = true
 [node name="DiagnosticsPanel" parent="." instance=ExtResource("2_diag")]
 layout_mode = 0
 anchors_preset = 0
+anchor_left = 0.0
+anchor_right = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 392.0
+offset_bottom = 142.0

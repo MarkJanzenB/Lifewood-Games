@@ -26,13 +26,13 @@ func _ready() -> void:
 	print("[DevWorld] Starting dev test world")
 	
 	# Configure MultiplayerSpawner
-	var spawner = $MultiplayerManager/MultiplayerSpawner
+	var spawner = $MultiplayerSpawner
 	spawner.spawn_function = _spawn_player_with_data
 	print("[DevWorld] MultiplayerSpawner configured")
 	
 	# Auto-assign roles after a short delay to ensure all players are spawned
 	await get_tree().create_timer(2.0).timeout
-	_auto_assign_roles()
+	_auto_assign_roles() 
 	
 	# Connect to NetworkManager signals
 	if NetworkManager.player_list_changed.connect(_on_player_list_changed) != OK:

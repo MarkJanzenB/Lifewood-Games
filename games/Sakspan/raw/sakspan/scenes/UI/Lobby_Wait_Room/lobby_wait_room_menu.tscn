@@ -13,6 +13,19 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_kg36v")
 
+[node name="DevTestButton" type="Button" parent="."]
+visible = false
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+offset_left = 253.0
+offset_top = 554.0
+offset_right = 1023.0
+offset_bottom = 604.0
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_fonts/font = ExtResource("2_ju8rw")
+theme_override_font_sizes/font_size = 18
+text = "DEV TEST"
+
 [node name="lobby_wait_room_background" type="TextureRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -129,14 +142,6 @@ theme_override_fonts/font = ExtResource("2_ju8rw")
 theme_override_font_sizes/font_size = 20
 disabled = true
 text = "START GAME"
-
-[node name="DevTestButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
-custom_minimum_size = Vector2(200, 50)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
-theme_override_fonts/font = ExtResource("2_ju8rw")
-theme_override_font_sizes/font_size = 18
-text = "DEV TEST"
 
 [node name="LeaveLobbyButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
 custom_minimum_size = Vector2(200, 50)

@@ -1,6 +1,4 @@
 #res://scripts/GameManager.gd
-
-class_name GameManager
 extends Node
 
 # Game State
@@ -41,11 +39,11 @@ var game_ui_instance: Node = null  # Will be set by the GameUI scene when it loa
 # Make this a proper singleton
 static var instance: GameManager = null
 
-# Timers
-@onready var main_timer: Timer = Timer.new()
-@onready var ammo_cooldown_timer: Timer = Timer.new()
-@onready var sak_delay_timer: Timer = Timer.new()
-@onready var phase_timer: Timer = Timer.new()  # For staged gameplay phases
+# Timers (will be instantiated in _enter_tree)
+var main_timer: Timer
+var ammo_cooldown_timer: Timer
+var sak_delay_timer: Timer
+var phase_timer: Timer
 
 # Working game mechanics variables
 var current_state: GameState = GameState.LOBBY
@@ -56,21 +54,30 @@ func _enter_tree():
 		return
 	instance = self
 	
-	# Initialize timers
+	# Initialize timers with correct sequence: Instantiate -> Add -> Configure
+	
+	# --- Main Game Timer ---
+	main_timer = Timer.new()
 	add_child(main_timer)
-	add_child(ammo_cooldown_timer)
-	add_child(sak_delay_timer)
-	add_child(phase_timer)
-	
 	main_timer.one_shot = true
-	ammo_cooldown_timer.one_shot = true
-	sak_delay_timer.one_shot = true
-	phase_timer.one_shot = true
-	
-	# Connect timer signals
 	main_timer.timeout.connect(_on_main_timer_timeout)
+	
+	# --- Ammo Cooldown Timer ---
+	ammo_cooldown_timer = Timer.new()
+	add_child(ammo_cooldown_timer)
+	ammo_cooldown_timer.one_shot = true
 	ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
+	
+	# --- Sak Delay Timer ---
+	sak_delay_timer = Timer.new()
+	add_child(sak_delay_timer)
+	sak_delay_timer.one_shot = true
 	sak_delay_timer.timeout.connect(_on_sak_delay_timer_timeout)
+	
+	# --- Phase Timer (for staged gameplay) ---
+	phase_timer = Timer.new()
+	add_child(phase_timer)
+	phase_timer.one_shot = true
 	phase_timer.timeout.connect(_on_phase_timer_timeout)
 	
 	# Connect player elimination signal
@@ -127,30 +134,178 @@ func check_win_conditions() -> void:
 @onready var world: Node2D = get_node_or_null("/root/World")
 
 func _ready() -> void:
+	print("[GameManager] GameManager singleton initialized for peer ", multiplayer.get_unique_id())
+	
+	# REMOVED: tree_changed signal connection - this was causing premature firing during menu navigation
+	# Signal will be connected by NetworkManager right before game start
+	
 	if not network_manager:
 		push_error("NetworkManager not found!")
 	
-	# Connect to network manager signals if needed
+	# Connect to network manager signals only if we have a multiplayer peer
 	if multiplayer.has_multiplayer_peer():
 		if not multiplayer.peer_connected.is_connected(_on_player_connected):
 			multiplayer.peer_connected.connect(_on_player_connected)
 		if not multiplayer.peer_disconnected.is_connected(_on_player_disconnected):
 			multiplayer.peer_disconnected.connect(_on_player_disconnected)
 	
-	# Connect timer signals if needed
-	# if not main_timer.timeout.is_connected(_on_main_timer_timeout):
-	#     main_timer.timeout.connect(_on_main_timer_timeout)
-	# if not ammo_cooldown_timer.timeout.is_connected(_on_ammo_cooldown_timeout):
-	#     ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
-	# if not sak_delay_timer.timeout.is_connected(_on_sak_delay_timer_timeout):
-	#     sak_delay_timer.timeout.connect(_on_sak_delay_timer_timeout)
-	
-	# If we're the server, initialize the game
-	if multiplayer.is_server():
-		_initialize_server()
-	
 	# Set process to handle game timing
 	set_process(false)
+
+# NEW FUNCTION - Called by NetworkManager right before game start to enable scene detection
+func enable_game_scene_detection() -> void:
+	print("[GameManager] Enabling game scene detection...")
+	if not get_tree().tree_changed.is_connected(_on_scene_changed):
+		get_tree().tree_changed.connect(_on_scene_changed)
+		print("[GameManager] Scene detection enabled")
+	else:
+		print("[GameManager] Scene detection already enabled")
+
+# NEW FUNCTION - Called by dev_world.gd when game scene loads
+func initialize_game_world() -> void:
+	"""Initialize the game world - called by dev_world.gd when server loads the scene"""
+	if not multiplayer.is_server():
+		print("[GameManager] ❌ initialize_game_world() called on client - ignoring")
+		return
+	
+	print("[GameManager] 🏠 SERVER: Initializing game world...")
+	
+	if not network_manager:
+		push_error("NetworkManager not found!")
+		return
+	
+	print("[GameManager] ✅ NetworkManager found with ", network_manager.players.size(), " players")
+	
+	# Spawn all players first
+	_spawn_all_players()
+	
+	# Now perform the actual server initialization
+	_initialize_server()
+	
+	# Auto-start the game if we have players (for dev testing)
+	if players.size() > 0:
+		print("[GameManager] 🎮 Auto-starting game with ", players.size(), " players")
+		# Wait a frame to ensure everything is initialized
+		await get_tree().process_frame
+		start_game()
+	else:
+		print("[GameManager] ⏳ Waiting for players to join before starting game")
+	
+	print("[GameManager] ✅ Game world initialization complete")
+
+# Comprehensive player spawning system
+func _spawn_all_players() -> void:
+	"""Spawn all players from NetworkManager data with proper type handling"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[GameManager] 🎭 Spawning all players...")
+	var players_dict = network_manager.players
+	
+	if players_dict.is_empty():
+		print("[GameManager] ⚠️  No players to spawn")
+		return
+	
+	# Get spawn points from dev_world
+	var spawn_points: Array[Vector2] = [Vector2(100, 0), Vector2(-100, 0), Vector2(0, 100), Vector2(0, -100)]
+	
+	# Convert keys to integers and sort for deterministic spawn order
+	var int_ids: Array[int] = []
+	for key in players_dict.keys():
+		int_ids.append(int(key))
+	int_ids.sort()
+	
+	# Spawn each player via RPC with correct data types
+	for i in range(min(int_ids.size(), spawn_points.size())):
+		var player_id: int = int_ids[i]
+		var player_data: Dictionary = players_dict[player_id]
+		print("[GameManager] 🎭 Spawning player ", player_id, " with data: ", player_data)
+		_spawn_player_on_all_clients.rpc(player_id, player_data, spawn_points[i])
+
+@rpc("authority", "call_local", "reliable")
+func _spawn_player_on_all_clients(player_id: int, player_data: Dictionary, spawn_pos: Vector2) -> void:
+	"""Spawn a single player on all clients with correct type handling"""
+	print("[GameManager] 🎭 Creating player ", player_id, " at ", spawn_pos)
+	
+	# Create player instance
+	var player_scene = preload("res://scenes/player/Player.tscn")
+	var new_player = player_scene.instantiate()
+	
+	# Set up multiplayer authority
+	new_player.set_multiplayer_authority(player_id)
+	new_player.name = "Player_" + str(player_id)
+	
+	# Find players container in dev_world
+	var players_container = get_tree().get_first_node_in_group("players_container")
+	if not players_container:
+		# Fallback to finding by path
+		players_container = get_node_or_null("/root/DevWorld/PlayersContainer")
+	
+	if players_container:
+		players_container.add_child(new_player)
+	else:
+		push_error("[GameManager] Could not find PlayersContainer!")
+		return
+	
+	# Position the player
+	new_player.global_position = spawn_pos
+	
+	# Configure player properties with CORRECT data types
+	if new_player.has_method("setup_multiplayer_player"):
+		var is_local = (player_id == multiplayer.get_unique_id())
+		# CRITICAL FIX: Pass Dictionary and boolean, not int and boolean
+		new_player.setup_multiplayer_player(player_data, is_local)
+	
+	print("[GameManager] ✅ Successfully created player ", player_id, " (", player_data.get("name", "Unknown"), ") at ", spawn_pos)
+
+# Event-driven scene change handler - this is our robust entry point for the game loop
+var _last_scene_path: String = ""
+
+func _on_scene_changed():
+	# Guard against calling this without a multiplayer peer (prevents null reference errors)
+	if not multiplayer.has_multiplayer_peer():
+		print("[GameManager] ⚠️  Scene changed but no multiplayer peer - ignoring")
+		return
+	
+	# We only care if the server has loaded the correct scene
+	if not multiplayer.is_server():
+		return
+	
+	var current_scene = get_tree().current_scene
+	if not current_scene:
+		return
+	
+	# Only process if the scene actually changed (tree_changed fires for many reasons)
+	var current_scene_path = current_scene.scene_file_path
+	if current_scene_path == _last_scene_path:
+		return
+	
+	_last_scene_path = current_scene_path
+	
+	# Check if the new scene is our dev world
+	if current_scene_path == "res://scenes/dev/dev_world.tscn":
+		print("[GameManager] 🎯 Detected dev_world scene load. Initializing game...")
+		
+		# All game setup logic now lives here
+		if not network_manager:
+			push_error("NetworkManager not found!")
+			return
+		
+		print("[GameManager] ✅ NetworkManager found with ", network_manager.players.size(), " players")
+		
+		# Perform the actual server initialization
+		_initialize_server()
+		
+		# Auto-start the game if we have players (for dev testing)
+		if players.size() > 0:
+			print("[GameManager] 🎮 Auto-starting game with ", players.size(), " players")
+			# Wait a frame to ensure everything is initialized
+			await get_tree().process_frame
+			start_game()
+		else:
+			print("[GameManager] ⏳ Waiting for players to join before starting game")
+		
+		print("[GameManager] ✅ Game world initialization complete via scene detection")
 
 # Called by GameUI when it's ready
 func register_game_ui(ui_instance: Node) -> void:
@@ -233,6 +388,52 @@ func update_ui() -> void:
 		var seeker: PlayerCharacter = seekers[0] as PlayerCharacter
 		if seeker and game_ui_instance.has_method("update_ammo"):
 			game_ui_instance.update_ammo(seeker.ammo)
+	
+	# Update announcer text based on current game state
+	_update_announcer_text()
+
+# Dynamic announcer text updates
+func _update_announcer_text() -> void:
+	"""Update announcer text based on current game state"""
+	var announcer_text = ""
+	var show_announcer = true
+	
+	match current_state:
+		GameState.LOBBY:
+			announcer_text = "Waiting for players..."
+		GameState.STARTING:
+			announcer_text = "Game starting..."
+		GameState.WAITING_TO_START:
+			announcer_text = "Preparing game..."
+		GameState.PRE_GAME_FREEZE:
+			announcer_text = "Role assignments complete!"
+		GameState.HIDER_HEADSTART:
+			announcer_text = "Hiders, GO! Find hiding spots!"
+		GameState.GAME_START_COUNTDOWN:
+			announcer_text = "Seeker preparing to hunt..."
+		GameState.SEEKER_RELEASED:
+			announcer_text = "The Seeker is on the move!"
+		GameState.IN_PROGRESS:
+			announcer_text = "The Hunt is On!"
+		GameState.FINISHED:
+			announcer_text = "Game Over"
+		GameState.GAME_OVER:
+			announcer_text = "Match ended"
+		_:
+			announcer_text = "Waiting for players..."
+			show_announcer = false
+	
+	# Send announcer update to all clients
+	if multiplayer.is_server():
+		_rpc_update_announcer.rpc(announcer_text, show_announcer)
+	elif game_ui_instance and game_ui_instance.has_method("update_status"):
+		game_ui_instance.update_status(announcer_text, show_announcer)
+
+@rpc("authority", "call_local", "reliable")
+func _rpc_update_announcer(text: String, show: bool) -> void:
+	"""RPC to update announcer text on all clients"""
+	if game_ui_instance and game_ui_instance.has_method("update_status"):
+		game_ui_instance.update_status(text, show)
 
 # Ammo cooldown
 func start_ammo_cooldown(duration: float = 5.0) -> void:
@@ -255,12 +456,20 @@ func reset_to_lobby() -> void:
 	# Emit signal to update UI
 	game_state_changed.emit(game_state)
 
+var _last_countdown_value: int = -1
+
 func _process(delta: float) -> void:
-	# Handle legacy countdown state (now maps to SEEKER_RELEASED phase)
+	# Do not run process logic if we are not in a networked game yet
+	if not multiplayer.has_multiplayer_peer():
+		return
+		
+	# Handle countdown display (only update when value changes)
 	if current_state == GameState.GAME_START_COUNTDOWN or current_state == GameState.SEEKER_RELEASED:
 		if game_ui_instance and game_ui_instance.has_method("update_countdown"):
-			game_ui_instance.update_countdown(str(ceil(phase_timer.time_left)), true)
-	update_ui()
+			var current_countdown = int(ceil(phase_timer.time_left))
+			if current_countdown != _last_countdown_value:
+				_last_countdown_value = current_countdown
+				game_ui_instance.update_countdown(str(current_countdown), true)
 	
 	if not multiplayer.is_server():
 		return

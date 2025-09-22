@@ -20,7 +20,7 @@ color = Color(0.600986, 0.538828, 0.555062, 1)
 
 [node name="ObstaclesContainer" type="Node2D" parent="."]
 
-[node name="PlayersContainer" type="Node2D" parent="."]
+[node name="PlayersContainer" type="Node2D" parent="." groups=["players_container"]]
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://b5w5d5f5g5h5")

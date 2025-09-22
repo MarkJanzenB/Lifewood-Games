@@ -434,7 +434,13 @@ func start_game() -> void:
 			print("[StartGame] Game start validation failed!")
 			return
 		
-		rpc_start_game.rpc(my_lobby_data)
+		# CRITICAL FIX: Enable GameManager scene detection right before game start
+		if Engine.has_singleton("GameManager"):
+			GameManager.enable_game_scene_detection()
+		
+		# Start pre-game countdown instead of immediate scene change
+		print("[NetworkManager] Starting pre-game countdown...")
+		rpc_show_start_countdown.rpc(3)
 	else:
 		print("[StartGame] Only host can start the game.")
 
@@ -467,6 +473,36 @@ func _validate_game_start() -> bool:
 	print("[NetworkManager] Game start validation passed - ", players.size(), " players ready")
 	return true
 
+# Pre-game countdown system
+@rpc("authority", "call_local", "reliable")
+func rpc_show_start_countdown(countdown_seconds: int) -> void:
+	print("[NetworkManager] Starting countdown: ", countdown_seconds, " seconds")
+	emit_signal("lobby_data_changed", {"countdown": countdown_seconds, "status": "starting"})
+	
+	# Start local countdown timer
+	var countdown_timer = Timer.new()
+	add_child(countdown_timer)
+	countdown_timer.wait_time = 1.0
+	countdown_timer.timeout.connect(_on_countdown_tick.bind(countdown_seconds, countdown_timer))
+	countdown_timer.start()
+
+func _on_countdown_tick(remaining_seconds: int, timer: Timer) -> void:
+	remaining_seconds -= 1
+	
+	if remaining_seconds > 0:
+		print("[NetworkManager] Countdown: ", remaining_seconds)
+		emit_signal("lobby_data_changed", {"countdown": remaining_seconds, "status": "starting"})
+		# Continue countdown
+		timer.timeout.disconnect(_on_countdown_tick)
+		timer.timeout.connect(_on_countdown_tick.bind(remaining_seconds, timer))
+	else:
+		print("[NetworkManager] Countdown finished - starting game!")
+		timer.queue_free()
+		
+		# Only server actually starts the game
+		if multiplayer.is_server():
+			rpc_start_game.rpc(my_lobby_data)
+
 @rpc("authority", "call_local", "reliable")
 func rpc_start_game(lobby_info: Dictionary) -> void:
 	is_game_started = true
@@ -475,7 +511,9 @@ func rpc_start_game(lobby_info: Dictionary) -> void:
 	# Switch everyone to the appropriate game scene
 	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else WORLD_SCENE_PATH
 	print("[NetworkManager] Starting game - switching to scene: ", target_scene)
-	SceneChanger.change_scene_to_file(target_scene)
+	# Use Godot's built-in, reliable scene changer.
+	# This guarantees autoloads will be ready in the new scene.
+	get_tree().change_scene_to_file(target_scene)
 
 func leave_lobby() -> void:
 	multiplayer.multiplayer_peer = null
