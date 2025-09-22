@@ -47,14 +47,14 @@ func _ready():
 	# Draw grid for reference
 	_draw_grid()
 	
+	# Hide dev UI panel for normal gameplay
+	var info_panel = get_node_or_null("UI/InfoPanel")
+	if info_panel:
+		info_panel.visible = false
+		print("[DevWorld] Dev info panel hidden for gameplay")
+	
 	# Setup GameManager integration
 	_setup_game_manager()
-	
-	# Hide UI labels since we show usernames above characters
-	if players_label:
-		players_label.visible = false
-	if title_label:
-		title_label.visible = false
 	
 	# Connect NetworkManager signals
 	if NetworkManager:
@@ -285,18 +285,58 @@ func _initialize_gameplay():
 	print("[DevWorld] Starting game immediately for dev testing")
 
 func _start_game_timer():
-	"""Start the main game timer"""
+	"""Start the main game timer using lobby setting"""
 	if not has_node("GameTimer"):
 		var timer = Timer.new()
 		timer.name = "GameTimer"
-		timer.wait_time = 60.0  # 60 second match
+		
+		# Get timer setting from NetworkManager lobby data
+		var timer_duration = _parse_timer_setting()
+		timer.wait_time = timer_duration
 		timer.one_shot = true
 		timer.timeout.connect(_on_game_timer_timeout)
 		add_child(timer)
+		
+		print("[DevWorld] Game timer created with duration: ", timer_duration, " seconds")
 	
 	var timer = get_node("GameTimer")
 	timer.start()
-	print("[DevWorld] Game timer started - 60 seconds")
+	print("[DevWorld] Game timer started - ", timer.wait_time, " seconds")
+
+func _parse_timer_setting() -> float:
+	"""Parse timer setting from lobby data"""
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if not network_manager:
+		print("[DevWorld] NetworkManager not found, using default 60 seconds")
+		return 60.0
+	
+	var timer_setting = network_manager.my_lobby_data.get("timer", "Default")
+	print("[DevWorld] Parsing timer setting: ", timer_setting)
+	
+	# Parse common timer formats
+	match timer_setting:
+		"1 minute":
+			return 60.0
+		"2 minutes":
+			return 120.0
+		"3 minutes":
+			return 180.0
+		"5 minutes":
+			return 300.0
+		"10 minutes":
+			return 600.0
+		_:
+			# Try to extract number from string
+			var regex = RegEx.new()
+			regex.compile("(\\d+)")
+			var result = regex.search(str(timer_setting))
+			if result:
+				var minutes = result.get_string().to_int()
+				print("[DevWorld] Extracted ", minutes, " minutes from timer setting")
+				return minutes * 60.0
+			else:
+				print("[DevWorld] Could not parse timer setting, using default 60 seconds")
+				return 60.0
 
 func _on_game_timer_timeout():
 	"""Handle game timer timeout - Hiders win"""
@@ -506,6 +546,10 @@ func _setup_player_personal_fov(player: Node):
 func _on_game_state_changed(new_state: int):
 	"""Handle GameManager state changes"""
 	print("[DevWorld] Game state changed to: ", new_state)
+	
+	# Update GameUI with new state
+	if game_ui and game_ui.has_method("update_game_state"):
+		game_ui.update_game_state(new_state)
 	
 	# Update all players based on game state
 	for player_id in spawned_players:

@@ -474,13 +474,24 @@ func eliminate(attacker: PlayerCharacter) -> void:
 func become_ghost() -> void:
 	print(player_name, " has become a ghost!")
 	current_state = PlayerState.GHOST
+	
+	# Make ghost semi-transparent
+	animated_sprite.modulate = Color(1.0, 1.0, 1.0, 0.5)  # Semi-transparent white
+	
+	# Change vision light to cyan for ghosts
+	if vision_light:
+		vision_light.color = Color.CYAN
+	
+	# Disable collision for ghosts
+	set_collision_layer_value(1, false)
+	set_collision_mask_value(1, false)
+	
+	# Notify GameManager for win condition checking
 	var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
 	if gm and gm.has_method("check_win_conditions"):
 		gm.check_win_conditions()
-	animated_sprite.modulate = Color(0.5, 0.7, 1, 0.5)
-	vision_light.color = Color.CYAN
-	set_collision_layer_value(1, false)
-	set_collision_layer_value(3, true)
+	
+	print("[Player] ", player_name, " is now a ghost (transparent: ", animated_sprite.modulate.a, ")")
 	set_collision_mask_value(1, false)
 	set_collision_mask_value(2, true)
 	set_collision_mask_value(3, true)
@@ -746,8 +757,10 @@ func _on_game_state_changed(new_state: int) -> void:
 			elif role == PlayerRole.SEEKER: can_move = false
 			can_attack = false
 		game_manager.GameState.GAME_START_COUNTDOWN:
-			can_move = false
-			can_attack = false
+			# Legacy countdown state - Seeker can move, Hiders can't attack yet
+			if role == PlayerRole.SEEKER: can_move = true
+			elif role == PlayerRole.HIDER: can_move = true
+			can_attack = (role == PlayerRole.SEEKER)  # Only Seeker can attack during countdown
 		game_manager.GameState.IN_PROGRESS:
 			can_move = true
 			can_attack = true  # Enable attacks for both roles
@@ -756,11 +769,16 @@ func _on_game_state_changed(new_state: int) -> void:
 			can_attack = true  # Default to enabled for dev testing
 
 func _on_animated_sprite_2d_animation_finished() -> void:
+	print("[Player] Animation finished: ", animated_sprite.animation, " for ", player_name)
+	
 	if animated_sprite.animation == "death":
+		print("[Player] Death animation completed, becoming ghost...")
 		become_ghost()
 	else:
+		# Reset action state for all non-death animations
 		is_in_action = false
-		target_for_sak = null 
+		target_for_sak = null
+		print("[Player] Reset is_in_action to false for ", player_name) 
 
 func _on_animated_sprite_2d_frame_changed() -> void:
 	print("[Player] Frame changed - Animation: ", animated_sprite.animation, " Frame: ", animated_sprite.frame)

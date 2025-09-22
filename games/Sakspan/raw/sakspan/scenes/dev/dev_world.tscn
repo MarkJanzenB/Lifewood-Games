@@ -16,7 +16,7 @@ color = Color(0.2, 0.3, 0.4, 1)
 [node name="GridLines" type="Node2D" parent="."]
 
 [node name="CanvasModulate" type="CanvasModulate" parent="."]
-color = Color(0.518741, 0.519962, 0.645498, 1)
+color = Color(0.600986, 0.538828, 0.555062, 1)
 
 [node name="ObstaclesContainer" type="Node2D" parent="."]
 

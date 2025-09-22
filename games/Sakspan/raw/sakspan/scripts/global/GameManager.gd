@@ -8,9 +8,11 @@ enum GameState {
 	LOBBY,              # Players are in lobby
 	STARTING,           # Game is starting (for backward compatibility)
 	WAITING_TO_START,   # Waiting to start (for compatibility)
-	HIDER_HEADSTART,    # Hiders get a head start
-	GAME_START_COUNTDOWN, # Final countdown before game starts
-	IN_PROGRESS,        # Game is in progress
+	PRE_GAME_FREEZE,    # Phase 1: All players frozen, role announcements (5s)
+	HIDER_HEADSTART,    # Phase 2: Hiders move, Seeker blind (10s)
+	GAME_START_COUNTDOWN, # Legacy countdown state (maps to SEEKER_RELEASED)
+	SEEKER_RELEASED,    # Phase 3: Seeker released, Hiders can't attack (5s)
+	IN_PROGRESS,        # Phase 4: Full gameplay active
 	FINISHED,           # Game finished (for compatibility)
 	GAME_OVER           # Game has ended
 }
@@ -43,6 +45,7 @@ static var instance: GameManager = null
 @onready var main_timer: Timer = Timer.new()
 @onready var ammo_cooldown_timer: Timer = Timer.new()
 @onready var sak_delay_timer: Timer = Timer.new()
+@onready var phase_timer: Timer = Timer.new()  # For staged gameplay phases
 
 # Working game mechanics variables
 var current_state: GameState = GameState.LOBBY
@@ -57,15 +60,18 @@ func _enter_tree():
 	add_child(main_timer)
 	add_child(ammo_cooldown_timer)
 	add_child(sak_delay_timer)
+	add_child(phase_timer)
 	
 	main_timer.one_shot = true
 	ammo_cooldown_timer.one_shot = true
 	sak_delay_timer.one_shot = true
+	phase_timer.one_shot = true
 	
 	# Connect timer signals
 	main_timer.timeout.connect(_on_main_timer_timeout)
 	ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
 	sak_delay_timer.timeout.connect(_on_sak_delay_timer_timeout)
+	phase_timer.timeout.connect(_on_phase_timer_timeout)
 	
 	# Connect player elimination signal
 	player_eliminated.connect(on_player_eliminated)
@@ -172,18 +178,26 @@ func set_game_state(new_state: GameState) -> void:
 
 # Player management
 func on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerCharacter) -> void:
-	# This function now only handles the kill feed. The win check is separate.
+	# Generate custom kill feed messages based on roles
 	var message = ""
-	if attacker.role == PlayerCharacter.PlayerRole.SEEKER:
-		message = attacker.player_name + " bonked " + eliminated_player.player_name
-	elif attacker.role == PlayerCharacter.PlayerRole.HIDER:
-		if eliminated_player.role == PlayerCharacter.PlayerRole.SEEKER:
-			message = attacker.player_name + " just bonked " + eliminated_player.player_name
-		else:
-			message = attacker.player_name + " accidentally bonked " + eliminated_player.player_name
 	
-	if game_ui_instance and game_ui_instance.has_method("show_kill_feed"):
-		game_ui_instance.show_kill_feed(message)
+	if attacker.role == PlayerCharacter.PlayerRole.SEEKER and eliminated_player.role == PlayerCharacter.PlayerRole.HIDER:
+		# Seeker eliminates Hider
+		message = attacker.player_name + " just bonked " + eliminated_player.player_name
+	elif attacker.role == PlayerCharacter.PlayerRole.HIDER and eliminated_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		# Hider eliminates Seeker
+		message = attacker.player_name + " just KO'ed " + eliminated_player.player_name
+	elif attacker.role == PlayerCharacter.PlayerRole.HIDER and eliminated_player.role == PlayerCharacter.PlayerRole.HIDER:
+		# Hider accidentally eliminates another Hider
+		message = attacker.player_name + " was jumpscared and accidentally hit " + eliminated_player.player_name + "!!"
+	else:
+		# Fallback for any other cases
+		message = attacker.player_name + " eliminated " + eliminated_player.player_name
+	
+	print("[GameManager] Kill feed: ", message)
+	
+	# Show kill feed globally via RPC
+	_show_kill_feed.rpc(message)
 
 # Initialize game with proper role assignment and ammo
 func initialize_game() -> void:
@@ -242,9 +256,10 @@ func reset_to_lobby() -> void:
 	game_state_changed.emit(game_state)
 
 func _process(delta: float) -> void:
-	if current_state == GameState.GAME_START_COUNTDOWN:
+	# Handle legacy countdown state (now maps to SEEKER_RELEASED phase)
+	if current_state == GameState.GAME_START_COUNTDOWN or current_state == GameState.SEEKER_RELEASED:
 		if game_ui_instance and game_ui_instance.has_method("update_countdown"):
-			game_ui_instance.update_countdown(str(ceil(main_timer.time_left)), true)
+			game_ui_instance.update_countdown(str(ceil(phase_timer.time_left)), true)
 	update_ui()
 	
 	if not multiplayer.is_server():
@@ -283,15 +298,111 @@ func start_game() -> void:
 	# Initialize the game mechanics
 	initialize_game()
 	
-	# Set game state to starting
-	change_game_state(GameState.STARTING)
+	# Start Phase 1: Pre-Game Freeze (5 seconds)
+	_start_phase_1_freeze()
+
+# Phase 1: Role Assignment & Freeze (5 seconds)
+func _start_phase_1_freeze():
+	print("[GameManager] Starting Phase 1: Pre-Game Freeze (5s)")
+	change_game_state(GameState.PRE_GAME_FREEZE)
 	
-	# Start countdown
-	var countdown = int(game_start_delay)
-	game_starting.emit(countdown)
+	# Freeze all players
+	_set_all_players_movement(false)
+	_set_all_players_attack(false)
 	
-	# Notify all clients to start the game
-	rpc("_rpc_start_game", countdown)
+	# Show role announcements to all clients
+	_show_role_announcements.rpc()
+	
+	# Start 5-second timer for Phase 1
+	phase_timer.wait_time = 5.0
+	phase_timer.start()
+
+# Phase 2: Hider Head Start & Seeker Blindness (10 seconds)
+func _start_phase_2_hider_headstart():
+	print("[GameManager] Starting Phase 2: Hider Head Start (10s)")
+	change_game_state(GameState.HIDER_HEADSTART)
+	
+	# Enable movement for Hiders only
+	_set_hiders_movement(true)
+	_set_seekers_movement(false)
+	
+	# Blind the Seeker
+	_activate_seeker_blindness.rpc()
+	
+	# Show countdown to all players
+	_show_countdown.rpc(10)
+	
+	# Start 10-second timer for Phase 2
+	phase_timer.wait_time = 10.0
+	phase_timer.start()
+
+# Phase 3: Seeker Release & Hider Attack Delay (5 seconds)
+func _start_phase_3_seeker_released():
+	print("[GameManager] Starting Phase 3: Seeker Released (5s)")
+	change_game_state(GameState.SEEKER_RELEASED)
+	
+	# Enable Seeker movement and vision
+	_set_seekers_movement(true)
+	_deactivate_seeker_blindness.rpc()
+	
+	# Keep Hider attacks disabled
+	_set_hiders_attack(false)
+	_set_seekers_attack(true)
+	
+	# Show announcement
+	_show_announcement.rpc("The Seeker is on the move!")
+	
+	# Start 5-second timer for Phase 3
+	phase_timer.wait_time = 5.0
+	phase_timer.start()
+
+# Phase 4: Full Gameplay Begins
+func _start_phase_4_full_gameplay():
+	print("[GameManager] Starting Phase 4: Full Gameplay")
+	change_game_state(GameState.IN_PROGRESS)
+	
+	# Enable all abilities for all players
+	_set_all_players_movement(true)
+	_set_all_players_attack(true)
+	
+	# Show role-specific announcements
+	_show_seeker_warning.rpc()
+	_show_hider_warning.rpc()
+	
+	# Start main game timer (if needed)
+	match_start_time = Time.get_time_dict_from_system()["unix"]
+
+# Phase timer timeout handler
+func _on_phase_timer_timeout():
+	if not multiplayer.is_server():
+		return
+	
+	match current_state:
+		GameState.PRE_GAME_FREEZE:
+			_start_phase_2_hider_headstart()
+		GameState.HIDER_HEADSTART:
+			_start_phase_3_seeker_released()
+		GameState.SEEKER_RELEASED:
+			_start_phase_4_full_gameplay()
+
+# Player control helper functions
+func _set_all_players_movement(enabled: bool):
+	_set_players_movement_by_role.rpc("all", enabled)
+
+func _set_all_players_attack(enabled: bool):
+	_set_players_attack_by_role.rpc("all", enabled)
+
+func _set_hiders_movement(enabled: bool):
+	_set_players_movement_by_role.rpc("hider", enabled)
+
+func _set_seekers_movement(enabled: bool):
+	_set_players_movement_by_role.rpc("seeker", enabled)
+
+func _set_hiders_attack(enabled: bool):
+	_set_players_attack_by_role.rpc("hider", enabled)
+
+func _set_seekers_attack(enabled: bool):
+	_set_players_attack_by_role.rpc("seeker", enabled)
 
 func end_game(winning_team: String) -> void:
 	if not multiplayer.is_server():
@@ -318,9 +429,10 @@ func change_game_state(new_state: GameState) -> void:
 				game_ui_instance.update_status("Hiders, GO! Seeker is frozen.", true)
 			main_timer.start(5.0)
 		GameState.GAME_START_COUNTDOWN:
+			# Legacy state - redirect to SEEKER_RELEASED behavior
 			if game_ui_instance and game_ui_instance.has_method("update_status"):
-				game_ui_instance.update_status("", false)
-				game_ui_instance.update_countdown("10", true)
+				game_ui_instance.update_status("The Seeker is on the move!", true)
+				game_ui_instance.update_countdown("5", true)
 			main_timer.start(10.0)
 		GameState.IN_PROGRESS:
 			if game_ui_instance and game_ui_instance.has_method("update_status"):
@@ -556,6 +668,141 @@ func execute_player_sak(attacker_id: int, target_id: int) -> void:
 	if attacker and target:
 		attacker.execute_sak_attack(target)
 
+# === STAGED GAMEPLAY RPCs ===
+
+@rpc("authority", "call_local", "reliable")
+func _show_role_announcements():
+	"""Show role announcements to all clients"""
+	print("[GameManager] Showing role announcements")
+	# Find local player and show their role
+	var local_player = _get_local_player()
+	if local_player and local_player.has_method("show_role_overlay"):
+		local_player.show_role_overlay()
+
+@rpc("authority", "call_local", "reliable")
+func _set_players_movement_by_role(role_filter: String, enabled: bool):
+	"""Set movement for players by role"""
+	var local_player = _get_local_player()
+	if not local_player:
+		return
+	
+	var should_apply = false
+	if role_filter == "all":
+		should_apply = true
+	elif role_filter == "seeker" and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		should_apply = true
+	elif role_filter == "hider" and local_player.role == PlayerCharacter.PlayerRole.HIDER:
+		should_apply = true
+	
+	if should_apply:
+		local_player.can_move = enabled
+		print("[GameManager] Set movement to ", enabled, " for ", role_filter, " (local player)")
+
+@rpc("authority", "call_local", "reliable")
+func _set_players_attack_by_role(role_filter: String, enabled: bool):
+	"""Set attack ability for players by role"""
+	var local_player = _get_local_player()
+	if not local_player:
+		return
+	
+	var should_apply = false
+	if role_filter == "all":
+		should_apply = true
+	elif role_filter == "seeker" and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		should_apply = true
+	elif role_filter == "hider" and local_player.role == PlayerCharacter.PlayerRole.HIDER:
+		should_apply = true
+	
+	if should_apply:
+		local_player.can_attack = enabled
+		print("[GameManager] Set attack to ", enabled, " for ", role_filter, " (local player)")
+
+@rpc("authority", "call_local", "reliable")
+func _activate_seeker_blindness():
+	"""Activate blindness UI for Seeker clients"""
+	var local_player = _get_local_player()
+	if local_player and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		print("[GameManager] Activating Seeker blindness")
+		# Add blindness overlay to Seeker's UI
+		_create_blindness_overlay()
+
+@rpc("authority", "call_local", "reliable")
+func _deactivate_seeker_blindness():
+	"""Deactivate blindness UI for Seeker clients"""
+	var local_player = _get_local_player()
+	if local_player and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		print("[GameManager] Deactivating Seeker blindness")
+		# Remove blindness overlay
+		_remove_blindness_overlay()
+
+@rpc("authority", "call_local", "reliable")
+func _show_countdown(seconds: int):
+	"""Show countdown timer to all players"""
+	print("[GameManager] Showing countdown: ", seconds, " seconds")
+	# This would integrate with the GameUI to show countdown
+
+@rpc("authority", "call_local", "reliable")
+func _show_announcement(message: String):
+	"""Show announcement to all players"""
+	print("[GameManager] Announcement: ", message)
+	# This would integrate with the GameUI to show announcement
+
+@rpc("authority", "call_local", "reliable")
+func _show_seeker_warning():
+	"""Show Seeker-specific warning"""
+	var local_player = _get_local_player()
+	if local_player and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
+		print("[GameManager] Seeker warning: Hiders can now 'Sak'! Be wary.")
+		# Show warning in UI
+
+@rpc("authority", "call_local", "reliable")
+func _show_hider_warning():
+	"""Show Hider-specific warning"""
+	var local_player = _get_local_player()
+	if local_player and local_player.role == PlayerCharacter.PlayerRole.HIDER:
+		print("[GameManager] Hider warning: You can now 'Sak'! Be careful not to hit other Hiders.")
+		# Show warning in UI
+
+# Helper functions for staged gameplay
+func _get_local_player() -> PlayerCharacter:
+	"""Get the local player instance"""
+	var players_in_scene = get_tree().get_nodes_in_group("players")
+	for player in players_in_scene:
+		if player.is_multiplayer_authority():
+			return player as PlayerCharacter
+	return null
+
+func _create_blindness_overlay():
+	"""Create black overlay for Seeker blindness"""
+	var blindness_overlay = ColorRect.new()
+	blindness_overlay.name = "SeekerBlindnessOverlay"
+	blindness_overlay.color = Color.BLACK
+	blindness_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	blindness_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# Add to the main scene
+	get_tree().current_scene.add_child(blindness_overlay)
+
+func _remove_blindness_overlay():
+	"""Remove Seeker blindness overlay"""
+	var overlay = get_tree().current_scene.get_node_or_null("SeekerBlindnessOverlay")
+	if overlay:
+		overlay.queue_free()
+
+@rpc("authority", "call_local", "reliable")
+func _show_kill_feed(message: String):
+	"""Show kill feed message to all clients"""
+	print("[GameManager] Kill feed message: ", message)
+	
+	# Find GameUI instance and show kill feed
+	if game_ui_instance and game_ui_instance.has_method("show_kill_feed"):
+		game_ui_instance.show_kill_feed(message)
+	else:
+		# Fallback: try to find dev_game_ui
+		var dev_ui = get_tree().current_scene.get_node_or_null("GameUI")
+		if dev_ui and dev_ui.has_method("show_kill_feed"):
+			dev_ui.show_kill_feed(message)
+
 @rpc("any_peer", "reliable")
 func create_projectile(player_id: int, position: Vector2, rotation: float) -> void:
 	if not multiplayer.is_server():
@@ -628,8 +875,9 @@ func _get_player_by_id(player_id: int) -> PlayerCharacter:
 # --- SIGNAL HANDLERS ---
 
 func _on_main_timer_timeout() -> void:
+	# Legacy timer handler - integrate with new staged system
 	if current_state == GameState.HIDER_HEADSTART:
-		change_game_state(GameState.GAME_START_COUNTDOWN)
+		change_game_state(GameState.GAME_START_COUNTDOWN)  # Legacy transition
 	elif current_state == GameState.GAME_START_COUNTDOWN:
 		change_game_state(GameState.IN_PROGRESS)
 

@@ -429,9 +429,43 @@ func all_players_ready() -> bool:
 func start_game() -> void:
 	# Host triggers the actual game start; server instructs all peers
 	if multiplayer.is_server():
+		# Validate game can start
+		if not _validate_game_start():
+			print("[StartGame] Game start validation failed!")
+			return
+		
 		rpc_start_game.rpc(my_lobby_data)
 	else:
 		print("[StartGame] Only host can start the game.")
+
+func _validate_game_start() -> bool:
+	"""Validate that the game can start with current player setup"""
+	print("[NetworkManager] Validating game start conditions...")
+	
+	# Check minimum player count
+	if players.size() < 2:
+		print("[NetworkManager] Not enough players (need at least 2, have ", players.size(), ")")
+		return false
+	
+	# Check all players are ready (have character selected)
+	var ready_count = 0
+	for player_id in players:
+		var char_index = int(players[player_id].get("char_index", -1))
+		if char_index >= 0:
+			ready_count += 1
+	
+	if ready_count != players.size():
+		print("[NetworkManager] Not all players ready (", ready_count, "/", players.size(), ")")
+		return false
+	
+	# Validate role assignment will work
+	# For hide and seek, we need at least 1 seeker and 1 hider
+	if players.size() < 2:
+		print("[NetworkManager] Need at least 2 players for hide and seek")
+		return false
+	
+	print("[NetworkManager] Game start validation passed - ", players.size(), " players ready")
+	return true
 
 @rpc("authority", "call_local", "reliable")
 func rpc_start_game(lobby_info: Dictionary) -> void:

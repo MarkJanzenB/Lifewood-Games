@@ -1,17 +1,15 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=3 format=3 uid="uid://bytds5q1o3omw"]
 
-[ext_resource type="Script" path="res://scripts/dev/dev_test.gd" id="1_6j6xv"]
-[ext_resource type="PackedScene" path="res://scenes/dev/diagnostics_panel.tscn" id="2_diag"]
+[ext_resource type="Script" uid="uid://he80jcb656n7" path="res://scripts/dev/dev_test.gd" id="1_6j6xv"]
+[ext_resource type="PackedScene" uid="uid://djmfschdqisq2" path="res://scenes/dev/diagnostics_panel.tscn" id="2_diag"]
 
 [node name="DevTest" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1_6j6xv")
 
 [node name="Panel" type="Panel" parent="."]
@@ -23,16 +21,13 @@ offset_left = 8.0
 offset_top = 8.0
 offset_right = -8.0
 offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="Margin" type="MarginContainer" parent="Panel"]
 layout_mode = 2
-anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-custom_constants/margin_left = 12
-custom_constants/margin_top = 12
-custom_constants/margin_right = 12
-custom_constants/margin_bottom = 12
 
 [node name="VBox" type="VBoxContainer" parent="Panel/Margin"]
 layout_mode = 2
@@ -87,8 +82,10 @@ size_flags_vertical = 3
 [node name="Log" type="RichTextLabel" parent="Panel/Margin/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
-bbcode_enabled = false
+text = "[DevTest] Logs will appear here...
+Use W/A/S/D to send input logs via server."
 scroll_following = true
-text = "[DevTest] Logs will appear here...\nUse W/A/S/D to send input logs via server."
 
 [node name="DiagnosticsPanel" parent="." instance=ExtResource("2_diag")]
+layout_mode = 0
+anchors_preset = 0
