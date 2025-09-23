@@ -8,14 +8,21 @@ extends Control
 @onready var quit_button: Button = get_node_or_null("CenterContainer/MenuVBox/ButtonsVBox/quit_button")
 
 func _ready() -> void:
-	# Check Audio
+	# Start background music
+	MusicManager.force_start_main_theme()
+	
+	# Set audio bus for UI sounds
+	if single_click_effect:
+		single_click_effect.bus = "UI"
+	
+	# Check Audio - use the correct sound file
 	if single_click_effect and not single_click_effect.stream:
-		# Corrected path for fallback sound effect. Ensure this path is correct.
-		var fallback := load("res://assets/sound_effects/single_click.mp3")
-		if fallback:
-			single_click_effect.stream = fallback
+		# Load the actual click effect file
+		var click_sound := load("res://assets/sound_effects/single_click_effect.mp3")
+		if click_sound:
+			single_click_effect.stream = click_sound
 		else:
-			push_warning("[MainMenu] Fallback 'single_click.mp3' not found at 'res://assets/sound_effects/single_click.mp3'.")
+			push_warning("[MainMenu] 'single_click_effect.mp3' not found.")
 	elif not single_click_effect:
 		push_warning("[MainMenu] Missing 'single_click_effect' AudioStreamPlayer node.")
 
@@ -51,7 +58,7 @@ func _on_options_button_pressed() -> void:
 	# You need to replace "res://scenes/UI/Options/options_menu.tscn" with the actual path
 	# to your options menu scene file.
 	# If this scene doesn't exist, Godot will print an error to the Output panel.
-	SceneChanger.change_scene_to_file("res://scenes/UI/Options/options_menu.tscn")
+	SceneChanger.change_scene_to_file("res://scenes/UI/Options/options.tscn")
 
 
 func _on_quit_button_pressed() -> void:

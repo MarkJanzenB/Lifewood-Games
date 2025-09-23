@@ -20,6 +20,8 @@ config/icon="res://icon.svg"
 GameManager="*res://scripts/global/GameManager.gd"
 NetworkManager="*res://scripts/global/NetworkManager.gd"
 SceneChanger="*res://scripts/global/SceneChanger.gd"
+AudioManager="*res://scripts/AudioManager.gd"
+MusicManager="*res://scripts/global/MusicManager.gd"
 
 [display]
 

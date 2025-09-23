@@ -13,6 +13,7 @@ extends Control
 @onready var start_game_button: Button = $PanelContainer/MarginContainer/VBoxContainer/StartGameButton
 #@onready var dev_test_button: Button = $PanelContainer/MarginContainer/VBoxContainer/DevTestButton
 @onready var leave_lobby_button: Button = $PanelContainer/MarginContainer/VBoxContainer/LeaveLobbyButton
+@onready var click_sound: AudioStreamPlayer = $ClickSound
 var _heartbeat_timer := Timer.new()
 
 # --- RESOURCES ---
@@ -47,6 +48,9 @@ var _my_peer_id: int
 var _my_temp_selection_index: int = -1
 
 func _ready():
+	# Start background music
+	MusicManager.force_start_main_theme()
+	
 	var game_manager = get_node_or_null("/root/GameManager")
 	if game_manager and game_manager.has_method("reset_to_lobby"):
 		game_manager.reset_to_lobby()
@@ -314,6 +318,7 @@ func _update_start_game_button():
 
 # --- BUTTON PRESS AND NETWORKING ---
 func _on_lock_in_button_pressed():
+	_play_click()
 	# Toggle behavior: Lock in -> Unlock, Unlock -> Lock in
 	if not locked_in:
 		if selected_char_index == -1: 
@@ -446,6 +451,7 @@ func _update_selection_label_from_players(players: Dictionary):
 		selection_label.text = ", ".join(entries)
 
 func _on_start_game_button_pressed():
+	_play_click()
 	if is_host:
 		print("[LobbyWaitRoom] Start Game pressed by host. Sending RPC...")
 		NetworkManager.start_game()
@@ -471,8 +477,14 @@ func _on_game_started(_player_data):
 	get_tree().change_scene_to_file(target_scene)
 
 func _on_leave_lobby_button_pressed():
+	_play_click()
 	NetworkManager.leave_lobby()
 	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+
+func _play_click() -> void:
+	if click_sound and click_sound.stream:
+		click_sound.stop()
+		click_sound.play()
 
 
 # --- OPTIONAL INITIALIZER CALLED BY SceneChanger ---

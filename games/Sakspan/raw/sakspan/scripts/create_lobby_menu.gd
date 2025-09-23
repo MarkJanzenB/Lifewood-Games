@@ -8,12 +8,16 @@ extends Control
 @onready var game_timer_option: OptionButton = $FormPanel/FormMargin/FormVBox/GameTimerHBox/GameTimerOptionButton
 @onready var create_button: Button = $FormPanel/FormMargin/FormVBox/create_lobby_button
 @onready var back_button: Button = $FormPanel/FormMargin/FormVBox/back_button
+@onready var click_sound: AudioStreamPlayer = $ClickSound
 
 # --- CONSTANTS FOR CHOICES ---
 const MAX_PLAYER_CHOICES = [2, 3, 4, 5]
 const TIMER_CHOICES = ["2 minutes", "5 minutes", "10 minutes"]
 
 func _ready():
+	# Start background music
+	MusicManager.force_start_main_theme()
+	
 	# Connect signals to their functions
 	create_button.pressed.connect(_on_create_button_pressed)
 	back_button.pressed.connect(_on_back_button_pressed)
@@ -37,6 +41,7 @@ func _populate_options():
 	game_timer_option.select(1) # Index 1 corresponds to "5 minutes"
 
 func _on_create_button_pressed():
+	_play_click()
 	# Get player name from NetworkManager (persisted from Multiplayer Menu)
 	var player_name = NetworkManager.get_local_player_name()
 	if player_name.is_empty():
@@ -53,8 +58,14 @@ func _on_create_button_pressed():
 	NetworkManager.create_lobby(player_name, lobby_name, max_players, timer_setting)
 
 func _on_back_button_pressed():
+	_play_click()
 	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
 
 func _on_connection_succeeded():
 	var init := {"lobby_info": NetworkManager.my_lobby_data, "is_host": true}
 	SceneChanger.change_scene_to_file("res://scenes/UI/Lobby_Wait_Room/lobby_wait_room_menu.tscn", init)
+
+func _play_click() -> void:
+	if click_sound and click_sound.stream:
+		click_sound.stop()
+		click_sound.play()
