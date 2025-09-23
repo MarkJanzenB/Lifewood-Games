@@ -12,12 +12,7 @@ offset_right = 1000.0
 offset_bottom = 1000.0
 color = Color(0.2, 0.3, 0.4, 1)
 
-[node name="PlayerContainer" type="Node2D" parent="." groups=["players_container"]]
-
-[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("uid://b5w5d5f5g5h5")
-spawn_path = NodePath("../PlayerContainer")
-spawn_limit = 8
+[node name="PlayerContainer" type="Node2D" parent="."]
 
 [node name="UI" type="CanvasLayer" parent="."]
 

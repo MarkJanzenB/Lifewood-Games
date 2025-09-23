@@ -2,7 +2,7 @@
 extends Node
 class_name CharacterFactory
 
-const BASE_PLAYER_SCENE = preload("res://scenes/player.tscn")
+const BASE_PLAYER_SCENE = preload("res://scenes/player/Player.tscn")
 
 const CHARACTER_NAMES = ["Pink", "Red", "Blue", "Green", "Yellow"]
 const CHARACTER_COLORS = [Color.MAGENTA, Color.RED, Color.BLUE, Color.GREEN, Color.YELLOW]

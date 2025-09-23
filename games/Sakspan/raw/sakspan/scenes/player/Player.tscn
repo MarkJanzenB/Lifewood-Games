@@ -392,9 +392,9 @@ debug_color = Color(1, 1, 1, 0.42)
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 light_mask = 2
-scale = Vector2(1, 1.03082)
+scale = Vector2(0.987101, 0.958576)
 sprite_frames = SubResource("SpriteFrames_ibah8")
-animation = &"seeker_bang"
+animation = &"back_walk"
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(1.33333, -0.666667)
@@ -427,15 +427,6 @@ shape = SubResource("CircleShape2D_fjrip")
 
 [node name="Muzzle" type="Marker2D" parent="."]
 position = Vector2(8, 1)
-
-[node name="NameLabel" type="Label" parent="."]
-offset_left = -23.0
-offset_top = -41.3333
-offset_right = 26.0
-offset_bottom = -18.3333
-size_flags_horizontal = 4
-theme_override_font_sizes/font_size = 5
-horizontal_alignment = 1
 
 [connection signal="animation_finished" from="AnimatedSprite2D" to="." method="_on_animated_sprite_2d_animation_finished"]
 [connection signal="frame_changed" from="AnimatedSprite2D" to="." method="_on_animated_sprite_2d_frame_changed"]

@@ -9,7 +9,8 @@ signal game_started(player_data)
 signal lobby_data_changed(lobby_data)
 signal player_joined(player_id: int, player_data: Dictionary)
 signal player_left(player_id: int)
-signal game_world_ready  # CRITICAL: Signal for GameManager initialization
+signal game_world_ready
+signal all_peers_verified_and_ready  # CRITICAL: Signal for GameManager initialization
 
 # Master list of all players in the lobby/game.
 # Structure: {1: {"name": "HostName", "ready": false, "char_index": -1}, 54321: {"name": "ClientName", "ready": false, "char_index": -1}}
@@ -18,6 +19,9 @@ var my_lobby_data: Dictionary = {}  # Lobby metadata storage
 var is_game_started: bool = false  # Add game state tracking
 var local_player_name: String = ""  # Stored name picked on the Multiplayer menu
 var game_scene_loaded: bool = false
+
+# SYNCHRONIZATION BARRIER: Track which peers have loaded the scene
+var ready_peers: Array = []
 
 const DEFAULT_PORT: int = 8080
 const ALTERNATIVE_PORTS: Array[int] = [8080, 7777, 9999, 12345, 25565]
@@ -428,18 +432,21 @@ func all_players_ready() -> bool:
 	return true
 
 func start_game() -> void:
-	# Host triggers the actual game start; server instructs all peers
+	# DEFINITIVE SYNCHRONIZATION BARRIER: Host triggers scene loading and resets checklist
 	if multiplayer.is_server():
 		# Validate game can start
 		if not _validate_game_start():
-			print("[StartGame] Game start validation failed!")
+			print("[NetworkManager] Game cannot start - validation failed")
 			return
 		
-		# GameManager now handles its own scene detection - no external configuration needed
+		print("[NetworkManager] Starting game. Resetting readiness checklist.")
 		
-		# Start pre-game countdown instead of immediate scene change
-		print("[NetworkManager] Starting pre-game countdown...")
-		rpc_show_start_countdown.rpc(3)
+		# IMPORTANT: Reset the checklist before starting
+		ready_peers.clear()
+		print("[NetworkManager] 📋 Expecting ", players.size(), " peers to report readiness")
+		
+		# Tell all peers to load the world
+		rpc_load_world.rpc()
 	else:
 		print("[StartGame] Only host can start the game.")
 
@@ -502,22 +509,67 @@ func _on_countdown_tick(remaining_seconds: int, timer: Timer) -> void:
 		if multiplayer.is_server():
 			rpc_start_game.rpc(my_lobby_data)
 
-@rpc("authority", "call_local", "reliable")
-func rpc_start_game(lobby_info: Dictionary) -> void:
+# SCENE-DRIVEN INITIALIZATION: Simple scene loader
+@rpc("any_peer", "call_local", "reliable")
+func rpc_load_world() -> void:
+	print("[NetworkManager] 🌍 SCENE-DRIVEN: Loading world scene...")
 	is_game_started = true
 	game_scene_loaded = false
 	emit_signal("game_started", players)
-	# Switch everyone to the appropriate game scene
+	
 	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else WORLD_SCENE_PATH
-	print("[NetworkManager] Starting game - switching to scene: ", target_scene)
-	
-	# CRITICAL FIX: Connect scene change detection before changing scene
-	if multiplayer.is_server():
-		get_tree().tree_changed.connect(_on_scene_changed, CONNECT_ONE_SHOT)
-	
-	# Use Godot's built-in, reliable scene changer.
-	# This guarantees autoloads will be ready in the new scene.
+	print("[NetworkManager] 📡 Switching to scene: ", target_scene)
 	get_tree().change_scene_to_file(target_scene)
+
+# DEFINITIVE SYNCHRONIZATION BARRIER: RPC called by dev_world.gd when scene is ready
+# The decorator MUST allow the server to call it on itself
+@rpc("any_peer", "call_local", "reliable")
+func report_readiness(peer_id: int) -> void:
+	# This function only executes on the server
+	if not multiplayer.is_server():
+		return
+	
+	if not peer_id in ready_peers:
+		ready_peers.append(peer_id)
+		print("[NetworkManager] Peer ", peer_id, " checked in. (", ready_peers.size(), "/", players.size(), ")")
+	
+	# Check if the list is full
+	if ready_peers.size() == players.size():
+		print("[NetworkManager] ✅ All peers are ready. Beginning spawn sequence.")
+		
+		# Define staggered spawn points to prevent overlapping
+		var spawn_points = [
+			Vector2(200, 0),
+			Vector2(-200, 0), 
+			Vector2(0, 200),
+			Vector2(0, -200),
+			Vector2(150, 150),
+			Vector2(-150, 150),
+			Vector2(150, -150),
+			Vector2(-150, -150)
+		]
+		
+		# Spawn players on all clients with staggered positions
+		var spawn_index = 0
+		for player_id in players.keys():
+			var player_data = players[player_id]
+			var spawn_position = spawn_points[spawn_index % spawn_points.size()]
+			print("[NetworkManager] 📡 Spawning player ", player_id, " (", player_data.name, ") at ", spawn_position)
+			rpc_spawn_player_instance.rpc(player_id, player_data, spawn_position)
+			spawn_index += 1
+		
+		# Wait one frame for the spawn RPCs to be processed
+		await get_tree().process_frame
+		
+		# Now, with 100% certainty, the world is ready
+		print("[NetworkManager] 🚀 Emitting all_peers_verified_and_ready signal")
+		all_peers_verified_and_ready.emit()
+
+# DEPRECATED: Old functions replaced by scene-driven pattern
+@rpc("authority", "call_local", "reliable")
+func rpc_start_game(lobby_info: Dictionary) -> void:
+	print("[NetworkManager] ⚠️ DEPRECATED: rpc_start_game called - using scene-driven pattern instead")
+	rpc_load_world()
 
 func leave_lobby() -> void:
 	# Change the scene FIRST, while the peer is still valid
@@ -670,64 +722,48 @@ func get_spawn_data() -> Dictionary:
 		index += 1
 	return spawn_data
 
-# DEFINITIVE FIX: Scene change detection and authoritative player spawning
-func _on_scene_changed() -> void:
-	if not multiplayer.is_server(): return
-	var current_scene = get_tree().current_scene
-	if not current_scene: return
-	
-	if current_scene.scene_file_path == DEV_TEST_SCENE_PATH or current_scene.scene_file_path == WORLD_SCENE_PATH:
-		print("[NetworkManager] 🎯 Game world scene loaded: ", current_scene.scene_file_path)
-		await get_tree().create_timer(0.2).timeout # Wait for all clients to finish loading
-		
-		print("[NetworkManager] 👥 Sending spawn commands for ", players.size(), " players to ALL clients...")
-		for player_id in players.keys():
-			var player_data = players[player_id]
-			print("[NetworkManager] 📡 RPC: Spawn player ", player_id, " (", player_data.name, ") on all clients")
-			rpc_spawn_player.rpc(player_id, player_data)
-		
-		await get_tree().create_timer(0.1).timeout # Wait for RPCs to complete
-		
-		print("[NetworkManager] 🚀 All spawn commands sent. Emitting game_world_ready signal")
-		game_world_ready.emit()
-	else:
-		print("[NetworkManager] Scene changed to non-game scene: ", current_scene.scene_file_path)
-
-# DEFINITIVE FIX: Authoritative RPC player spawning on all clients
+# DEFINITIVE SYNCHRONIZATION BARRIER: Spawn player instances (guaranteed scene readiness)
 @rpc("any_peer", "call_local", "reliable")
-func rpc_spawn_player(player_id: int, player_data: Dictionary) -> void:
-	print("[NetworkManager] 🎭 CLIENT: Spawning player ", player_id, " (", player_data.name, ")")
+func rpc_spawn_player_instance(player_id: int, player_data: Dictionary, spawn_position: Vector2) -> void:
+	print("[NetworkManager] 🎭 Spawning player ", player_id, " (", player_data.name, ") at ", spawn_position, " on peer ", multiplayer.get_unique_id())
 	var current_scene = get_tree().current_scene
-	if not current_scene: return
 	
-	var player_container = current_scene.find_child("PlayersContainer", true, false)
-	if not player_container:
-		player_container = Node2D.new()
-		player_container.name = "PlayersContainer"
-		player_container.add_to_group("players_container")
-		current_scene.add_child(player_container)
-		print("[NetworkManager] CLIENT: Created PlayersContainer node")
-	
-	var existing_player = player_container.find_child(str(player_id), false, false)
-	if existing_player:
-		print("[NetworkManager] CLIENT: Player ", player_id, " already exists, skipping")
+	# The scene is now guaranteed to exist because of the synchronization barrier
+	if not current_scene: 
+		push_error("[NetworkManager] FATAL: No current scene after synchronization barrier!")
 		return
 	
-	var player_scene = load("res://scenes/player/Player.tscn")
-	if not player_scene: return
+	var player_container = current_scene.find_child("PlayerContainer", true, false)
+	if not player_container:
+		push_error("[NetworkManager] Spawn failed on peer ", multiplayer.get_unique_id(), ": PlayerContainer not found!")
+		return
 	
-	var player_instance = player_scene.instantiate()
+	# Prevent duplicates
+	if player_container.has_node(str(player_id)):
+		print("[NetworkManager] Player ", player_id, " already exists, skipping")
+		return
+	
+	var player_scene_resource = load("res://scenes/player/Player.tscn")
+	if not player_scene_resource: 
+		push_error("[NetworkManager] Failed to load player scene!")
+		return
+	
+	var player_instance = player_scene_resource.instantiate()
 	player_instance.name = str(player_id)
-	player_instance.add_to_group("player")
-	player_instance.set_multiplayer_authority(player_id)
+	player_instance.add_to_group("player")  # CRITICAL: Add to group for GameManager
 	player_container.add_child(player_instance, true)
 	
-	var spawn_points: Array[Vector2] = [Vector2(100, 0), Vector2(-100, 0), Vector2(0, 100), Vector2(0, -100)]
-	var spawn_index = player_id % spawn_points.size()
-	player_instance.global_position = spawn_points[spawn_index]
+	# CRITICAL: Set multiplayer authority AFTER adding to scene tree
+	player_instance.set_multiplayer_authority(player_id)
+	
+	# SET THE STAGGERED SPAWN POSITION (no more overlapping!)
+	player_instance.global_position = spawn_position
 	
 	if player_instance.has_method("setup_multiplayer_player"):
 		var is_local = (player_id == multiplayer.get_unique_id())
 		player_instance.setup_multiplayer_player(player_data, is_local)
 	
-	print("[NetworkManager] ✅ CLIENT: Player ", player_id, " spawned successfully at ", player_instance.global_position)
+	print("[NetworkManager] ✅ Player ", player_id, " spawned successfully at ", spawn_position, " on peer ", multiplayer.get_unique_id())
+
+# REMOVED: Old confirm_all_players_are_in_scene() function
+# Replaced by synchronization barrier pattern in report_readiness()

@@ -1,4 +1,4 @@
-[gd_scene load_steps=52 format=3 uid="uid://c4e6jku2f1hj8"]
+[gd_scene load_steps=52 format=3 uid="uid://c5i6ka1xh44eb"]
 
 [ext_resource type="Script" uid="uid://dbipxepmrkfqw" path="res://scripts/player.gd" id="1_tuyoq"]
 [ext_resource type="Texture2D" uid="uid://c0xrcda5p33ew" path="res://sprites/Pink_Monster/Pink_Monster_Climb_4.png" id="2_fjrip"]

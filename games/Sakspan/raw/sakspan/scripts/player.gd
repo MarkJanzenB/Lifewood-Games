@@ -49,6 +49,8 @@ var target_for_sak: PlayerCharacter = null
 var is_dying: bool = false
 var can_move: bool = false  # Controlled by GameManager
 var can_attack: bool = false  # Controlled by GameManager
+var can_sak: bool = false  # Controlled by GameManager - separate SAK control
+var max_ammo: int = 0  # Maximum ammo capacity (set by GameManager)
 
 # Username display
 var username_label: Label = null
@@ -325,6 +327,11 @@ func _eliminate_target_direct(target: PlayerCharacter) -> void:
 func _physics_process(delta: float):
 	if is_dying: return
 	
+	# SAFETY GUARD: If there is no peer assigned for any reason, do nothing this frame
+	# This prevents the "Unable to get unique ID" crash during spawn conflicts
+	if multiplayer.get_unique_id() == 0:
+		return
+	
 	# Only the multiplayer authority simulates input and movement
 	if is_multiplayer_authority():
 		handle_movement()
@@ -363,18 +370,62 @@ func set_player_state(p_can_move: bool, p_can_attack: bool) -> void:
 
 # This is the single, authoritative function for setting a player's role.
 @rpc("any_peer", "call_local", "reliable")
-func assign_role(new_role: PlayerRole) -> void:
+func assign_role(new_role: PlayerRole, max_ammo: int = 0) -> void:
 	self.role = new_role
+	
+	# Role-specific setup
 	if self.role == PlayerRole.SEEKER:
 		add_to_group("seeker")
+		remove_from_group("hider")  # Ensure clean group membership
+		self.ammo = 0  # Start with 0 ammo, must regenerate to full capacity before attacking
+		self.max_ammo = max_ammo
+		print("[Player] ", player_name, " assigned as SEEKER with max ammo capacity: ", max_ammo)
+		print("[Player] ", player_name, " must regenerate to full ammo (", max_ammo, ") before attacking")
 	else:
 		add_to_group("hider")
+		remove_from_group("seeker")  # Ensure clean group membership
+		self.ammo = 0  # Hiders don't use ammo
+		self.max_ammo = 0
+		print("[Player] ", player_name, " assigned as HIDER")
 
 @rpc("any_peer", "call_local", "reliable")
 func set_ammo(new_ammo: int) -> void:
 	"""RPC to set player ammo - called by server during gameplay"""
 	self.ammo = new_ammo
 	print("[Player] Ammo updated: ", ammo)
+
+# New enhanced control system for game states
+@rpc("any_peer", "call_local", "reliable")
+func set_game_state_controls(p_can_move: bool, p_can_attack: bool, p_can_sak: bool) -> void:
+	"""Enhanced control system with separate SAK control"""
+	self.can_move = p_can_move
+	self.can_attack = p_can_attack
+	self.can_sak = p_can_sak
+	print("[Player] Controls updated for ", player_name, " - Move: ", can_move, " Attack: ", can_attack, " SAK: ", can_sak)
+
+# Ammo regeneration system
+@rpc("any_peer", "call_local", "reliable")
+func regenerate_ammo(max_capacity: int) -> void:
+	"""Regenerate 1 ammo stone per second until max capacity"""
+	if role != PlayerRole.SEEKER:
+		return
+	
+	if ammo < max_capacity:
+		ammo += 1
+		print("[Player] Ammo regenerated: ", ammo, "/", max_capacity)
+		
+		# Update seeker attack capability based on ammo
+		if ammo >= max_capacity:
+			print("[Player] 🎯 SEEKER READY: Full ammo capacity reached - attacks enabled!")
+		else:
+			print("[Player] ⏳ SEEKER CHARGING: ", (max_capacity - ammo), " more stones needed")
+	
+	# Sync ammo to all clients
+	set_ammo.rpc(ammo)
+
+# Helper function for GameManager to get player role
+func get_role() -> int:
+	return int(role)
 
 # This is the single, authoritative function for managing the Seeker's blindness.
 @rpc("any_peer", "call_local", "reliable")
@@ -422,10 +473,7 @@ func _input(event: InputEvent) -> void:
 	# Handle fire input (both mouse and keyboard)
 	if Input.is_action_just_pressed("fire"):
 		print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanAttack: ", can_attack)
-		if role == PlayerRole.SEEKER:
-			# Calculate aim direction based on mouse position
-			var aim_direction = (get_global_mouse_position() - global_position).normalized()
-			request_fire_projectile_rpc.rpc_id(1, aim_direction)
+		_handle_fire_sak_input()
 
 # Alternative input handler in case _input is being consumed
 func _unhandled_input(event: InputEvent) -> void:
@@ -437,10 +485,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		print("[Player] UNHANDLED MOUSE INPUT - Player: ", player_name, " Authority: ", is_multiplayer_authority(), " Main: ", is_main_player)
 		if is_multiplayer_authority() and is_main_player:
 			print("[Player] Processing unhandled left click as fire/sak")
-			if role == PlayerRole.SEEKER:
-				# Calculate aim direction based on mouse position
-				var aim_direction = (get_global_mouse_position() - global_position).normalized()
-				request_fire_projectile_rpc.rpc_id(1, aim_direction)
+			_handle_fire_sak_input()
 
 # PHASE 1: Simplified input handler for server-authoritative attacks
 func _handle_phase1_fire_input() -> void:
@@ -458,25 +503,58 @@ func _handle_phase1_fire_input() -> void:
 
 # Helper function to handle fire/sak input
 func _handle_fire_sak_input() -> void:
-	if not can_attack:
-		print("[Player] Cannot attack - can_attack is false")
-		return
+	print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanAttack: ", can_attack, " CanSAK: ", can_sak)
+	
+	# General validation - must not be in action
 	if is_in_action:
 		print("[Player] Cannot attack - already in action")
 		return
 		
 	print("[Player] Handling fire/sak input - Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
 	
-	if role == PlayerRole.SEEKER and ammo > 0:
-		print("[Player] Executing seeker fire - using direct method")
-		_direct_fire_projectile()
-	elif role == PlayerRole.SEEKER and ammo <= 0:
-		print("[Player] Cannot fire - out of ammo")
+	if role == PlayerRole.SEEKER:
+		if not can_attack:
+			print("[Player] Cannot BANG - attacks disabled by game state")
+		elif ammo < max_ammo:
+			print("[Player] Cannot BANG - ammo not full (", ammo, "/", max_ammo, ") - wait for regeneration")
+		else:
+			print("[Player] 🎯 Requesting seeker BANG via RPC")
+			var aim_direction = (get_global_mouse_position() - global_position).normalized()
+			request_fire_projectile_rpc.rpc_id(1, aim_direction)
 	elif role == PlayerRole.HIDER:
-		print("[Player] Executing hider SAK - using direct method")
-		_direct_sak_attack()
+		if not can_sak:
+			print("[Player] Cannot SAK - SAK attacks disabled by game state (delay active)")
+		else:
+			print("[Player] 🗡️ Requesting hider SAK via RPC")
+			# Find nearest target for SAK attack
+			var nearest_target = _find_nearest_sak_target()
+			if nearest_target:
+				print("[Player] Found SAK target: ", nearest_target.player_name, " - sending request")
+				request_sak_attack_rpc.rpc_id(1, nearest_target.get_multiplayer_authority())
+			else:
+				print("[Player] No valid SAK target found - no Seekers in range")
 	else:
 		print("[Player] Invalid role or conditions for attack")
+
+# Helper function to find nearest valid SAK target
+func _find_nearest_sak_target() -> PlayerCharacter:
+	var nearest_target = null
+	var nearest_distance = 50.0  # SAK range limit
+	
+	for player in get_tree().get_nodes_in_group("player"):
+		if player == self or not is_instance_valid(player):
+			continue
+		# FRIENDLY FIRE ENABLED: Hiders can target both Seekers and other Hiders
+		# This adds strategic risk - must be careful not to eliminate fellow Hiders!
+		if player.current_state == PlayerState.GHOST:  # Can't SAK ghosts
+			continue
+			
+		var distance = global_position.distance_to(player.global_position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_target = player
+	
+	return nearest_target
 
 func eliminate(attacker: PlayerCharacter) -> void:
 	if is_dying or current_state == PlayerState.GHOST: 
@@ -801,7 +879,7 @@ func _on_game_state_changed(new_state: int) -> void:
 			can_attack = true  # Default to enabled for dev testing
 
 func _on_animated_sprite_2d_animation_finished() -> void:
-	print("[Player] Animation finished: ", animated_sprite.animation, " for ", player_name)
+	print("[Player] Animation finished: ", animated_sprite.animation, " for ", player_name, " - is_in_action was: ", is_in_action)
 	
 	if animated_sprite.animation == "death":
 		print("[Player] Death animation completed, becoming ghost...")
@@ -813,27 +891,30 @@ func _on_animated_sprite_2d_animation_finished() -> void:
 		print("[Player] Reset is_in_action to false for ", player_name) 
 
 func _on_animated_sprite_2d_frame_changed() -> void:
-	print("[Player] Frame changed - Animation: ", animated_sprite.animation, " Frame: ", animated_sprite.frame)
+	print("[Player] Frame changed - Animation: ", animated_sprite.animation, " Frame: ", animated_sprite.frame, " on ", player_name)
 	
+	# SEEKER BANG: Projectile spawns on frame 2 (server-authoritative)
 	if animated_sprite.animation == "seeker_bang":
 		if animated_sprite.frame == 2:
-			print("[Player] SEEKER_BANG frame 2 - creating projectile!")
-			# Try GameManager first, then fallback to direct creation
-			if GameManager and GameManager.has_method("create_projectile"):
-				GameManager.create_projectile.rpc_id(1, multiplayer.get_unique_id(), muzzle.global_position, vision_cone.global_rotation)
-			else:
-				print("[Player] GameManager not available - using direct projectile creation")
-				_create_projectile_direct()
+			print("[Player] SEEKER_BANG frame 2 - executing projectile spawn!")
+			# This is called during the animation, so we spawn the projectile directly
+			# The server validation already happened in request_fire_projectile_rpc
+			if multiplayer.is_server() and role == PlayerRole.SEEKER:
+				# Calculate aim direction (stored from the original request)
+				var aim_direction = (get_global_mouse_position() - global_position).normalized()
+				var projectile_rotation = aim_direction.angle()
 				
+				# Spawn projectile on all clients
+				spawn_projectile_on_clients_rpc.rpc(muzzle.global_position, projectile_rotation, aim_direction)
+				print("[Player] 🚀 SERVER: Projectile spawned from BANG animation frame 2")
+				
+	# HIDER SAK: Elimination happens on frame 2
 	if animated_sprite.animation == "hider_sak":
 		if animated_sprite.frame == 2:
 			if is_instance_valid(target_for_sak):
 				print("[Player] HIDER_SAK frame 2 - executing elimination!")
-				# Try GameManager first, then fallback to direct elimination
-				if GameManager and GameManager.has_method("execute_elimination"):
-					GameManager.execute_elimination.rpc_id(1, target_for_sak.get_multiplayer_authority(), multiplayer.get_unique_id())
-				else:
-					print("[Player] Executing elimination directly")
+				# Direct elimination (already validated when SAK started)
+				if multiplayer.is_server() and role == PlayerRole.HIDER:
 					_eliminate_target_direct(target_for_sak)
 				target_for_sak = null
 			else:
@@ -842,38 +923,109 @@ func _on_animated_sprite_2d_frame_changed() -> void:
 # --- PHASE 1: SERVER-AUTHORITATIVE ATTACK SYSTEM ---
 
 # This RPC is sent from a client TO the server (peer_id = 1).
-@rpc("any_peer", "call_remote", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 	"""Client requests to fire projectile - server validates and authorizes"""
 	# This code only executes on the server's instance of this player.
 	if not multiplayer.is_server():
 		return
 		
-	if is_in_action or ammo <= 0: 
-		print("[Player] Server rejected fire request - in_action: ", is_in_action, " ammo: ", ammo)
+	if is_in_action: 
+		print("[Player] Server rejected fire request - already in action")
 		return
 
-	# Server validation: ensure player can attack
+	# Server validation: ensure player can attack and has full ammo
 	if not can_attack or role != PlayerRole.SEEKER:
 		print("[Player] Server rejected fire request - can_attack: ", can_attack, " role: ", PlayerRole.keys()[role])
 		return
-
-	print("[Player] 🎯 SERVER: Seeker attack authorized - spawning projectile")
 	
-	# The server validates the action, updates state, and then broadcasts the result.
+	# NEW: Seeker must have FULL ammo capacity to attack
+	if ammo < max_ammo:
+		print("[Player] Server rejected fire request - insufficient ammo: ", ammo, "/", max_ammo, " (must be full)")
+		return
+
+	print("[Player] 🎯 SERVER: Seeker attack authorized - starting BANG animation")
+	
+	# The server validates the action, updates state, and triggers animation
 	is_in_action = true
 	set_ammo.rpc(ammo - 1) # Sync ammo change to all clients
+	
+	# Store aim direction for use in animation frame 2
+	# (We'll use get_global_mouse_position() in the frame handler)
+	
+	# Command all clients to play the BANG animation
+	play_attack_animation.rpc("seeker_bang")
+	
+	# Note: Projectile will be spawned in _on_animated_sprite_2d_frame_changed() at frame 2
+	# is_in_action will be reset when animation finishes in _on_animated_sprite_2d_animation_finished()
 
-	# Calculate projectile rotation from aim direction
-	var projectile_rotation = aim_direction.angle() if aim_direction != Vector2.ZERO else vision_cone.global_rotation
+# RPC to play attack animations on all clients
+@rpc("any_peer", "call_local", "reliable")
+func play_attack_animation(animation_name: String) -> void:
+	"""Play attack animation on all clients"""
+	print("[Player] 🎬 Playing attack animation: ", animation_name, " on ", player_name)
+	if animated_sprite:
+		print("[Player] 🎬 AnimatedSprite2D found, current animation: ", animated_sprite.animation)
+		animated_sprite.play(animation_name)
+		print("[Player] 🎬 Animation set to: ", animated_sprite.animation, " - is_playing: ", animated_sprite.is_playing())
+		
+		# Force stop any current animation first for immediate response
+		if animation_name == "hider_sak":
+			print("[Player] 🗡️ HIDER_SAK animation starting - should see frame changes soon")
+		elif animation_name == "seeker_bang":
+			print("[Player] 🎯 SEEKER_BANG animation starting - should see frame changes soon")
+	else:
+		print("[Player] ❌ ERROR: No AnimatedSprite2D found on ", player_name)
+
+# RPC for Hider SAK attack requests
+@rpc("any_peer", "call_local", "reliable")
+func request_sak_attack_rpc(target_player_id: int) -> void:
+	"""Client requests to perform SAK attack - server validates and authorizes"""
+	# This code only executes on the server's instance of this player
+	if not multiplayer.is_server():
+		return
+		
+	if is_in_action:
+		print("[Player] Server rejected SAK request - already in action")
+		return
+
+	# Server validation: ensure player can SAK and is a Hider
+	if not can_sak or role != PlayerRole.HIDER:
+		print("[Player] Server rejected SAK request - can_sak: ", can_sak, " role: ", PlayerRole.keys()[role])
+		return
 	
-	# Command all clients to spawn the projectile with proper direction
-	spawn_projectile_on_clients_rpc.rpc(muzzle.global_position, projectile_rotation, aim_direction)
+	# Find the target player
+	var target_player = null
+	for player in get_tree().get_nodes_in_group("player"):
+		if player.get_multiplayer_authority() == target_player_id:
+			target_player = player
+			break
 	
-	# Cooldown before the player can act again.
-	await get_tree().create_timer(0.5).timeout
-	is_in_action = false
-	print("[Player] Attack cooldown finished for ", player_name)
+	if not target_player or not is_instance_valid(target_player):
+		print("[Player] Server rejected SAK request - invalid target")
+		return
+	
+	# FRIENDLY FIRE ENABLED: Hiders can SAK both Seekers and other Hiders
+	# Strategic risk: Hiders must be careful not to eliminate teammates!
+	print("[Player] 🎯 FRIENDLY FIRE: Target ", target_player.player_name, " role: ", PlayerRole.keys()[target_player.get_role()])
+	
+	# Check if target is in range (basic distance check)
+	var distance = global_position.distance_to(target_player.global_position)
+	if distance > 50.0:  # Adjust SAK range as needed
+		print("[Player] Server rejected SAK request - target out of range: ", distance)
+		return
+	
+	print("[Player] 🗡️ SERVER: Hider SAK attack authorized on ", target_player.player_name)
+	
+	# Set up SAK attack (SAK attacks do NOT consume ammo)
+	is_in_action = true
+	target_for_sak = target_player
+	
+	# Command all clients to play the SAK animation
+	play_attack_animation.rpc("hider_sak")
+	print("[Player] 🗡️ SAK animation triggered - no ammo consumed")
+	
+	# Note: Elimination will happen in _on_animated_sprite_2d_frame_changed() at frame 2
 
 # This RPC is sent FROM the server TO all clients
 @rpc("authority", "call_local", "reliable")
