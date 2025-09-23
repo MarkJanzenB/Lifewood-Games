@@ -181,101 +181,37 @@ func initialize_game_world() -> void:
 	
 	print("[GameManager] ✅ NetworkManager found with ", network_manager.players.size(), " players")
 	
-	# --- All game setup logic starts here ---
+	# --- DEFINITIVE FIX: GameManager NO LONGER spawns players ---
+	# NetworkManager is the SOLE authority for player spawning
+	# GameManager only FINDS players that NetworkManager already created
+	
+	print("[GameManager] 🎯 'game_world_ready' signal received. Finding players...")
+	
 	# 1. Initialize timers and signals
 	_initialize_game_timers()
 	
-	# 2. Spawn all players
-	_spawn_all_players()
+	# 2. FIND players (DO NOT spawn them - NetworkManager already did)
+	var spawned_players = get_tree().get_nodes_in_group("player")
+	if spawned_players.is_empty():
+		push_error("[GameManager] FATAL: No players found in scene! NetworkManager spawning failed.")
+		return
+	
+	print("[GameManager] ✅ Found ", spawned_players.size(), " players spawned by NetworkManager")
 	
 	# 3. Perform server initialization
 	_initialize_server()
 	
-	# 4. Auto-start the game if we have players (for dev testing)
-	if players.size() > 0:
-		print("[GameManager] 🎮 Auto-starting game with ", players.size(), " players")
-		# Wait a frame to ensure everything is initialized
-		await get_tree().process_frame
-		start_game()
-	else:
-		print("[GameManager] ⏳ Waiting for players to join before starting game")
+	# 4. Start game logic with existing players
+	print("[GameManager] 🎮 Starting game logic with ", spawned_players.size(), " players")
+	# Wait a frame to ensure everything is initialized
+	await get_tree().process_frame
+	start_game()
 	
 	print("[GameManager] ✅ Game world initialization complete via robust scene detection")
 
-# Comprehensive player spawning system
-func _spawn_all_players() -> void:
-	"""Spawn all players from NetworkManager data with proper type handling"""
-	if not multiplayer.is_server():
-		return
-	
-	print("[GameManager] 🎭 Spawning all players...")
-	var players_dict = network_manager.players
-	
-	if players_dict.is_empty():
-		print("[GameManager] ⚠️  No players to spawn")
-		return
-	
-	# Get spawn points from dev_world
-	var spawn_points: Array[Vector2] = [Vector2(100, 0), Vector2(-100, 0), Vector2(0, 100), Vector2(0, -100)]
-	
-	# Convert keys to integers and sort for deterministic spawn order
-	var int_ids: Array[int] = []
-	for key in players_dict.keys():
-		int_ids.append(int(key))
-	int_ids.sort()
-	
-	# Spawn each player via RPC with correct data types
-	for i in range(min(int_ids.size(), spawn_points.size())):
-		var player_id: int = int_ids[i]
-		var player_data: Dictionary = players_dict[player_id]
-		print("[GameManager] 🎭 Spawning player ", player_id, " with data: ", player_data)
-		_spawn_player_on_all_clients.rpc(player_id, player_data, spawn_points[i])
-
-@rpc("authority", "call_local", "reliable")
-func _spawn_player_on_all_clients(player_id: int, player_data: Dictionary, spawn_pos: Vector2) -> void:
-	"""Spawn a single player on all clients with correct type handling"""
-	print("[GameManager] 🎭 Creating player ", player_id, " at ", spawn_pos)
-	
-	# Create player instance
-	var player_scene = preload("res://scenes/player/Player.tscn")
-	var new_player = player_scene.instantiate()
-	
-	# Set up multiplayer authority
-	new_player.set_multiplayer_authority(player_id)
-	new_player.name = "Player_" + str(player_id)
-	
-	# Find players container in dev_world
-	var players_container = get_tree().get_first_node_in_group("players_container")
-	if not players_container:
-		# Fallback to finding by path
-		players_container = get_node_or_null("/root/DevWorld/PlayersContainer")
-	
-	if players_container:
-		# The 'true' parameter allows the spawner to use the name we already assigned (the peer_id)
-		players_container.add_child(new_player, true)
-	else:
-		push_error("[GameManager] Could not find PlayersContainer!")
-		return
-	
-	# Position the player
-	new_player.global_position = spawn_pos
-	
-	# Configure player properties with CORRECT data types
-	if new_player.has_method("setup_multiplayer_player"):
-		var is_local: bool = (player_id == multiplayer.get_unique_id())
-		# CRITICAL FIX: Pass Dictionary and boolean, not int and boolean
-		new_player.setup_multiplayer_player(player_data, is_local)
-	
-	# PHASE 1: Grant immediate movement and attack capabilities for MPS testing
-	# Use RPC to ensure all clients receive the control state
-	if new_player.has_method("set_player_state"):
-		new_player.set_player_state.rpc(true, true)  # can_move=true, can_attack=true
-	else:
-		# Fallback: Set basic control flags directly
-		new_player.can_move = true
-		new_player.can_attack = true
-	
-	print("[GameManager] ✅ Successfully created player ", player_id, " (", player_data.get("name", "Unknown"), ") at ", spawn_pos)
+# REMOVED: _spawn_all_players() and _spawn_player_on_all_clients() 
+# NetworkManager is now the SOLE authority for player spawning
+# GameManager only manages game logic, not world creation
 
 # REMOVED: Old _on_scene_changed function replaced with robust _on_tree_changed approach
 
@@ -1054,7 +990,7 @@ func sync_elimination(target_id: int, attacker_id: int) -> void:
 	if target and attacker:
 		target.eliminate(attacker)
 
-@rpc("any_peer", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func handle_player_vision(seeker_id: int, target_id: int, is_visible: bool) -> void:
 	if not multiplayer.is_server():
 		return

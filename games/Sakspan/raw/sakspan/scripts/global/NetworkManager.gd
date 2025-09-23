@@ -9,6 +9,7 @@ signal game_started(player_data)
 signal lobby_data_changed(lobby_data)
 signal player_joined(player_id: int, player_data: Dictionary)
 signal player_left(player_id: int)
+signal game_world_ready  # CRITICAL: Signal for GameManager initialization
 
 # Master list of all players in the lobby/game.
 # Structure: {1: {"name": "HostName", "ready": false, "char_index": -1}, 54321: {"name": "ClientName", "ready": false, "char_index": -1}}
@@ -509,6 +510,11 @@ func rpc_start_game(lobby_info: Dictionary) -> void:
 	# Switch everyone to the appropriate game scene
 	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else WORLD_SCENE_PATH
 	print("[NetworkManager] Starting game - switching to scene: ", target_scene)
+	
+	# CRITICAL FIX: Connect scene change detection before changing scene
+	if multiplayer.is_server():
+		get_tree().tree_changed.connect(_on_scene_changed, CONNECT_ONE_SHOT)
+	
 	# Use Godot's built-in, reliable scene changer.
 	# This guarantees autoloads will be ready in the new scene.
 	get_tree().change_scene_to_file(target_scene)
@@ -663,3 +669,65 @@ func get_spawn_data() -> Dictionary:
 		}
 		index += 1
 	return spawn_data
+
+# DEFINITIVE FIX: Scene change detection and authoritative player spawning
+func _on_scene_changed() -> void:
+	if not multiplayer.is_server(): return
+	var current_scene = get_tree().current_scene
+	if not current_scene: return
+	
+	if current_scene.scene_file_path == DEV_TEST_SCENE_PATH or current_scene.scene_file_path == WORLD_SCENE_PATH:
+		print("[NetworkManager] 🎯 Game world scene loaded: ", current_scene.scene_file_path)
+		await get_tree().create_timer(0.2).timeout # Wait for all clients to finish loading
+		
+		print("[NetworkManager] 👥 Sending spawn commands for ", players.size(), " players to ALL clients...")
+		for player_id in players.keys():
+			var player_data = players[player_id]
+			print("[NetworkManager] 📡 RPC: Spawn player ", player_id, " (", player_data.name, ") on all clients")
+			rpc_spawn_player.rpc(player_id, player_data)
+		
+		await get_tree().create_timer(0.1).timeout # Wait for RPCs to complete
+		
+		print("[NetworkManager] 🚀 All spawn commands sent. Emitting game_world_ready signal")
+		game_world_ready.emit()
+	else:
+		print("[NetworkManager] Scene changed to non-game scene: ", current_scene.scene_file_path)
+
+# DEFINITIVE FIX: Authoritative RPC player spawning on all clients
+@rpc("any_peer", "call_local", "reliable")
+func rpc_spawn_player(player_id: int, player_data: Dictionary) -> void:
+	print("[NetworkManager] 🎭 CLIENT: Spawning player ", player_id, " (", player_data.name, ")")
+	var current_scene = get_tree().current_scene
+	if not current_scene: return
+	
+	var player_container = current_scene.find_child("PlayersContainer", true, false)
+	if not player_container:
+		player_container = Node2D.new()
+		player_container.name = "PlayersContainer"
+		player_container.add_to_group("players_container")
+		current_scene.add_child(player_container)
+		print("[NetworkManager] CLIENT: Created PlayersContainer node")
+	
+	var existing_player = player_container.find_child(str(player_id), false, false)
+	if existing_player:
+		print("[NetworkManager] CLIENT: Player ", player_id, " already exists, skipping")
+		return
+	
+	var player_scene = load("res://scenes/player/Player.tscn")
+	if not player_scene: return
+	
+	var player_instance = player_scene.instantiate()
+	player_instance.name = str(player_id)
+	player_instance.add_to_group("player")
+	player_instance.set_multiplayer_authority(player_id)
+	player_container.add_child(player_instance, true)
+	
+	var spawn_points: Array[Vector2] = [Vector2(100, 0), Vector2(-100, 0), Vector2(0, 100), Vector2(0, -100)]
+	var spawn_index = player_id % spawn_points.size()
+	player_instance.global_position = spawn_points[spawn_index]
+	
+	if player_instance.has_method("setup_multiplayer_player"):
+		var is_local = (player_id == multiplayer.get_unique_id())
+		player_instance.setup_multiplayer_player(player_data, is_local)
+	
+	print("[NetworkManager] ✅ CLIENT: Player ", player_id, " spawned successfully at ", player_instance.global_position)

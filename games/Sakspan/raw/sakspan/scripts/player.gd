@@ -47,8 +47,8 @@ var previously_visible_hiders: Array[PlayerCharacter] = []
 var is_in_action: bool = false
 var target_for_sak: PlayerCharacter = null
 var is_dying: bool = false
-var can_move: bool = true  # Allow movement by default
-var can_attack: bool = true  # Allow attacks by default
+var can_move: bool = false  # Controlled by GameManager
+var can_attack: bool = false  # Controlled by GameManager
 
 # Username display
 var username_label: Label = null
@@ -68,9 +68,8 @@ func _ready():
 	add_to_group("player")
 	
 	# Connect to GameManager signals
-	var gm = get_node_or_null("/root/GameManager")
-	if gm:
-		gm.game_state_changed.connect(_on_game_state_changed)
+	if GameManager:
+		GameManager.game_state_changed.connect(_on_game_state_changed)
 	
 	# Configure multiplayer authority
 	_configure_multiplayer_authority()
@@ -161,29 +160,7 @@ func set_is_main_player(value: bool):
 	is_main_player = value
 	_configure_multiplayer_authority()
 
-func assign_role(new_role: PlayerRole):
-	self.role = new_role
-	if self.role == PlayerRole.SEEKER:
-		add_to_group("seeker")
-		if is_in_group("hider"): remove_from_group("hider")
-		melee_range.monitoring = false
-		# Give seeker some ammo for testing
-		if ammo <= 0:
-			ammo = 5
-			print("[Player] Seeker assigned, setting ammo to: ", ammo)
-	else:
-		add_to_group("hider")
-		vision_light.energy = 0.5
-	print(player_name, " has been assigned the role of: ", PlayerRole.keys()[role])
-	
-	# Show role overlay for the local player
-	if is_main_player:
-		# Delay slightly to ensure everything is set up
-		await get_tree().process_frame
-		display_role_for_round()
 
-func set_ammo(new_ammo_count: int) -> void:
-	ammo = new_ammo_count
 
 func get_character_name() -> String:
 	return CharacterFactory.get_character_name(character_index)
@@ -358,7 +335,7 @@ func _physics_process(delta: float):
 		
 		# Sync position and animation state to other clients
 		if Engine.get_physics_frames() % 2 == 0:  # Sync every 2nd frame
-			var current_animation = animated_sprite.animation if animated_sprite else ""
+			var current_animation = animated_sprite.animation if animated_sprite else "idle"
 			var is_flipped = animated_sprite.flip_h if animated_sprite else false
 			_sync_player_state.rpc(global_position, velocity, current_animation, is_flipped)
 	else:
@@ -378,12 +355,33 @@ func _physics_process(delta: float):
 		# Handle animations for remote players based on movement
 		handle_remote_visuals()
 
+# This is the single, authoritative function for updating player controls.
 @rpc("any_peer", "call_local", "reliable")
 func set_player_state(p_can_move: bool, p_can_attack: bool) -> void:
-	"""RPC to set player control state - called by GameManager during spawning"""
 	self.can_move = p_can_move
 	self.can_attack = p_can_attack
-	print("[Player] Control state updated - can_move: ", can_move, " can_attack: ", can_attack)
+
+# This is the single, authoritative function for setting a player's role.
+@rpc("any_peer", "call_local", "reliable")
+func assign_role(new_role: PlayerRole) -> void:
+	self.role = new_role
+	if self.role == PlayerRole.SEEKER:
+		add_to_group("seeker")
+	else:
+		add_to_group("hider")
+
+@rpc("any_peer", "call_local", "reliable")
+func set_ammo(new_ammo: int) -> void:
+	"""RPC to set player ammo - called by server during gameplay"""
+	self.ammo = new_ammo
+	print("[Player] Ammo updated: ", ammo)
+
+# This is the single, authoritative function for managing the Seeker's blindness.
+@rpc("any_peer", "call_local", "reliable")
+func set_seeker_blinded(is_blinded: bool) -> void:
+	if not is_multiplayer_authority(): return
+	# Find your full-screen black ColorRect in the GameUI and show/hide it.
+	# Example: GameManager.game_ui_instance.seeker_blindness_overlay.visible = is_blinded
 
 @rpc("any_peer", "unreliable")
 func _sync_player_state(pos: Vector2, vel: Vector2, animation: String, flipped: bool):
@@ -424,8 +422,10 @@ func _input(event: InputEvent) -> void:
 	# Handle fire input (both mouse and keyboard)
 	if Input.is_action_just_pressed("fire"):
 		print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanAttack: ", can_attack)
-		# PHASE 1: Use server-authoritative system for all attacks
-		_handle_phase1_fire_input()
+		if role == PlayerRole.SEEKER:
+			# Calculate aim direction based on mouse position
+			var aim_direction = (get_global_mouse_position() - global_position).normalized()
+			request_fire_projectile_rpc.rpc_id(1, aim_direction)
 
 # Alternative input handler in case _input is being consumed
 func _unhandled_input(event: InputEvent) -> void:
@@ -437,8 +437,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		print("[Player] UNHANDLED MOUSE INPUT - Player: ", player_name, " Authority: ", is_multiplayer_authority(), " Main: ", is_main_player)
 		if is_multiplayer_authority() and is_main_player:
 			print("[Player] Processing unhandled left click as fire/sak")
-			# PHASE 1: Use server-authoritative system for all attacks
-			_handle_phase1_fire_input()
+			if role == PlayerRole.SEEKER:
+				# Calculate aim direction based on mouse position
+				var aim_direction = (get_global_mouse_position() - global_position).normalized()
+				request_fire_projectile_rpc.rpc_id(1, aim_direction)
 
 # PHASE 1: Simplified input handler for server-authoritative attacks
 func _handle_phase1_fire_input() -> void:
@@ -452,7 +454,7 @@ func _handle_phase1_fire_input() -> void:
 	
 	print("[Player] Phase 1: Requesting projectile fire from server")
 	# The client sends a request to the server to fire
-	fire_projectile_rpc.rpc_id(1)
+	request_fire_projectile_rpc.rpc_id(1)
 
 # Helper function to handle fire/sak input
 func _handle_fire_sak_input() -> void:
@@ -491,9 +493,8 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	vision_cone.monitoring = false
 	
 	# Notify GameManager of elimination
-	var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-	if gm:
-		gm.player_eliminated.emit(self, attacker)
+	if GameManager:
+		GameManager.player_eliminated.emit(self, attacker)
 	
 	# Play death animation - become_ghost() will be called when animation finishes
 	animated_sprite.stop()
@@ -516,9 +517,8 @@ func become_ghost() -> void:
 	set_collision_mask_value(1, false)
 	
 	# Notify GameManager for win condition checking
-	var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-	if gm and gm.has_method("check_win_conditions"):
-		gm.check_win_conditions()
+	if GameManager and GameManager.has_method("check_win_conditions"):
+		GameManager.check_win_conditions()
 	
 	print("[Player] ", player_name, " is now a ghost (transparent: ", animated_sprite.modulate.a, ")")
 	set_collision_mask_value(1, false)
@@ -568,6 +568,12 @@ func execute_sak_attack(target: PlayerCharacter) -> void:
 	print("[Player] Playing hider_sak animation - current: ", animated_sprite.animation)
 
 func handle_movement() -> void:
+	# CRITICAL: Movement is now strictly gated by the can_move boolean
+	if not can_move:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+		
 	if is_in_action:
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -680,9 +686,8 @@ func check_line_of_sight() -> void:
 		var result: Dictionary = space_state.intersect_ray(ray_query)
 		if result.is_empty():
 			# Send vision data to GameManager instead of handling directly
-			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-			if gm:
-				gm.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), true)
+			if GameManager:
+				GameManager.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), true)
 			
 			# Show spotted alert for Hiders when seen by Seeker
 			if role == PlayerRole.SEEKER and player.role == PlayerRole.HIDER:
@@ -691,9 +696,8 @@ func check_line_of_sight() -> void:
 			currently_visible_players.append(player)
 		else:
 			# Player is not visible
-			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-			if gm:
-				gm.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), false)
+			if GameManager:
+				GameManager.handle_player_vision.rpc_id(1, multiplayer.get_unique_id(), player.get_multiplayer_authority(), false)
 			
 			# Hide spotted alert when LOS is broken
 			if role == PlayerRole.SEEKER:
@@ -772,8 +776,7 @@ func _find_game_ui() -> Control:
 # --- SIGNAL FUNCTIONS ---
 
 func _on_game_state_changed(new_state: int) -> void:
-	var game_manager: GameManager = get_node_or_null("/root/GameManager") as GameManager
-	if not game_manager:
+	if not GameManager:
 		# For dev_world, allow attacks by default
 		can_move = true
 		can_attack = true
@@ -781,17 +784,17 @@ func _on_game_state_changed(new_state: int) -> void:
 		return
 		
 	match new_state:
-		game_manager.GameState.HIDER_HEADSTART:
+		GameManager.GameState.HIDER_HEADSTART:
 			if role == PlayerRole.HIDER: can_move = true
 			elif role == PlayerRole.SEEKER: can_move = false
-			can_attack = false
-		game_manager.GameState.GAME_START_COUNTDOWN:
+		GameManager.GameState.GAME_START_COUNTDOWN:
 			# Legacy countdown state - Seeker can move, Hiders can't attack yet
 			if role == PlayerRole.SEEKER: can_move = true
 			elif role == PlayerRole.HIDER: can_move = true
 			can_attack = (role == PlayerRole.SEEKER)  # Only Seeker can attack during countdown
-		game_manager.GameState.IN_PROGRESS:
+		GameManager.GameState.IN_PROGRESS:
 			can_move = true
+			can_attack = true  # Default to enabled for dev testing
 			can_attack = true  # Enable attacks for both roles
 		_:
 			can_move = true
@@ -816,21 +819,19 @@ func _on_animated_sprite_2d_frame_changed() -> void:
 		if animated_sprite.frame == 2:
 			print("[Player] SEEKER_BANG frame 2 - creating projectile!")
 			# Try GameManager first, then fallback to direct creation
-			var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-			if gm and gm.has_method("create_projectile"):
-				gm.create_projectile.rpc_id(1, multiplayer.get_unique_id(), muzzle.global_position, vision_cone.global_rotation)
+			if GameManager and GameManager.has_method("create_projectile"):
+				GameManager.create_projectile.rpc_id(1, multiplayer.get_unique_id(), muzzle.global_position, vision_cone.global_rotation)
 			else:
-				print("[Player] Creating projectile directly")
+				print("[Player] GameManager not available - using direct projectile creation")
 				_create_projectile_direct()
 				
 	if animated_sprite.animation == "hider_sak":
 		if animated_sprite.frame == 2:
-			print("[Player] HIDER_SAK frame 2 - executing elimination!")
 			if is_instance_valid(target_for_sak):
+				print("[Player] HIDER_SAK frame 2 - executing elimination!")
 				# Try GameManager first, then fallback to direct elimination
-				var gm: GameManager = get_node_or_null("/root/GameManager") as GameManager
-				if gm and gm.has_method("execute_elimination"):
-					gm.execute_elimination.rpc_id(1, target_for_sak.get_multiplayer_authority(), multiplayer.get_unique_id())
+				if GameManager and GameManager.has_method("execute_elimination"):
+					GameManager.execute_elimination.rpc_id(1, target_for_sak.get_multiplayer_authority(), multiplayer.get_unique_id())
 				else:
 					print("[Player] Executing elimination directly")
 					_eliminate_target_direct(target_for_sak)
@@ -840,48 +841,59 @@ func _on_animated_sprite_2d_frame_changed() -> void:
 
 # --- PHASE 1: SERVER-AUTHORITATIVE ATTACK SYSTEM ---
 
-# This RPC is sent from a client TO the server (peer_id = 1)
+# This RPC is sent from a client TO the server (peer_id = 1).
 @rpc("any_peer", "call_remote", "reliable")
-func fire_projectile_rpc() -> void:
+func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 	"""Client requests to fire projectile - server validates and authorizes"""
-	# This code will only execute on the server's instance of this player
+	# This code only executes on the server's instance of this player.
 	if not multiplayer.is_server():
 		return
 		
-	if is_in_action: 
-		print("[Player] Server rejected fire request - already in action")
+	if is_in_action or ammo <= 0: 
+		print("[Player] Server rejected fire request - in_action: ", is_in_action, " ammo: ", ammo)
 		return
+
+	# Server validation: ensure player can attack
+	if not can_attack or role != PlayerRole.SEEKER:
+		print("[Player] Server rejected fire request - can_attack: ", can_attack, " role: ", PlayerRole.keys()[role])
+		return
+
+	print("[Player] 🎯 SERVER: Seeker attack authorized - spawning projectile")
 	
-	print("[Player] Server authorizing projectile fire for ", player_name)
-	# Server sets the state and tells all clients to spawn the projectile
+	# The server validates the action, updates state, and then broadcasts the result.
 	is_in_action = true
-	spawn_projectile_on_clients_rpc.rpc(muzzle.global_position, vision_cone.global_rotation)
+	set_ammo.rpc(ammo - 1) # Sync ammo change to all clients
+
+	# Calculate projectile rotation from aim direction
+	var projectile_rotation = aim_direction.angle() if aim_direction != Vector2.ZERO else vision_cone.global_rotation
 	
-	# Add a simple cooldown timer to reset is_in_action
-	var cooldown_timer = Timer.new()
-	add_child(cooldown_timer)
-	cooldown_timer.wait_time = 1.0  # 1 second cooldown
-	cooldown_timer.one_shot = true
-	cooldown_timer.timeout.connect(func(): 
-		is_in_action = false
-		cooldown_timer.queue_free()
-		print("[Player] Attack cooldown finished for ", player_name)
-	)
-	cooldown_timer.start()
+	# Command all clients to spawn the projectile with proper direction
+	spawn_projectile_on_clients_rpc.rpc(muzzle.global_position, projectile_rotation, aim_direction)
+	
+	# Cooldown before the player can act again.
+	await get_tree().create_timer(0.5).timeout
+	is_in_action = false
+	print("[Player] Attack cooldown finished for ", player_name)
 
 # This RPC is sent FROM the server TO all clients
 @rpc("authority", "call_local", "reliable")
-func spawn_projectile_on_clients_rpc(spawn_pos: Vector2, spawn_rot: float) -> void:
+func spawn_projectile_on_clients_rpc(spawn_pos: Vector2, spawn_rot: float, aim_direction: Vector2 = Vector2.ZERO) -> void:
 	"""Server commands all clients to spawn projectile at specified position/rotation"""
-	print("[Player] Spawning projectile at ", spawn_pos, " with rotation ", spawn_rot)
+	print("[Player] 🚀 CLIENT: Spawning projectile at ", spawn_pos, " with rotation ", spawn_rot)
 	var rock: Area2D = ROCK_PROJECTILE_SCENE.instantiate()
 	rock.global_position = spawn_pos
 	rock.rotation = spawn_rot
 	
 	# Set the owner_player reference for collision detection
-	if rock.has_method("set") or "owner_player" in rock:
+	if rock.has_method("set_owner_player"):
+		rock.set_owner_player(self)
+	elif "owner_player" in rock:
 		rock.owner_player = self
+	
+	# Set projectile direction if it has a direction property
+	if "direction" in rock and aim_direction != Vector2.ZERO:
+		rock.direction = aim_direction
 	
 	# Add to the main scene tree so it's not a child of the player
 	get_tree().get_root().add_child(rock)
-	print("[Player] ✅ Projectile spawned successfully")
+	print("[Player] ✅ CLIENT: Projectile spawned successfully with direction ", aim_direction)
