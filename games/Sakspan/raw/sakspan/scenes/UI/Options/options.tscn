@@ -1,0 +1,328 @@
+[gd_scene load_steps=8 format=3 uid="uid://u7f7pglid43s"]
+
+[ext_resource type="Script" uid="uid://qhv66miwq7tb" path="res://scripts/ui/options.gd" id="1_0x8vw"]
+[ext_resource type="FontFile" uid="uid://5mu6qad8821h" path="res://fonts/Free Royalty.otf" id="2_3dxyy"]
+[ext_resource type="AudioStream" uid="uid://bd21u04xbkj03" path="res://assets/sound_effects/single_click_effect.mp3" id="3_hh8ti"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.1, 0.1, 0.15, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.3, 0.3, 0.4, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_hover"]
+bg_color = Color(0.3, 0.3, 0.4, 0.9)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 0.5, 0.6, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_pressed"]
+bg_color = Color(0.15, 0.15, 0.25, 0.9)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.6, 0.6, 0.7, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_normal"]
+bg_color = Color(0.2, 0.2, 0.3, 0.8)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.4, 0.5, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[node name="Options" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_0x8vw")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.05, 0.05, 0.1, 0.95)
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="Panel" parent="CenterContainer"]
+custom_minimum_size = Vector2(600, 500)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="TitleLabel" type="Label" parent="CenterContainer/Panel/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 36
+text = "OPTIONS"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="CenterContainer/Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="AudioContainer" type="VBoxContainer" parent="CenterContainer/Panel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="AudioTitleLabel" type="Label" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.8, 0.9, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 24
+text = "AUDIO SETTINGS"
+horizontal_alignment = 1
+
+[node name="MasterContainer" type="HBoxContainer" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="MasterLabel" type="Label" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/MasterContainer"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 18
+text = "Master: 80%"
+vertical_alignment = 1
+
+[node name="MasterSlider" type="HSlider" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/MasterContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+value = 0.8
+
+[node name="MasterMuteButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/MasterContainer"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "🔊"
+
+[node name="MusicContainer" type="HBoxContainer" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="MusicLabel" type="Label" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/MusicContainer"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 18
+text = "Music: 70%"
+vertical_alignment = 1
+
+[node name="MusicSlider" type="HSlider" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/MusicContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+value = 0.7
+
+[node name="MusicMuteButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/MusicContainer"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "🔊"
+
+[node name="SFXContainer" type="HBoxContainer" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SFXLabel" type="Label" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/SFXContainer"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 18
+text = "SFX: 80%"
+vertical_alignment = 1
+
+[node name="SFXSlider" type="HSlider" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/SFXContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+value = 0.8
+
+[node name="SFXMuteButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/SFXContainer"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "🔊"
+
+[node name="TestSFXButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/SFXContainer"]
+custom_minimum_size = Vector2(60, 40)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 14
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "Test"
+
+[node name="UIContainer" type="HBoxContainer" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="UILabel" type="Label" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/UIContainer"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 18
+text = "UI: 90%"
+vertical_alignment = 1
+
+[node name="UISlider" type="HSlider" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/UIContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+value = 0.9
+
+[node name="UIMuteButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/UIContainer"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "🔊"
+
+[node name="TestUIButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/UIContainer"]
+custom_minimum_size = Vector2(60, 40)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 14
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "Test"
+
+[node name="VoiceContainer" type="HBoxContainer" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="VoiceLabel" type="Label" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/VoiceContainer"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 18
+text = "Voice: 90%"
+vertical_alignment = 1
+
+[node name="VoiceSlider" type="HSlider" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/VoiceContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+value = 0.9
+
+[node name="VoiceMuteButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer/VoiceContainer"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "🔊"
+
+[node name="HSeparator2" type="HSeparator" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+layout_mode = 2
+
+[node name="ResetButton" type="Button" parent="CenterContainer/Panel/VBoxContainer/AudioContainer"]
+custom_minimum_size = Vector2(150, 40)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(1, 0.8, 0.8, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "Reset to Defaults"
+
+[node name="HSeparator3" type="HSeparator" parent="CenterContainer/Panel/VBoxContainer"]
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="CenterContainer/Panel/VBoxContainer"]
+custom_minimum_size = Vector2(120, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(0.8, 1, 0.8, 1)
+theme_override_fonts/font = ExtResource("2_3dxyy")
+theme_override_font_sizes/font_size = 20
+theme_override_styles/hover = SubResource("StyleBoxFlat_button_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+theme_override_styles/normal = SubResource("StyleBoxFlat_button_normal")
+text = "Back"
+
+[node name="ClickSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("3_hh8ti")

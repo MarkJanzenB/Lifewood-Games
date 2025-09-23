@@ -1,8 +1,9 @@
-[gd_scene load_steps=7 format=3 uid="uid://ch8h5ies5ipb3"]
+[gd_scene load_steps=8 format=3 uid="uid://ch8h5ies5ipb3"]
 
 [ext_resource type="Script" uid="uid://b8ixxyclfbdr4" path="res://scripts/create_lobby_menu.gd" id="1_iwjdh"]
 [ext_resource type="Texture2D" uid="uid://e2bp0cqg5js8" path="res://scenes/UI/Create_Lobby/create_lobby_background.jpg" id="2_r2xja"]
 [ext_resource type="FontFile" uid="uid://bdhbu2neft0s3" path="res://fonts/Free Royalty.ttf" id="3_fkl4k"]
+[ext_resource type="AudioStream" uid="uid://bd21u04xbkj03" path="res://assets/sound_effects/single_click_effect.mp3" id="4_click"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_s6gl7"]
 bg_color = Color(0.6, 0.6, 0.6, 0)
@@ -171,3 +172,7 @@ theme_override_font_sizes/font_size = 20
 theme_override_styles/hover = SubResource("StyleBoxFlat_ba68s")
 theme_override_styles/normal = SubResource("StyleBoxFlat_fhrpi")
 text = "BACK"
+
+[node name="ClickSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("4_click")
+bus = &"UI"

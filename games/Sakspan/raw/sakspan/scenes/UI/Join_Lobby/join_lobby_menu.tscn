@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://b5gt1b7ksa1oj"]
+[gd_scene load_steps=5 format=3 uid="uid://b5gt1b7ksa1oj"]
 
 [ext_resource type="Texture2D" uid="uid://dnu0dcsftprce" path="res://scenes/UI/Join_Lobby/join_lobby_background.jpg" id="1_plr0g"]
 [ext_resource type="Script" uid="uid://dxbybsehh2dtr" path="res://scripts/join_lobby_menu.gd" id="1_rkjtl"]
 [ext_resource type="FontFile" uid="uid://bdhbu2neft0s3" path="res://fonts/Free Royalty.ttf" id="2_rkjtl"]
+[ext_resource type="AudioStream" uid="uid://bd21u04xbkj03" path="res://assets/sound_effects/single_click_effect.mp3" id="4_click"]
 
 [node name="JoinLobby" type="Control"]
 layout_mode = 3
@@ -101,3 +102,7 @@ theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_fonts/font = ExtResource("2_rkjtl")
 theme_override_font_sizes/font_size = 30
 text = "BACK"
+
+[node name="ClickSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("4_click")
+bus = &"UI"

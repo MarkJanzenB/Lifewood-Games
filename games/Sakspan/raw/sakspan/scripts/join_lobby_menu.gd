@@ -8,6 +8,7 @@ extends Control
 @onready var back_button: Button = $PanelContainer/MarginContainer/VBoxContainer/BackButton
 @onready var room_code_line_edit: LineEdit = $PanelContainer/MarginContainer/VBoxContainer/CodeJoinHBox/RoomCodeLineEdit
 @onready var join_with_code_button: Button = $PanelContainer/MarginContainer/VBoxContainer/CodeJoinHBox/JoinWithCodeButton
+@onready var click_sound: AudioStreamPlayer = $ClickSound
 
 # A dictionary to store found lobbies, keyed by their IP address
 var _found_lobbies: Dictionary = {}
@@ -16,6 +17,9 @@ var _selected_lobby_info: Dictionary = {}
 var _pending_join_code: String = "" # When set, auto-join the first lobby matching this code
 
 func _ready():
+	# Start background music
+	MusicManager.force_start_main_theme()
+	
 	# --- Connect Signals ---
 	refresh_button.pressed.connect(_on_refresh_button_pressed)
 	join_selected_button.pressed.connect(_on_join_selected_button_pressed)
@@ -54,6 +58,7 @@ func _exit_tree():
 # --- UI Signal Handlers ---
 
 func _on_refresh_button_pressed():
+	_play_click()
 	# Clearing the list and waiting for new broadcasts acts as a refresh
 	_found_lobbies.clear()
 	_update_lobby_list_ui()
@@ -62,6 +67,7 @@ func _on_refresh_button_pressed():
 	NetworkManager.start_listening_for_lobbies()
 
 func _on_join_selected_button_pressed():
+	_play_click()
 	var selected_item = lobby_list.get_selected()
 	if not selected_item: return
 
@@ -102,6 +108,7 @@ func _on_join_selected_button_pressed():
 	refresh_button.disabled = true
 
 func _on_join_with_code_button_pressed():
+	_play_click()
 	var code = room_code_line_edit.text.strip_edges().to_upper()
 	# Fallback: if user typed an IPv4 address, try to join it directly
 	var raw := room_code_line_edit.text.strip_edges()
@@ -131,6 +138,7 @@ func _on_join_with_code_button_pressed():
 			return
 
 func _on_back_button_pressed():
+	_play_click()
 	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
 
 func _on_lobby_list_item_selected():
@@ -269,3 +277,8 @@ func _join_using_info(info: Dictionary) -> void:
 	join_selected_button.text = "CONNECTING..."
 	refresh_button.disabled = true
 	NetworkManager.join_lobby(player_name, ip_to_join)
+
+func _play_click() -> void:
+	if click_sound and click_sound.stream:
+		click_sound.stop()
+		click_sound.play()
