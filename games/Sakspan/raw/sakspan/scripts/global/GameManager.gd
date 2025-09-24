@@ -38,6 +38,11 @@ var current_round: int = 1
 var match_start_time: float = 0.0
 var game_ui_instance: Node = null  # Will be set by the GameUI scene when it loads
 
+# Master Clock System - Server-Authoritative Timing
+var master_clock: Timer = null
+var current_countdown_value: int = 0
+var next_state_after_countdown: GameState
+
 # Make this a proper singleton
 static var instance: GameManager = null
 
@@ -60,42 +65,52 @@ func _enter_tree():
 		queue_free()
 		return
 	instance = self
+
+func _initialize_timers():
+	"""Initialize scene-specific game timers (called when dev_world loads)"""
+	# Scene-specific timers that get recreated for each game session
+	if not sak_delay_timer:
+		sak_delay_timer = Timer.new()
+		sak_delay_timer.wait_time = 3.0
+		sak_delay_timer.one_shot = true
+		sak_delay_timer.timeout.connect(_on_sak_delay_timer_timeout)
+		add_child(sak_delay_timer)
 	
-	# Initialize timers with correct sequence: Instantiate -> Add -> Configure
+	if not phase_timer:
+		phase_timer = Timer.new()
+		phase_timer.wait_time = 1.0
+		phase_timer.one_shot = false
+		phase_timer.timeout.connect(_on_phase_timer_timeout)
+		add_child(phase_timer)
 	
-	# --- Main Game Timer ---
-	main_timer = Timer.new()
-	add_child(main_timer)
-	main_timer.one_shot = true
-	main_timer.timeout.connect(_on_main_timer_timeout)
+	if not ammo_regen_timer:
+		ammo_regen_timer = Timer.new()
+		ammo_regen_timer.wait_time = 1.0
+		ammo_regen_timer.one_shot = false
+		ammo_regen_timer.timeout.connect(_on_ammo_regen_timer_timeout)
+		add_child(ammo_regen_timer)
 	
-	# --- Ammo Cooldown Timer ---
-	ammo_cooldown_timer = Timer.new()
-	add_child(ammo_cooldown_timer)
-	ammo_cooldown_timer.one_shot = true
-	ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
+	print("[GameManager] ✅ Scene-specific game timers initialized")
+
+func _cleanup_scene_timers():
+	"""Clean up scene-specific timers when returning to lobby"""
+	if sak_delay_timer and is_instance_valid(sak_delay_timer):
+		sak_delay_timer.stop()
+		sak_delay_timer.queue_free()
+		sak_delay_timer = null
 	
-	# --- Sak Delay Timer ---
-	sak_delay_timer = Timer.new()
-	add_child(sak_delay_timer)
-	sak_delay_timer.one_shot = true
-	sak_delay_timer.timeout.connect(_on_sak_delay_timer_timeout)
+	if phase_timer and is_instance_valid(phase_timer):
+		phase_timer.stop()
+		phase_timer.queue_free()
+		phase_timer = null
 	
-	# --- Phase Timer (for staged gameplay) ---
-	phase_timer = Timer.new()
-	add_child(phase_timer)
-	phase_timer.one_shot = true
-	phase_timer.timeout.connect(_on_phase_timer_timeout)
+	if ammo_regen_timer and is_instance_valid(ammo_regen_timer):
+		ammo_regen_timer.stop()
+		ammo_regen_timer.queue_free()
+		ammo_regen_timer = null
 	
-	# --- Ammo Regeneration Timer ---
-	ammo_regen_timer = Timer.new()
-	add_child(ammo_regen_timer)
-	ammo_regen_timer.wait_time = 1.0  # 1 second intervals
-	ammo_regen_timer.timeout.connect(_on_ammo_regen_timer_timeout)
-	
-	# Connect player elimination signal
-	player_eliminated.connect(on_player_eliminated)
-	
+	print("[GameManager] ✅ Scene-specific timers cleaned up")
+
 func _exit_tree():
 	if instance == self:
 		instance = null
@@ -150,10 +165,45 @@ func _ready() -> void:
 	# This function runs ONCE when the app starts.
 	# Connect to tree_changed signal immediately - this is more reliable than external management
 	get_tree().tree_changed.connect(_on_tree_changed)
+	
+	# Connect player elimination signal
+	player_eliminated.connect(on_player_eliminated)
+	
+	# Initialize singleton-level timers that persist across scene transitions
+	_initialize_singleton_timers()
+	
 	print("[GameManager] GameManager singleton is ready and listening for scene tree changes.")
 	
 	# Set process to handle game timing
 	set_process(false)
+
+func _initialize_singleton_timers():
+	"""Initialize timers that persist across scene transitions"""
+	# Master Clock - The single source of truth for all timing (SINGLETON LEVEL)
+	if not master_clock:
+		master_clock = Timer.new()
+		master_clock.wait_time = 1.0
+		master_clock.one_shot = false
+		master_clock.timeout.connect(_on_master_clock_tick)
+		add_child(master_clock)
+		print("[GameManager] ✅ Master Clock initialized at singleton level")
+	
+	# Other persistent timers that need to survive scene transitions
+	if not main_timer:
+		main_timer = Timer.new()
+		main_timer.wait_time = 1.0
+		main_timer.one_shot = true
+		main_timer.timeout.connect(_on_main_timer_timeout)
+		add_child(main_timer)
+	
+	if not ammo_cooldown_timer:
+		ammo_cooldown_timer = Timer.new()
+		ammo_cooldown_timer.wait_time = 5.0
+		ammo_cooldown_timer.one_shot = true
+		ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
+		add_child(ammo_cooldown_timer)
+	
+	print("[GameManager] ✅ Singleton-level timers initialized")
 
 # ROBUST: Self-managing scene detection that only activates during multiplayer sessions
 func _on_tree_changed() -> void:
@@ -274,50 +324,40 @@ func transition_to_state(new_state: GameState) -> void:
 			print("[GameManager] 🎭 ROLE_TRANSITION: Players transitioning to roles...")
 			# All players frozen during role assignment
 			_freeze_all_players()
+			show_announcement_to_all.rpc("Assigning Roles...")
+			# No countdown for role transition - immediate transition after 2 seconds
 			if phase_timer:
 				phase_timer.wait_time = 2.0
 				phase_timer.start()
-				print("[GameManager] ⏱️ 2-second role transition timer started")
 		
 		GameState.PRE_GAME_FREEZE:
 			print("[GameManager] 🧊 PRE_GAME_FREEZE: All players frozen for 5 seconds")
 			# All players remain frozen, roles are now assigned
 			_freeze_all_players()
-			if phase_timer:
-				phase_timer.wait_time = 5.0
-				phase_timer.start()
-				print("[GameManager] ⏱️ 5-second freeze timer started")
+			show_announcement_to_all.rpc("Game Starting...")
+			start_master_clock_countdown(5, GameState.HIDER_HEADSTART)
 		
 		GameState.HIDER_HEADSTART:
 			print("[GameManager] 🏃 HIDER_HEADSTART: Hiders can move, Seeker frozen (10s countdown)...")
 			_enable_hider_movement_only()
-			if phase_timer:
-				phase_timer.wait_time = 10.0
-				phase_timer.start()
-				print("[GameManager] ⏱️ 10-second headstart timer started")
+			_reveal_roles_to_players()
+			show_announcement_to_all.rpc("Hiders, GO! Seeker is frozen.")
+			start_master_clock_countdown(10, GameState.SEEKER_RELEASED)
 		
 		GameState.SEEKER_RELEASED:
 			print("[GameManager] 👁️ SEEKER_RELEASED: Seeker can move/attack, Hiders can't SAK (5s)...")
 			_enable_seeker_full_control()
 			_start_ammo_regeneration()
 			sak_delay_active = true
-			if phase_timer:
-				phase_timer.wait_time = 5.0
-				phase_timer.start()
-				print("[GameManager] ⏱️ 5-second SAK delay timer started")
-		
-		GameState.SAK_DELAY_ACTIVE:
-			print("[GameManager] ⚔️ SAK_DELAY_ACTIVE: Continuing SAK delay (5s more)...")
-			# Seeker continues to have full control, Hiders still can't SAK
-			if phase_timer:
-				phase_timer.wait_time = 5.0
-				phase_timer.start()
-				print("[GameManager] ⏱️ 5-second additional SAK delay timer started")
+			show_announcement_to_all.rpc("The Seeker is loose!")
+			start_master_clock_countdown(5, GameState.IN_PROGRESS)
 		
 		GameState.IN_PROGRESS:
 			print("[GameManager] 🎮 IN_PROGRESS: Full gameplay active with all mechanics!")
 			_enable_full_gameplay()
 			sak_delay_active = false
+			show_announcement_to_all.rpc("The Hunt is On!")
+			# No countdown for IN_PROGRESS - game continues until win condition
 			print("[GameManager] ✅ All attacks enabled, ammo regeneration active")
 
 # Timer callback functions
@@ -352,6 +392,15 @@ func _initialize_game_timers() -> void:
 	"""Initialize all timers and connect game-specific signals"""
 	print("[GameManager] 🕐 Initializing game timers...")
 	
+	# Create and configure Master Clock - The single source of truth for all timing
+	if not master_clock:
+		master_clock = Timer.new()
+		add_child(master_clock)
+		master_clock.wait_time = 1.0
+		master_clock.one_shot = false
+		master_clock.timeout.connect(_on_master_clock_tick)
+		print("[GameManager] ✅ Master Clock initialized")
+	
 	# Create and configure phase timer if not exists
 	if not phase_timer:
 		phase_timer = Timer.new()
@@ -374,6 +423,77 @@ func _initialize_game_timers() -> void:
 		ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
 	
 	print("[GameManager] ✅ Game timers initialized")
+
+# Master Clock System - Server-Authoritative Timing
+func _on_master_clock_tick() -> void:
+	"""Master clock tick - decrements countdown and broadcasts to all clients"""
+	if not multiplayer.is_server():
+		return
+	
+	current_countdown_value -= 1
+	print("[GameManager] 🕐 Master Clock Tick: ", current_countdown_value)
+	
+	# Broadcast countdown to all clients
+	update_countdown_ui.rpc(current_countdown_value)
+	
+	# Check if countdown reached zero
+	if current_countdown_value <= 0:
+		master_clock.stop()
+		print("[GameManager] ⏰ Countdown finished - transitioning to: ", GameState.keys()[next_state_after_countdown])
+		transition_to_state(next_state_after_countdown)
+
+func start_master_clock_countdown(duration: int, next_state: GameState) -> void:
+	"""Start the master clock with specified duration and next state"""
+	if not multiplayer.is_server():
+		return
+	
+	current_countdown_value = duration
+	next_state_after_countdown = next_state
+	print("[GameManager] 🕐 Starting Master Clock: ", duration, "s -> ", GameState.keys()[next_state])
+	
+	# Broadcast initial countdown
+	update_countdown_ui.rpc(current_countdown_value)
+	
+	# Start the master clock
+	master_clock.start()
+
+# Centralized UI Broadcasting RPCs - Server Authority
+@rpc("authority", "call_local", "reliable")
+func update_countdown_ui(time: int) -> void:
+	"""Broadcast countdown update to all clients"""
+	if game_ui_instance and game_ui_instance.has_method("update_countdown"):
+		var time_text = str(time) if time > 0 else "GO!"
+		game_ui_instance.update_countdown(time_text, time > 0)
+
+@rpc("authority", "call_local", "reliable") 
+func show_announcement_to_all(text: String) -> void:
+	"""Broadcast global announcement to all clients"""
+	if game_ui_instance and game_ui_instance.has_method("update_status"):
+		game_ui_instance.update_status(text, true)
+
+@rpc("authority", "call_local", "reliable")
+func show_role_rpc(title: String, subtitle: String) -> void:
+	"""Show role reveal to specific player (called with rpc_id)"""
+	if game_ui_instance and game_ui_instance.has_method("update_status"):
+		var role_text = title + "\n" + subtitle
+		game_ui_instance.update_status(role_text, true)
+
+func _reveal_roles_to_players() -> void:
+	"""Send role-specific messages to each player"""
+	if not multiplayer.is_server():
+		return
+	
+	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
+	for player in players_list:
+		var player_char = player as PlayerCharacter
+		if not player_char:
+			continue
+		
+		var player_id = player_char.get_multiplayer_authority()
+		if player_char.role == PlayerCharacter.PlayerRole.SEEKER:
+			show_role_rpc.rpc_id(player_id, "You are the SEEKER!", "Hunt down all Hiders!")
+		elif player_char.role == PlayerCharacter.PlayerRole.HIDER:
+			show_role_rpc.rpc_id(player_id, "You are a HIDER!", "Stay hidden and survive!")
 
 # Called by GameUI when it's ready
 func register_game_ui(ui_instance: Node) -> void:
@@ -514,8 +634,17 @@ func start_ammo_cooldown(duration: float = 5.0) -> void:
 func reset_to_lobby() -> void:
 	"""Reset the game state back to the lobby."""
 	game_state = GameState.LOBBY
-	main_timer.stop()
-	ammo_cooldown_timer.stop()
+	
+	# Stop singleton-level timers (these persist but should be stopped)
+	if master_clock and is_instance_valid(master_clock):
+		master_clock.stop()
+	if main_timer and is_instance_valid(main_timer):
+		main_timer.stop()
+	if ammo_cooldown_timer and is_instance_valid(ammo_cooldown_timer):
+		ammo_cooldown_timer.stop()
+	
+	# Clean up scene-specific timers
+	_cleanup_scene_timers()
 	
 	# Reset player ready states
 	for player_id in players:
@@ -523,6 +652,8 @@ func reset_to_lobby() -> void:
 	
 	# Emit signal to update UI
 	game_state_changed.emit(game_state)
+	
+	print("[GameManager] ✅ Successfully reset to lobby - all timers stopped/cleaned")
 
 var _last_countdown_value: int = -1
 

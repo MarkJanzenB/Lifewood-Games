@@ -1,15 +1,29 @@
-# dev_world.gd - DEFINITIVE SYNCHRONIZATION BARRIER
-# This scene's ONLY job is to report when it's ready to the server
-# CRITICAL: This scene must NEVER be run directly from the editor (F5/Play Scene)
-# It has hard dependencies on NetworkManager's multiplayer session and player data
-# All testing must begin from main menu -> lobby -> "Start Game" button
-
+# res://scripts/dev/dev_world_CLEAN.gd
+# CLEAN ARCHITECTURE: dev_world is ONLY a scene trigger
+# NO game logic, NO spawning, NO UI management
 extends Node2D
 
-# This function runs the moment this scene becomes ready on any machine (client or server)
 func _ready():
-	print("[DevWorld] Scene loaded for peer ", multiplayer.get_unique_id(), ". Reporting readiness to server.")
+	"""Minimal scene trigger - reports readiness to NetworkManager"""
+	await get_tree().process_frame
 	
-	# Immediately send a message to the SERVER ONLY (peer_id = 1)
-	# This RPC says: "I, [my_unique_id], have successfully loaded and am ready."
-	NetworkManager.report_readiness.rpc_id(1, multiplayer.get_unique_id())
+	# Safety guard
+	if not multiplayer.has_multiplayer_peer():
+		print("[DevWorld] ⚠️ No multiplayer peer - aborting")
+		return
+	
+	print("[DevWorld] Scene loaded for peer ", multiplayer.get_unique_id())
+	
+	# Verify GameUI is present
+	var game_ui = get_node_or_null("GameUI")
+	if game_ui:
+		print("[DevWorld] ✅ GameUI found and ready")
+	else:
+		print("[DevWorld] ❌ GameUI not found!")
+	
+	# Report readiness to NetworkManager (synchronization barrier)
+	if NetworkManager and NetworkManager.has_method("report_readiness"):
+		NetworkManager.report_readiness.rpc_id(1, multiplayer.get_unique_id())
+		print("[DevWorld] ✅ Reported readiness to NetworkManager")
+	else:
+		print("[DevWorld] ❌ NetworkManager not found!")

@@ -52,6 +52,11 @@ var can_attack: bool = false  # Controlled by GameManager
 var can_sak: bool = false  # Controlled by GameManager - separate SAK control
 var max_ammo: int = 0  # Maximum ammo capacity (set by GameManager)
 
+# LOS (Line of Sight) system for Seeker
+var los_range: float = 150.0  # Seeker's sight range
+var los_angle: float = 60.0   # Seeker's sight cone angle (degrees)
+var spotted_targets: Array[PlayerCharacter] = []  # Currently spotted Hiders
+
 # Username display
 var username_label: Label = null
 
@@ -393,6 +398,12 @@ func set_ammo(new_ammo: int) -> void:
 	"""RPC to set player ammo - called by server during gameplay"""
 	self.ammo = new_ammo
 	print("[Player] Ammo updated: ", ammo)
+	
+	# Update UI if this is the local player and they're a Seeker
+	if is_main_player and role == PlayerRole.SEEKER:
+		var game_manager = get_node_or_null("/root/GameManager")
+		if game_manager and game_manager.has_method("update_ui"):
+			game_manager.update_ui()
 
 # New enhanced control system for game states
 @rpc("any_peer", "call_local", "reliable")
@@ -501,40 +512,88 @@ func _handle_phase1_fire_input() -> void:
 	# The client sends a request to the server to fire
 	request_fire_projectile_rpc.rpc_id(1)
 
-# Helper function to handle fire/sak input
+# Simplified input handling - just send attack request to server
 func _handle_fire_sak_input() -> void:
-	print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanAttack: ", can_attack, " CanSAK: ", can_sak)
+	print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role])
 	
-	# General validation - must not be in action
+	# Simple client-side check - don't spam if already in action
 	if is_in_action:
 		print("[Player] Cannot attack - already in action")
 		return
-		
-	print("[Player] Handling fire/sak input - Role: ", PlayerRole.keys()[role], " Ammo: ", ammo)
 	
+	# Send attack request to server - let server validate everything
+	print("[Player] 🎯 Sending attack request to server")
+	server_request_attack.rpc_id(1)
+
+# Server-side attack validation and execution
+@rpc("any_peer", "call_local", "reliable")
+func server_request_attack() -> void:
+	"""Server validates and executes attack requests"""
+	if not multiplayer.is_server():
+		return
+	
+	var requester_id = multiplayer.get_remote_sender_id()
+	print("[Player] Server received attack request from peer: ", requester_id)
+	
+	# Validate game state and player permissions
+	var game_manager = get_node_or_null("/root/GameManager")
+	if not game_manager:
+		print("[Player] Server rejected attack - GameManager not found")
+		return
+	
+	# Check if player is in action
+	if is_in_action:
+		print("[Player] Server rejected attack - player already in action")
+		show_temporary_message.rpc_id(requester_id, "You're already attacking!")
+		return
+	
+	# Role-specific validation and execution
 	if role == PlayerRole.SEEKER:
-		if not can_attack:
-			print("[Player] Cannot BANG - attacks disabled by game state")
-		elif ammo < max_ammo:
-			print("[Player] Cannot BANG - ammo not full (", ammo, "/", max_ammo, ") - wait for regeneration")
-		else:
-			print("[Player] 🎯 Requesting seeker BANG via RPC")
-			var aim_direction = (get_global_mouse_position() - global_position).normalized()
-			request_fire_projectile_rpc.rpc_id(1, aim_direction)
+		_server_validate_seeker_attack(requester_id, game_manager)
 	elif role == PlayerRole.HIDER:
-		if not can_sak:
-			print("[Player] Cannot SAK - SAK attacks disabled by game state (delay active)")
-		else:
-			print("[Player] 🗡️ Requesting hider SAK via RPC")
-			# Find nearest target for SAK attack
-			var nearest_target = _find_nearest_sak_target()
-			if nearest_target:
-				print("[Player] Found SAK target: ", nearest_target.player_name, " - sending request")
-				request_sak_attack_rpc.rpc_id(1, nearest_target.get_multiplayer_authority())
-			else:
-				print("[Player] No valid SAK target found - no Seekers in range")
+		_server_validate_hider_attack(requester_id, game_manager)
 	else:
-		print("[Player] Invalid role or conditions for attack")
+		show_temporary_message.rpc_id(requester_id, "Invalid role for attack!")
+
+func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> void:
+	"""Server validates Seeker BANG attack"""
+	# Check if Seeker can attack in current game state
+	if not can_attack:
+		show_temporary_message.rpc_id(requester_id, "Attacks disabled - wait for your turn!")
+		return
+	
+	# Check ammo requirement
+	if ammo < max_ammo:
+		show_temporary_message.rpc_id(requester_id, "Need full ammo to attack! (" + str(ammo) + "/" + str(max_ammo) + ")")
+		return
+	
+	# Execute BANG attack
+	print("[Player] 🎯 Server authorizing Seeker BANG attack")
+	var aim_direction = (get_global_mouse_position() - global_position).normalized()
+	request_fire_projectile_rpc.rpc_id(1, aim_direction)
+
+func _server_validate_hider_attack(requester_id: int, game_manager: Node) -> void:
+	"""Server validates Hider SAK attack"""
+	# Check if Hider can SAK in current game state
+	if not can_sak:
+		show_temporary_message.rpc_id(requester_id, "You're panicked and can't attack yet!")
+		return
+	
+	# Find nearest target
+	var nearest_target = _find_nearest_sak_target()
+	if not nearest_target:
+		show_temporary_message.rpc_id(requester_id, "No targets in range!")
+		return
+	
+	# Execute SAK attack
+	print("[Player] 🗡️ Server authorizing Hider SAK attack on: ", nearest_target.player_name)
+	request_sak_attack_rpc.rpc_id(1, nearest_target.get_multiplayer_authority())
+
+@rpc("any_peer", "call_local", "reliable")
+func show_temporary_message(message: String) -> void:
+	"""Show temporary message to specific client"""
+	print("[Player] Temporary message: ", message)
+	# This could be connected to UI later for better user feedback
 
 # Helper function to find nearest valid SAK target
 func _find_nearest_sak_target() -> PlayerCharacter:
@@ -824,8 +883,8 @@ func _trigger_spotted_alert():
 	
 	# Find GameUI and trigger spotted alert
 	var game_ui = _find_game_ui()
-	if game_ui and game_ui.has_method("show_spotted_alert"):
-		game_ui.show_spotted_alert()
+	if game_ui and game_ui.has_method("show_spotted"):
+		game_ui.show_spotted(true)
 
 @rpc("any_peer", "call_local", "reliable")
 func _hide_spotted_alert():
@@ -836,8 +895,8 @@ func _hide_spotted_alert():
 	
 	# Find GameUI and hide spotted alert
 	var game_ui = _find_game_ui()
-	if game_ui and game_ui.has_method("_hide_spotted_alert"):
-		game_ui._hide_spotted_alert()
+	if game_ui and game_ui.has_method("show_spotted"):
+		game_ui.show_spotted(false)
 
 func _find_game_ui() -> Control:
 	"""Find the GameUI node in the scene"""

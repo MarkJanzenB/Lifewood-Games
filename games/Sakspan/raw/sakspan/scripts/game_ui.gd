@@ -17,7 +17,7 @@ var local_player_role: PlayerCharacter.PlayerRole
 
 func _ready():
 	# Register this UI instance with the global GameManager
-	var game_manager = get_node_or_null("/root/GameManager")
+	var game_manager = get_node_or_null("/root/GameMaster")
 	if game_manager and game_manager.has_method("register_game_ui"):
 		game_manager.register_game_ui(self)
 		
@@ -37,12 +37,23 @@ func _ready():
 
 func initialize(player: PlayerCharacter):
 	local_player_role = player.role
-	if local_player_role == PlayerCharacter.PlayerRole.SEEKER:
+	configure_for_role(local_player_role)
+
+func configure_for_role(role: PlayerCharacter.PlayerRole):
+	"""Configure UI elements based on player role - called once"""
+	local_player_role = role
+	print("[GameUI] Configuring UI for role: ", PlayerCharacter.PlayerRole.keys()[role])
+	
+	if role == PlayerCharacter.PlayerRole.SEEKER:
 		if spotted_label:
 			spotted_label.visible = false
-	elif local_player_role == PlayerCharacter.PlayerRole.HIDER:
+		if ammo_label:
+			ammo_label.visible = true
+	elif role == PlayerCharacter.PlayerRole.HIDER:
 		if ammo_label:
 			ammo_label.visible = false
+		if spotted_label:
+			spotted_label.visible = false  # Will be shown when spotted
 
 # --- PUBLIC UI FUNCTIONS ---
 
@@ -67,9 +78,11 @@ func show_spotted(is_visible: bool):
 				spotted_timer.start()
 
 func update_countdown(text: String, is_visible: bool):
+	"""Passive display - simply shows the countdown value from server"""
 	if countdown_label:
 		countdown_label.text = text
 		countdown_label.visible = is_visible
+		print("[GameUI] Countdown updated: ", text)
 
 func update_status(text: String, is_visible: bool):
 	if status_label:
@@ -98,6 +111,6 @@ func fade_out_label(label_node: Label, text: String):
 
 func _exit_tree():
 	# Deregister when this HUD is removed to prevent stale references
-	var game_manager = get_node_or_null("/root/GameManager")
+	var game_manager = get_node_or_null("/root/GameMaster")
 	if game_manager and game_manager.has_method("unregister_game_ui"):
 		game_manager.unregister_game_ui(self)
