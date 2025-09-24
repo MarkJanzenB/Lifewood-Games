@@ -521,7 +521,40 @@ func rpc_load_world() -> void:
 	# PHASE 2: Load GamePrep scene first for role assignment
 	var target_scene: String = GAMEPREP_SCENE_PATH
 	print("[NetworkManager] 📡 Switching to GamePrep scene: ", target_scene)
+	
+	# Connect scene change detection for GamePrep ready signal
+	get_tree().tree_changed.connect(_on_gameprep_scene_changed, CONNECT_ONE_SHOT)
 	get_tree().change_scene_to_file(target_scene)
+
+func _on_gameprep_scene_changed() -> void:
+	"""Called when GamePrep scene loads - emits all_peers_verified_and_ready for GameManager"""
+	if not multiplayer.is_server():
+		return
+	
+	var current_scene = get_tree().current_scene
+	if current_scene and current_scene.scene_file_path == GAMEPREP_SCENE_PATH:
+		print("[NetworkManager] 🎯 GamePrep scene loaded, waiting one frame...")
+		
+		# Wait one frame to ensure scene is fully initialized
+		await get_tree().process_frame
+		
+		print("[NetworkManager] 🚀 Emitting all_peers_verified_and_ready signal for GamePrep")
+		all_peers_verified_and_ready.emit()
+
+# DEBUG FUNCTION - Remove in production
+func debug_emit_gameprep_ready() -> void:
+	"""Manual trigger for GamePrep ready signal - for testing only"""
+	print("[NetworkManager] 🔧 DEBUG: Manually emitting all_peers_verified_and_ready for GamePrep...")
+	all_peers_verified_and_ready.emit()
+
+func debug_transition_to_dev_world() -> void:
+	"""Manual trigger for scene transition - for testing only"""
+	if not multiplayer.is_server():
+		print("[NetworkManager] DEBUG: Only server can command scene transitions")
+		return
+	
+	print("[NetworkManager] 🔧 DEBUG: Manually triggering scene transition to dev_world...")
+	change_to_dev_world()
 
 # PHASE 2: Function for GameManager to transition from GamePrep to dev_world
 func change_to_dev_world() -> void:
@@ -530,11 +563,22 @@ func change_to_dev_world() -> void:
 		return
 	
 	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else WORLD_SCENE_PATH
-	print("[NetworkManager] 🎮 Transitioning from GamePrep to game world: ", target_scene)
+	print("[NetworkManager] 🎮 Server commanding all peers to transition to: ", target_scene)
 	
-	# Connect scene change detection for game_world_ready signal
-	get_tree().tree_changed.connect(_on_scene_changed, CONNECT_ONE_SHOT)
-	get_tree().change_scene_to_file(target_scene)
+	# CRITICAL FIX: Use RPC to command ALL peers (including server) to change scenes
+	rpc_transition_to_scene.rpc(target_scene)
+
+@rpc("authority", "call_local", "reliable")
+func rpc_transition_to_scene(scene_path: String) -> void:
+	"""RPC to transition all peers to the specified scene"""
+	print("[NetworkManager] 📡 RPC RECEIVED: Transitioning to scene: ", scene_path, " (Peer: ", multiplayer.get_unique_id(), ")")
+	
+	# Connect scene change detection for game_world_ready signal (server only)
+	if multiplayer.is_server():
+		get_tree().tree_changed.connect(_on_scene_changed, CONNECT_ONE_SHOT)
+	
+	# Execute scene change on this peer
+	get_tree().change_scene_to_file(scene_path)
 
 func _on_scene_changed() -> void:
 	"""Called when scene transition completes - emits game_world_ready for GameManager"""

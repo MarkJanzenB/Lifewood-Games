@@ -1,10 +1,9 @@
-[gd_scene load_steps=8 format=3 uid="uid://cmw8cqa5nrkdi"]
+[gd_scene load_steps=7 format=3 uid="uid://cmw8cqa5nrkdi"]
 
 [ext_resource type="Texture2D" uid="uid://vgcncyviyo34" path="res://tilesets/earth/grass.png" id="1_4wyf3"]
 [ext_resource type="PackedScene" uid="uid://bxhfocxnpf5sb" path="res://scenes/obstacles/Obstacle.tscn" id="2_rwgxs"]
 [ext_resource type="PackedScene" uid="uid://37dudwsdkboa" path="res://scenes/obstacles/tree1.tscn" id="4_k0juu"]
 [ext_resource type="PackedScene" uid="uid://c7s3d55ma5x4d" path="res://scenes/GameUI.tscn" id="5_71j4m"]
-[ext_resource type="Script" uid="uid://c3fg6dh42r02s" path="res://scripts/world_new.gd" id="6_world_new"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_e5uuo"]
 size = Vector2(8.5, 864)
@@ -13,7 +12,6 @@ size = Vector2(8.5, 864)
 size = Vector2(1552, 7.75)
 
 [node name="World" type="Node2D"]
-script = ExtResource("6_world_new")
 
 [node name="Background" type="TextureRect" parent="."]
 anchors_preset = 8
@@ -82,7 +80,7 @@ scale = Vector2(0.157657, 0.157657)
 color = Color(0.1, 0.1, 0.1, 1)
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("uid://b75j5af55anqv", "uid://cdmdl43ffakku")
+_spawnable_scenes = PackedStringArray("uid://cdmdl43ffakku")
 spawn_path = NodePath("../Players")
 
 [node name="Players" type="Node2D" parent="."]

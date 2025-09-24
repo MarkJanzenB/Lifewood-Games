@@ -29,7 +29,7 @@ func _ready():
 
 # Called when GameManager broadcasts the seeker information
 func _on_seeker_revealed(seeker_name: String, seeker_character: String):
-	print("[GamePrep] Seeker revealed: ", seeker_name)
+	print("[GamePrep] 🎯 CLIENT RECEIVED: Seeker revealed - ", seeker_name, " (Peer: ", multiplayer.get_unique_id(), ")")
 	if seeker_name_label:
 		seeker_name_label.text = seeker_name
 		seeker_name_label.add_theme_color_override("font_color", Color.RED)
@@ -39,7 +39,7 @@ func _on_seeker_revealed(seeker_name: String, seeker_character: String):
 
 # Called when GameManager broadcasts countdown updates
 func _on_countdown_updated(time_remaining: int):
-	print("[GamePrep] Countdown update: ", time_remaining)
+	print("[GamePrep] ⏰ CLIENT RECEIVED: Countdown update - ", time_remaining, " (Peer: ", multiplayer.get_unique_id(), ")")
 	if countdown_value_label:
 		countdown_value_label.text = str(time_remaining)
 		

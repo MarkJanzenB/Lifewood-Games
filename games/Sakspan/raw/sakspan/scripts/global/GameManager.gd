@@ -158,8 +158,12 @@ func check_win_conditions() -> void:
 func _ready() -> void:
 	# This function runs ONCE when the app starts.
 	# GameManager is now PURELY PASSIVE - only responds to NetworkManager signals
+	print("[GameManager] 🔧 DEBUG: _ready() called, connecting to NetworkManager...")
 	if NetworkManager:
 		NetworkManager.all_peers_verified_and_ready.connect(_on_all_peers_ready)
+		print("[GameManager] ✅ DEBUG: Successfully connected to all_peers_verified_and_ready signal")
+	else:
+		print("[GameManager] ❌ DEBUG: NetworkManager not found during _ready()!")
 	
 	# Connect player elimination signal
 	player_eliminated.connect(on_player_eliminated)
@@ -175,6 +179,9 @@ func _ready() -> void:
 	
 	# DEBUG: Manual trigger for testing (remove in production)
 	print("[GameManager] DEBUG: To manually trigger role assignment, call GameManager.debug_start_role_assignment()")
+	print("[GameManager] DEBUG: To test signal handler, call GameManager.debug_test_signal_handler()")
+	print("[GameManager] DEBUG: To test RPC calls, call GameManager.debug_test_rpc_calls()")
+	print("[GameManager] DEBUG: To test scene transition, call NetworkManager.debug_transition_to_dev_world()")
 	
 	# Set process to handle game timing
 	set_process(false)
@@ -241,8 +248,8 @@ func start_role_assignment() -> void:
 	for pid in player_ids:
 		players_dict[pid]["is_seeker"] = (pid == seeker_id)
 	
-	# Broadcast seeker information to all clients
-	seeker_revealed.emit(seeker_name, "Character") # TODO: Add character info
+	# Broadcast seeker information to all clients via RPC
+	rpc_update_seeker_info.rpc(seeker_name, "Character") # TODO: Add character info
 	
 	# Start 5-second countdown before transitioning to dev_world
 	start_prep_countdown(5)
@@ -255,8 +262,8 @@ func start_prep_countdown(duration: int) -> void:
 	current_countdown_value = duration
 	print("[GameManager] ⏰ Starting GamePrep countdown: ", duration, " seconds")
 	
-	# Broadcast initial countdown
-	prep_countdown_updated.emit(current_countdown_value)
+	# Broadcast initial countdown via RPC
+	rpc_update_prep_countdown.rpc(current_countdown_value)
 	
 	# Start master clock for countdown - state-based logic will handle it
 	if master_clock:
@@ -264,7 +271,7 @@ func start_prep_countdown(duration: int) -> void:
 
 # _on_prep_countdown_tick() - REMOVED: Logic moved to _on_master_clock_tick() for state-based handling
 
-# DEBUG FUNCTION - Remove in production
+# DEBUG FUNCTIONS - Remove in production
 func debug_start_role_assignment() -> void:
 	"""Manual trigger for role assignment - for testing only"""
 	if not multiplayer.is_server():
@@ -274,6 +281,21 @@ func debug_start_role_assignment() -> void:
 	print("[GameManager] 🔧 DEBUG: Manually triggering role assignment...")
 	start_role_assignment()
 
+func debug_test_signal_handler() -> void:
+	"""Test the signal handler directly - for testing only"""
+	print("[GameManager] 🔧 DEBUG: Testing signal handler directly...")
+	_on_all_peers_ready()
+
+func debug_test_rpc_calls() -> void:
+	"""Test RPC calls directly - for testing only"""
+	if not multiplayer.is_server():
+		print("[GameManager] DEBUG: Only server can send RPCs")
+		return
+	
+	print("[GameManager] 🔧 DEBUG: Testing RPC calls...")
+	rpc_update_seeker_info.rpc("TestSeeker", "TestCharacter")
+	rpc_update_prep_countdown.rpc(3)
+
 func _transition_to_dev_world() -> void:
 	"""Transition from GamePrep to dev_world scene"""
 	if not multiplayer.is_server():
@@ -281,18 +303,20 @@ func _transition_to_dev_world() -> void:
 	
 	print("[GameManager] 🌍 Transitioning to dev_world...")
 	
-	# Use NetworkManager to change scene
+	# Use NetworkManager to command scene transition via RPC
 	var network_manager = get_node_or_null("/root/NetworkManager")
 	if network_manager and network_manager.has_method("change_to_dev_world"):
 		network_manager.change_to_dev_world()
 	else:
-		# Fallback: direct scene change
-		get_tree().change_scene_to_file("res://scenes/dev/dev_world.tscn")
+		print("[GameManager] ❌ CRITICAL: NetworkManager not found - cannot transition scenes!")
+		return
 
 # ROBUST: Single definitive trigger - no re-entrant loops
 func _on_all_peers_ready() -> void:
 	"""Called ONCE when NetworkManager confirms all peers are ready"""
+	print("[GameManager] 🚨 DEBUG: _on_all_peers_ready() called! Server: ", multiplayer.is_server())
 	if not multiplayer.is_server():
+		print("[GameManager] 🚨 DEBUG: Not server, exiting...")
 		return
 	
 	var current_scene = get_tree().current_scene
@@ -487,7 +511,7 @@ func _on_master_clock_tick() -> void:
 			# GamePrep countdown logic
 			current_countdown_value -= 1
 			print("[GameManager] ⏰ GamePrep countdown: ", current_countdown_value)
-			prep_countdown_updated.emit(current_countdown_value)
+			rpc_update_prep_countdown.rpc(current_countdown_value)
 			
 			if current_countdown_value <= 0:
 				master_clock.stop()
@@ -1082,6 +1106,19 @@ func _rpc_sync_game_state(synced_players: Dictionary, current_state: GameState) 
 	players = synced_players.duplicate(true)
 	game_state = current_state
 	game_state_changed.emit(current_state)
+
+# GamePrep UI Update RPCs
+@rpc("authority", "call_local", "reliable")
+func rpc_update_seeker_info(seeker_name: String, character: String) -> void:
+	"""RPC to update seeker information on all clients"""
+	print("[GameManager] 📡 RPC: Updating seeker info - ", seeker_name)
+	seeker_revealed.emit(seeker_name, character)
+
+@rpc("authority", "call_local", "reliable")
+func rpc_update_prep_countdown(countdown_value: int) -> void:
+	"""RPC to update GamePrep countdown on all clients"""
+	print("[GameManager] 📡 RPC: Updating prep countdown - ", countdown_value)
+	prep_countdown_updated.emit(countdown_value)
 
 #region Helper Functions
 func _all_players_ready() -> bool:
