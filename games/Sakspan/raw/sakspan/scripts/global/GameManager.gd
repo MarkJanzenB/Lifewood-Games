@@ -593,25 +593,12 @@ func start_master_clock_countdown(duration: int, next_state: GameState) -> void:
 	master_clock.start()
 
 func _execute_next_phase(next_state: GameState) -> void:
-	"""Execute the next phase directly without state machine complexity"""
+	"""Execute the next phase using the unified transition system"""
 	if not multiplayer.is_server():
 		return
 	
-	current_state = next_state
-	print("[GameManager] 🔄 Executing phase: ", GameState.keys()[current_state])
-	
-	match current_state:
-		GameState.HIDER_HEADSTART:
-			print("[GameManager] 🏃 HIDER_HEADSTART: Hiders can move, Seeker frozen (10s countdown)...")
-			_start_phase_2_hider_headstart()
-		
-		GameState.SEEKER_RELEASED:
-			print("[GameManager] 👁️ SEEKER_RELEASED: Seeker can move/attack, Hiders can't SAK (5s)...")
-			_start_phase_3_seeker_released()
-		
-		GameState.IN_PROGRESS:
-			print("[GameManager] 🎮 IN_PROGRESS: Full gameplay active with all mechanics!")
-			_start_phase_4_full_gameplay()
+	print("[GameManager] 🔄 Executing phase: ", GameState.keys()[next_state])
+	_execute_phase_transition(next_state)
 
 # Centralized UI Broadcasting RPCs - Server Authority
 # (Functions moved to Phase 3 section with enhanced logging)
@@ -850,66 +837,137 @@ func start_game() -> void:
 	# Start Phase 1: Pre-Game Freeze (5 seconds)
 	_start_phase_1_freeze()
 
-# Phase 1: Role Assignment & Freeze (5 seconds)
+# === REFACTORED PHASE TRANSITION SYSTEM ===
+
+# Phase configuration data structure
+var phase_configs = {
+	GameState.PRE_GAME_FREEZE: {
+		"name": "Pre-Game Freeze",
+		"duration": 5,
+		"next_phase": GameState.HIDER_HEADSTART,
+		"permissions": {
+			"hider_movement": false,
+			"hider_attack": false,
+			"seeker_movement": false,
+			"seeker_attack": false
+		},
+		"effects": ["show_role_announcements"],
+		"announcements": []
+	},
+	GameState.HIDER_HEADSTART: {
+		"name": "Hider Head Start",
+		"duration": 10,
+		"next_phase": GameState.SEEKER_RELEASED,
+		"permissions": {
+			"hider_movement": true,
+			"hider_attack": false,
+			"seeker_movement": false,
+			"seeker_attack": false
+		},
+		"effects": ["activate_seeker_blindness"],
+		"announcements": []
+	},
+	GameState.SEEKER_RELEASED: {
+		"name": "Seeker Released",
+		"duration": 5,
+		"next_phase": GameState.IN_PROGRESS,
+		"permissions": {
+			"hider_movement": true,
+			"hider_attack": false,
+			"seeker_movement": true,
+			"seeker_attack": true
+		},
+		"effects": ["deactivate_seeker_blindness"],
+		"announcements": ["The Seeker is on the move!"]
+	},
+	GameState.IN_PROGRESS: {
+		"name": "Full Gameplay",
+		"duration": -1,  # No countdown, game continues until win condition
+		"next_phase": null,
+		"permissions": {
+			"hider_movement": true,
+			"hider_attack": true,
+			"seeker_movement": true,
+			"seeker_attack": true
+		},
+		"effects": [],
+		"announcements": ["Full gameplay active!"]
+	}
+}
+
+# Unified phase transition function
+func _execute_phase_transition(phase: GameState):
+	"""Execute a phase transition using the configuration system"""
+	if not phase in phase_configs:
+		push_error("[GameManager] Unknown phase: " + str(phase))
+		return
+	
+	var config = phase_configs[phase]
+	print("[GameManager] 🔄 Starting Phase: ", config.name, " (", GameState.keys()[phase], ")")
+	
+	# Update game state
+	change_game_state(phase)
+	
+	# Apply player permissions
+	_apply_phase_permissions(config.permissions)
+	
+	# Execute special effects
+	_execute_phase_effects(config.effects)
+	
+	# Show announcements
+	_show_phase_announcements(config.announcements)
+	
+	# Start countdown if needed
+	if config.duration > 0 and config.next_phase != null:
+		start_master_clock_countdown(config.duration, config.next_phase)
+	
+	print("[GameManager] ✅ Phase ", config.name, " initialized successfully")
+
+# Apply player permissions based on phase configuration
+func _apply_phase_permissions(permissions: Dictionary):
+	"""Apply movement and attack permissions for the current phase"""
+	print("[GameManager] 🎮 Applying phase permissions: ", permissions)
+	
+	# Apply hider permissions
+	_set_hiders_movement(permissions.hider_movement)
+	_set_hiders_attack(permissions.hider_attack)
+	
+	# Apply seeker permissions
+	_set_seekers_movement(permissions.seeker_movement)
+	_set_seekers_attack(permissions.seeker_attack)
+
+# Execute special effects for the phase
+func _execute_phase_effects(effects: Array):
+	"""Execute special effects like blindness, UI changes, etc."""
+	for effect in effects:
+		match effect:
+			"show_role_announcements":
+				_show_role_announcements.rpc()
+			"activate_seeker_blindness":
+				_activate_seeker_blindness.rpc()
+			"deactivate_seeker_blindness":
+				_deactivate_seeker_blindness.rpc()
+			_:
+				print("[GameManager] ⚠️ Unknown effect: ", effect)
+
+# Show announcements for the phase
+func _show_phase_announcements(announcements: Array):
+	"""Show announcements to players"""
+	for announcement in announcements:
+		_show_announcement.rpc(announcement)
+
+# Legacy phase functions (kept for compatibility, but redirect to new system)
 func _start_phase_1_freeze():
-	print("[GameManager] Starting Phase 1: Pre-Game Freeze (5s)")
-	change_game_state(GameState.PRE_GAME_FREEZE)
-	
-	# Freeze all players
-	_set_all_players_movement(false)
-	_set_all_players_attack(false)
-	
-	# Show role announcements to all clients
-	_show_role_announcements.rpc()
-	
-	# Start 5-second countdown for Phase 1
-	start_master_clock_countdown(5, GameState.HIDER_HEADSTART)
+	_execute_phase_transition(GameState.PRE_GAME_FREEZE)
 
-# Phase 2: Hider Head Start & Seeker Blindness (10 seconds)
 func _start_phase_2_hider_headstart():
-	print("[GameManager] Starting Phase 2: Hider Head Start (10s)")
-	change_game_state(GameState.HIDER_HEADSTART)
-	
-	# Enable movement for Hiders only
-	_set_hiders_movement(true)
-	_set_seekers_movement(false)
-	
-	# Blind the Seeker
-	_activate_seeker_blindness.rpc()
-	
-	# Show countdown to all players
-	_show_countdown.rpc(10)
-	
-	# Start 10-second countdown for Phase 2
-	start_master_clock_countdown(10, GameState.SEEKER_RELEASED)
+	_execute_phase_transition(GameState.HIDER_HEADSTART)
 
-# Phase 3: Seeker Release & Hider Attack Delay (5 seconds)
 func _start_phase_3_seeker_released():
-	print("[GameManager] Starting Phase 3: Seeker Released (5s)")
-	change_game_state(GameState.SEEKER_RELEASED)
-	
-	# Enable Seeker movement and vision
-	_set_seekers_movement(true)
-	_deactivate_seeker_blindness.rpc()
-	
-	# Keep Hider attacks disabled
-	_set_hiders_attack(false)
-	_set_seekers_attack(true)
-	
-	# Show announcement
-	_show_announcement.rpc("The Seeker is on the move!")
-	
-	# Start 5-second countdown for Phase 3
-	start_master_clock_countdown(5, GameState.IN_PROGRESS)
+	_execute_phase_transition(GameState.SEEKER_RELEASED)
 
-# Phase 4: Full Gameplay Begins
 func _start_phase_4_full_gameplay():
-	print("[GameManager] Starting Phase 4: Full Gameplay")
-	change_game_state(GameState.IN_PROGRESS)
-	
-	# Enable all abilities for all players
-	_set_all_players_movement(true)
-	_set_all_players_attack(true)
+	_execute_phase_transition(GameState.IN_PROGRESS)
 	
 	# Show role-specific announcements
 	_show_seeker_warning.rpc()
@@ -979,9 +1037,11 @@ func _on_ammo_regen_timer_timeout():
 
 # Player control helper functions
 func _set_all_players_movement(enabled: bool):
+	print("[GameManager] 🎮 SERVER: Setting ALL players movement to ", enabled)
 	_set_players_movement_by_role.rpc("all", enabled)
 
 func _set_all_players_attack(enabled: bool):
+	print("[GameManager] 🎮 SERVER: Setting ALL players attack to ", enabled)
 	_set_players_attack_by_role.rpc("all", enabled)
 
 func _set_hiders_movement(enabled: bool):
@@ -1302,11 +1362,14 @@ func _show_role_announcements():
 	if local_player and local_player.has_method("show_role_overlay"):
 		local_player.show_role_overlay()
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _set_players_movement_by_role(role_filter: String, enabled: bool):
 	"""Set movement for players by role"""
+	print("[GameManager] 📡 RPC RECEIVED: _set_players_movement_by_role(", role_filter, ", ", enabled, ") on peer ", multiplayer.get_unique_id())
+	
 	var local_player = _get_local_player()
 	if not local_player:
+		print("[GameManager] ❌ No local player found for movement update")
 		return
 	
 	var should_apply = false
@@ -1319,13 +1382,18 @@ func _set_players_movement_by_role(role_filter: String, enabled: bool):
 	
 	if should_apply:
 		local_player.can_move = enabled
-		print("[GameManager] Set movement to ", enabled, " for ", role_filter, " (local player)")
+		print("[GameManager] ✅ Set movement to ", enabled, " for ", role_filter, " (", local_player.player_name, ")")
+	else:
+		print("[GameManager] ⚠️ Movement update skipped - role filter '", role_filter, "' doesn't match local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role])
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _set_players_attack_by_role(role_filter: String, enabled: bool):
 	"""Set attack ability for players by role"""
+	print("[GameManager] 📡 RPC RECEIVED: _set_players_attack_by_role(", role_filter, ", ", enabled, ") on peer ", multiplayer.get_unique_id())
+	
 	var local_player = _get_local_player()
 	if not local_player:
+		print("[GameManager] ❌ No local player found for attack update")
 		return
 	
 	var should_apply = false
@@ -1338,9 +1406,11 @@ func _set_players_attack_by_role(role_filter: String, enabled: bool):
 	
 	if should_apply:
 		local_player.can_attack = enabled
-		print("[GameManager] Set attack to ", enabled, " for ", role_filter, " (local player)")
+		print("[GameManager] ✅ Set attack to ", enabled, " for ", role_filter, " (", local_player.player_name, ")")
+	else:
+		print("[GameManager] ⚠️ Attack update skipped - role filter '", role_filter, "' doesn't match local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role])
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _activate_seeker_blindness():
 	"""Activate blindness UI for Seeker clients"""
 	var local_player = _get_local_player()
@@ -1349,7 +1419,7 @@ func _activate_seeker_blindness():
 		# Add blindness overlay to Seeker's UI
 		_create_blindness_overlay()
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _deactivate_seeker_blindness():
 	"""Deactivate blindness UI for Seeker clients"""
 	var local_player = _get_local_player()
@@ -1358,13 +1428,13 @@ func _deactivate_seeker_blindness():
 		# Remove blindness overlay
 		_remove_blindness_overlay()
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _show_countdown(seconds: int):
 	"""Show countdown timer to all players"""
 	print("[GameManager] Showing countdown: ", seconds, " seconds")
 	# This would integrate with the GameUI to show countdown
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _show_announcement(message: String):
 	"""Show announcement to all players"""
 	print("[GameManager] Announcement: ", message)
@@ -1389,10 +1459,14 @@ func _show_hider_warning():
 # Helper functions for staged gameplay
 func _get_local_player() -> PlayerCharacter:
 	"""Get the local player instance"""
-	var players_in_scene = get_tree().get_nodes_in_group("players")
+	var players_in_scene = get_tree().get_nodes_in_group("player")
+	print("[GameManager] 🔍 DEBUG: Found ", players_in_scene.size(), " players in 'player' group")
 	for player in players_in_scene:
+		print("[GameManager] 🔍 DEBUG: Checking player ", player.player_name, " - Authority: ", player.is_multiplayer_authority())
 		if player.is_multiplayer_authority():
+			print("[GameManager] ✅ Found local player: ", player.player_name)
 			return player as PlayerCharacter
+	print("[GameManager] ❌ No local player found with authority")
 	return null
 
 func _create_blindness_overlay():
