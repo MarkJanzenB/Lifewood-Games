@@ -25,6 +25,8 @@ signal player_ready_changed(player_id: int, is_ready: bool)
 signal game_starting(countdown: int)
 signal game_ended(winning_team: String)
 signal player_eliminated(eliminated_player: Object, attacker: Object)
+signal seeker_revealed(seeker_name: String, seeker_character: String)
+signal prep_countdown_updated(time_remaining: int)
 
 # Configuration
 @export var game_start_delay: float = 5.0  # 5 seconds countdown
@@ -33,13 +35,11 @@ signal player_eliminated(eliminated_player: Object, attacker: Object)
 
 # Networked variables (Statically Typed)
 var players: Dictionary = {}  # player_id: {name: String, ready: bool, role: String, ...}
-var game_state: int = GameState.LOBBY
 var current_round: int = 1
 var match_start_time: float = 0.0
 var game_ui_instance: Node = null  # Will be set by the GameUI scene when it loads
 
 # Master Clock System - Server-Authoritative Timing
-var master_clock: Timer = null
 var current_countdown_value: int = 0
 var next_state_after_countdown: GameState
 
@@ -47,14 +47,16 @@ var next_state_after_countdown: GameState
 static var instance: GameManager = null
 
 # Timers (will be instantiated in _enter_tree)
+var master_clock: Timer  # The single source of truth for all timing
 var main_timer: Timer
 var ammo_cooldown_timer: Timer
 var sak_delay_timer: Timer
-var phase_timer: Timer
 var ammo_regen_timer: Timer
+# phase_timer removed - replaced by master clock system
 
 # Working game mechanics variables
 var current_state: GameState = GameState.LOBBY
+var game_state: GameState = GameState.LOBBY  # Legacy compatibility - kept in sync with current_state
 var total_players: int = 0
 var max_ammo_capacity: int = 0  # Will be set to total player count
 var sak_delay_active: bool = false  # Prevents hiders from SAK during delay
@@ -76,12 +78,7 @@ func _initialize_timers():
 		sak_delay_timer.timeout.connect(_on_sak_delay_timer_timeout)
 		add_child(sak_delay_timer)
 	
-	if not phase_timer:
-		phase_timer = Timer.new()
-		phase_timer.wait_time = 1.0
-		phase_timer.one_shot = false
-		phase_timer.timeout.connect(_on_phase_timer_timeout)
-		add_child(phase_timer)
+	# phase_timer removed - replaced by master clock system
 	
 	if not ammo_regen_timer:
 		ammo_regen_timer = Timer.new()
@@ -99,10 +96,7 @@ func _cleanup_scene_timers():
 		sak_delay_timer.queue_free()
 		sak_delay_timer = null
 	
-	if phase_timer and is_instance_valid(phase_timer):
-		phase_timer.stop()
-		phase_timer.queue_free()
-		phase_timer = null
+	# phase_timer removed - replaced by master clock system
 	
 	if ammo_regen_timer and is_instance_valid(ammo_regen_timer):
 		ammo_regen_timer.stop()
@@ -163,8 +157,9 @@ func check_win_conditions() -> void:
 
 func _ready() -> void:
 	# This function runs ONCE when the app starts.
-	# Connect to tree_changed signal immediately - this is more reliable than external management
-	get_tree().tree_changed.connect(_on_tree_changed)
+	# GameManager is now PURELY PASSIVE - only responds to NetworkManager signals
+	if NetworkManager:
+		NetworkManager.all_peers_verified_and_ready.connect(_on_all_peers_ready)
 	
 	# Connect player elimination signal
 	player_eliminated.connect(on_player_eliminated)
@@ -172,7 +167,14 @@ func _ready() -> void:
 	# Initialize singleton-level timers that persist across scene transitions
 	_initialize_singleton_timers()
 	
-	print("[GameManager] GameManager singleton is ready and listening for scene tree changes.")
+	print("[GameManager] GameManager singleton is ready and listening for NetworkManager ready signal.")
+	
+	# Connect all timer signals ONCE in _ready() - no more dynamic connections
+	if master_clock:
+		master_clock.timeout.connect(_on_master_clock_tick)
+	
+	# DEBUG: Manual trigger for testing (remove in production)
+	print("[GameManager] DEBUG: To manually trigger role assignment, call GameManager.debug_start_role_assignment()")
 	
 	# Set process to handle game timing
 	set_process(false)
@@ -184,7 +186,7 @@ func _initialize_singleton_timers():
 		master_clock = Timer.new()
 		master_clock.wait_time = 1.0
 		master_clock.one_shot = false
-		master_clock.timeout.connect(_on_master_clock_tick)
+		# Signal connection moved to _ready() to prevent duplicate connections
 		add_child(master_clock)
 		print("[GameManager] ✅ Master Clock initialized at singleton level")
 	
@@ -205,45 +207,127 @@ func _initialize_singleton_timers():
 	
 	print("[GameManager] ✅ Singleton-level timers initialized")
 
-# ROBUST: Self-managing scene detection that only activates during multiplayer sessions
-func _on_tree_changed() -> void:
-	"""Robust entry point for game loop - only activates when multiplayer session exists"""
-	# We only care about this signal if a multiplayer session is active
-	if not multiplayer.has_multiplayer_peer():
+# PHASE 2: GamePrep Role Assignment System
+func start_role_assignment() -> void:
+	"""Called by GamePrep scene to begin role assignment and countdown"""
+	if not multiplayer.is_server():
 		return
 	
-	# We only care if the SERVER peer has just loaded the dev_world
+	print("[GameManager] 🎭 Starting role assignment in GamePrep scene...")
+	
+	# Get all connected players from NetworkManager
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if not network_manager:
+		print("[GameManager] ❌ NetworkManager not found!")
+		return
+	
+	var players_dict = network_manager.players
+	var player_ids = players_dict.keys()
+	
+	if player_ids.size() < 1:
+		print("[GameManager] ❌ Not enough players for role assignment")
+		return
+	
+	print("[GameManager] 🎮 Found ", player_ids.size(), " players for role assignment")
+	
+	# Randomly select seeker
+	var seeker_id = player_ids[randi() % player_ids.size()]
+	var seeker_data = players_dict[seeker_id]
+	var seeker_name = seeker_data.get("name", "Unknown Player")
+	
+	print("[GameManager] 🎯 Selected seeker: ", seeker_name, " (ID: ", seeker_id, ")")
+	
+	# Store seeker information in NetworkManager for later use
+	for pid in player_ids:
+		players_dict[pid]["is_seeker"] = (pid == seeker_id)
+	
+	# Broadcast seeker information to all clients
+	seeker_revealed.emit(seeker_name, "Character") # TODO: Add character info
+	
+	# Start 5-second countdown before transitioning to dev_world
+	start_prep_countdown(5)
+
+func start_prep_countdown(duration: int) -> void:
+	"""Start the GamePrep countdown before transitioning to dev_world"""
+	if not multiplayer.is_server():
+		return
+	
+	current_countdown_value = duration
+	print("[GameManager] ⏰ Starting GamePrep countdown: ", duration, " seconds")
+	
+	# Broadcast initial countdown
+	prep_countdown_updated.emit(current_countdown_value)
+	
+	# Start master clock for countdown - state-based logic will handle it
+	if master_clock:
+		master_clock.start()
+
+# _on_prep_countdown_tick() - REMOVED: Logic moved to _on_master_clock_tick() for state-based handling
+
+# DEBUG FUNCTION - Remove in production
+func debug_start_role_assignment() -> void:
+	"""Manual trigger for role assignment - for testing only"""
+	if not multiplayer.is_server():
+		print("[GameManager] DEBUG: Only server can start role assignment")
+		return
+	
+	print("[GameManager] 🔧 DEBUG: Manually triggering role assignment...")
+	start_role_assignment()
+
+func _transition_to_dev_world() -> void:
+	"""Transition from GamePrep to dev_world scene"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[GameManager] 🌍 Transitioning to dev_world...")
+	
+	# Use NetworkManager to change scene
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager and network_manager.has_method("change_to_dev_world"):
+		network_manager.change_to_dev_world()
+	else:
+		# Fallback: direct scene change
+		get_tree().change_scene_to_file("res://scenes/dev/dev_world.tscn")
+
+# ROBUST: Single definitive trigger - no re-entrant loops
+func _on_all_peers_ready() -> void:
+	"""Called ONCE when NetworkManager confirms all peers are ready"""
 	if not multiplayer.is_server():
 		return
 	
 	var current_scene = get_tree().current_scene
-	if current_scene and current_scene.scene_file_path == "res://scenes/dev/dev_world.tscn":
-		# Disconnect the signal to prevent it from running multiple times
-		if get_tree().tree_changed.is_connected(_on_tree_changed):
-			get_tree().tree_changed.disconnect(_on_tree_changed)
-		
-		print("[GameManager] 🎯 Detected dev_world scene load on server. Initializing game...")
+	if not current_scene:
+		return
+	
+	print("[GameManager] 🎯 SINGLE TRIGGER: All peers ready. Scene: ", current_scene.scene_file_path)
+	
+	# Disconnect to prevent multiple calls
+	if NetworkManager and NetworkManager.all_peers_verified_and_ready.is_connected(_on_all_peers_ready):
+		NetworkManager.all_peers_verified_and_ready.disconnect(_on_all_peers_ready)
+	
+	if current_scene.scene_file_path == "res://scenes/GamePrep.tscn":
+		print("[GameManager] 🎭 SINGLE EXECUTION: Starting role assignment...")
+		start_role_assignment()
+	elif current_scene.scene_file_path == "res://scenes/dev/dev_world.tscn":
+		print("[GameManager] 🌍 SINGLE EXECUTION: Initializing game world...")
 		initialize_game_world()
 
 # ROBUST: Self-contained game world initialization
 func initialize_game_world() -> void:
-	"""Initialize the game world - called automatically when dev_world scene loads"""
-	# DEFINITIVE SYNCHRONIZATION BARRIER: ONLY SERVER connects to the final verified signal
-	if multiplayer.is_server():
-		print("[GameManager] 🖥️ SERVER: Connecting to NetworkManager.all_peers_verified_and_ready signal")
-		if NetworkManager:
-			NetworkManager.all_peers_verified_and_ready.connect(start_game_flow)
-			print("[GameManager] ✅ SERVER: Connected to bulletproof all_peers_verified_and_ready signal")
-		else:
-			print("[GameManager] ❌ SERVER: NetworkManager not found!")
-		
-		# Set process to handle game timing
-		set_process(false)
-	else:
-		print("[GameManager] 👤 CLIENT: Passive mode - no signal connections, no game logic")
-		print("[GameManager] 👤 CLIENT: Will receive game state via RPCs from server")
-		# Client GameManager does NOTHING - completely passive
+	"""Initialize the game world - called when dev_world scene is ready"""
+	if not multiplayer.is_server():
+		return
 	
+	print("[GameManager] 🏠 SERVER: Initializing game world...")
+	
+	# Initialize game timers for this scene
+	_initialize_timers()
+	
+	# Start the actual game flow
+	start_game_flow()
+	
+	print("[GameManager] ✅ Game world initialization complete")
+
 # DEFINITIVE SYNCHRONIZATION BARRIER: Bulletproof game start flow - all peers verified ready
 func start_game_flow() -> void:
 	if not multiplayer.is_server(): return
@@ -260,118 +344,119 @@ func start_game_flow() -> void:
 	print("[GameManager] ✅ DEFINITIVE: Found ", player_nodes.size(), " verified players")
 	
 	# Initialize game systems
-	_initialize_game_timers()
 	_initialize_server()
 	
-	# --- YOUR GAME LOGIC BEGINS HERE, SAFELY ---
-	# From here, we can be 100% confident that the world is set up correctly
-	print("[GameManager] 🎮 Starting game logic with ", player_nodes.size(), " players")
-	assign_roles(player_nodes)
-	start_countdown_sequence(player_nodes)  # Start the staged countdown sequence
+	# --- PHASE 3: NEW GAME LOGIC FLOW ---
+	# Roles already assigned in GamePrep, start directly at HIDER_HEADSTART
+	print("[GameManager] 🎮 Starting dev_world game logic with ", player_nodes.size(), " players")
+	
+	# Apply roles to spawned players (roles were determined in GamePrep)
+	apply_roles_to_players(player_nodes)
+	
+	# Start directly at HIDER_HEADSTART phase (skip role assignment phase)
+	start_hider_headstart_phase()
 	
 	print("[GameManager] ✅ DEFINITIVE BARRIER: Game flow started successfully")
 
-# --- CORE GAME LOGIC FUNCTIONS (RESTORED) ---
-
-# FUNCTION 1: ASSIGN ROLES (Server-authoritative role assignment)
-func assign_roles(player_nodes: Array) -> void:
-	if not multiplayer.is_server(): return
+# PHASE 3: New staged game flow functions
+func apply_roles_to_players(player_nodes: Array) -> void:
+	"""Apply the roles determined in GamePrep to the spawned players"""
+	if not multiplayer.is_server():
+		return
 	
+	# Get the seeker info from NetworkManager (stored during GamePrep)
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if not network_manager:
+		print("[GameManager] ❌ NetworkManager not found for role application!")
+		return
+	
+	var players_dict = network_manager.players
 	total_players = player_nodes.size()
-	max_ammo_capacity = total_players  # Max ammo = total player count
+	max_ammo_capacity = total_players
 	
-	print("[GameManager] 🎭 Assigning roles to ", total_players, " players...")
-	print("[GameManager] 📊 Max ammo capacity set to: ", max_ammo_capacity)
+	print("[GameManager] 🎭 Applying roles to ", total_players, " players...")
 	
-	# Create a temporary, shuffled copy of the players array to randomize roles
-	var player_pool = player_nodes.duplicate()
-	player_pool.shuffle()
-	
-	# The first player in the shuffled list becomes the Seeker
-	var seeker_node = player_pool.pop_front()
-	if seeker_node and seeker_node.has_method("assign_role"):
-		# Tell this specific client they are now the Seeker
-		print("[GameManager] 🎯 Assigning SEEKER to player ", seeker_node.name)
-		seeker_node.assign_role.rpc(1, max_ammo_capacity)  # 1 = SEEKER, pass max ammo
-	
-	# All other players become Hiders
-	for hider_node in player_pool:
-		if hider_node and hider_node.has_method("assign_role"):
-			print("[GameManager] 🫥 Assigning HIDER to player ", hider_node.name)
-			hider_node.assign_role.rpc(0, 0)  # 0 = HIDER, 0 ammo
-	
-	print("[GameManager] ✅ Role assignment complete")
-
-# FUNCTION 2: START COUNTDOWN SEQUENCE (Begin staged game flow)
-func start_countdown_sequence(player_nodes: Array) -> void:
-	if not multiplayer.is_server(): return
-	
-	print("[GameManager] ⏱️ Starting role transition sequence...")
-	
-	# Transition to the first state of the game
-	transition_to_state(GameState.ROLE_TRANSITION)
-
-# FUNCTION 3: STATE TRANSITION SYSTEM (Server-authoritative state management)
-func transition_to_state(new_state: GameState) -> void:
-	if not multiplayer.is_server(): return
-	
-	current_state = new_state
-	print("[GameManager] 🔄 Game state changed to: ", GameState.keys()[current_state])
-	game_state_changed.emit(current_state)
-	
-	match current_state:
-		GameState.ROLE_TRANSITION:
-			print("[GameManager] 🎭 ROLE_TRANSITION: Players transitioning to roles...")
-			# All players frozen during role assignment
-			_freeze_all_players()
-			show_announcement_to_all.rpc("Assigning Roles...")
-			# No countdown for role transition - immediate transition after 2 seconds
-			if phase_timer:
-				phase_timer.wait_time = 2.0
-				phase_timer.start()
+	# Find seeker from stored data and apply roles
+	for player_node in player_nodes:
+		var player_id = player_node.get_multiplayer_authority()
+		var player_data = players_dict.get(player_id, {})
+		var is_seeker = player_data.get("is_seeker", false)
 		
-		GameState.PRE_GAME_FREEZE:
-			print("[GameManager] 🧊 PRE_GAME_FREEZE: All players frozen for 5 seconds")
-			# All players remain frozen, roles are now assigned
-			_freeze_all_players()
-			show_announcement_to_all.rpc("Game Starting...")
-			start_master_clock_countdown(5, GameState.HIDER_HEADSTART)
-		
-		GameState.HIDER_HEADSTART:
-			print("[GameManager] 🏃 HIDER_HEADSTART: Hiders can move, Seeker frozen (10s countdown)...")
-			_enable_hider_movement_only()
-			_reveal_roles_to_players()
-			show_announcement_to_all.rpc("Hiders, GO! Seeker is frozen.")
-			start_master_clock_countdown(10, GameState.SEEKER_RELEASED)
-		
-		GameState.SEEKER_RELEASED:
-			print("[GameManager] 👁️ SEEKER_RELEASED: Seeker can move/attack, Hiders can't SAK (5s)...")
-			_enable_seeker_full_control()
-			_start_ammo_regeneration()
-			sak_delay_active = true
-			show_announcement_to_all.rpc("The Seeker is loose!")
-			start_master_clock_countdown(5, GameState.IN_PROGRESS)
-		
-		GameState.IN_PROGRESS:
-			print("[GameManager] 🎮 IN_PROGRESS: Full gameplay active with all mechanics!")
-			_enable_full_gameplay()
-			sak_delay_active = false
-			show_announcement_to_all.rpc("The Hunt is On!")
-			# No countdown for IN_PROGRESS - game continues until win condition
-			print("[GameManager] ✅ All attacks enabled, ammo regeneration active")
+		if is_seeker:
+			print("[GameManager] 🎯 Applying SEEKER role to: ", player_node.player_name)
+			player_node.assign_role.rpc(1, max_ammo_capacity)  # 1 = SEEKER
+			add_to_group("seeker")
+		else:
+			print("[GameManager] 🫥 Applying HIDER role to: ", player_node.player_name)
+			player_node.assign_role.rpc(0, 0)  # 0 = HIDER
+			add_to_group("hider")
+	
+	print("[GameManager] ✅ Role application complete")
 
-# Timer callback functions
-func _on_freeze_timer_timeout() -> void:
-	print("[GameManager] ⏱️ Freeze timer finished - transitioning to HIDER_HEADSTART")
-	transition_to_state(GameState.HIDER_HEADSTART)
+func start_hider_headstart_phase() -> void:
+	"""Start the HIDER_HEADSTART phase (10 seconds)"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[GameManager] 🏃 Starting HIDER_HEADSTART phase...")
+	current_state = GameState.HIDER_HEADSTART
+	
+	# Freeze seeker, enable hider movement
+	_enable_hider_movement_only()
+	
+	# Send role-specific announcements
+	_send_role_announcements()
+	
+	# Start 10-second countdown
+	start_master_clock_countdown(10, GameState.SEEKER_RELEASED)
 
-func _on_headstart_timer_timeout() -> void:
-	print("[GameManager] ⏱️ Headstart timer finished - transitioning to SEEKER_RELEASED")
-	transition_to_state(GameState.SEEKER_RELEASED)
+func _enable_hider_movement_only() -> void:
+	"""Enable movement for hiders only, freeze seeker"""
+	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
+	for player in players_list:
+		var player_char = player as PlayerCharacter
+		if not player_char:
+			continue
+		
+		if player_char.role == PlayerCharacter.PlayerRole.HIDER:
+			player_char.set_player_state.rpc(true, false)  # can_move=true, can_attack=false
+		elif player_char.role == PlayerCharacter.PlayerRole.SEEKER:
+			player_char.set_player_state.rpc(false, false)  # can_move=false, can_attack=false
+			# Apply seeker blindness
+			player_char.set_seeker_blinded.rpc(true)
 
-func _on_seeker_release_timer_timeout() -> void:
-	print("[GameManager] ⏱️ Seeker release timer finished - transitioning to IN_PROGRESS")
-	transition_to_state(GameState.IN_PROGRESS)
+func _send_role_announcements() -> void:
+	"""Send role-specific announcements to players"""
+	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
+	for player in players_list:
+		var player_char = player as PlayerCharacter
+		if not player_char:
+			continue
+		
+		var player_id = player_char.get_multiplayer_authority()
+		if player_char.role == PlayerCharacter.PlayerRole.HIDER:
+			show_role_rpc.rpc_id(player_id, "You're one of the hiders!", "Hide and survive!")
+		elif player_char.role == PlayerCharacter.PlayerRole.SEEKER:
+			show_role_rpc.rpc_id(player_id, "You're cursed with blindness...", "Wait for your vision to return!")
+
+func _remove_seeker_blindness() -> void:
+	"""Remove blindness from seeker when SEEKER_RELEASED phase starts"""
+	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
+	for player in players_list:
+		var player_char = player as PlayerCharacter
+		if not player_char:
+			continue
+		
+		if player_char.role == PlayerCharacter.PlayerRole.SEEKER:
+			player_char.set_seeker_blinded.rpc(false)
+
+# --- LEGACY FUNCTIONS REMOVED ---
+# assign_roles() - Now handled in GamePrep phase
+# start_countdown_sequence() - Replaced by start_hider_headstart_phase()
+
+# --- LEGACY STATE MACHINE REMOVED ---
+# transition_to_state() - Replaced by _execute_next_phase() for simplified flow
+# Timer callbacks - Replaced by master clock system
 
 # REMOVED: _spawn_all_players() and _spawn_player_on_all_clients() 
 # NetworkManager is now the SOLE authority for player spawning
@@ -387,60 +472,41 @@ func _debug_print_scene_tree(node: Node, depth: int) -> void:
 
 # REMOVED: Old _on_scene_changed function replaced with robust _on_tree_changed approach
 
-# Initialize game timers and signals
-func _initialize_game_timers() -> void:
-	"""Initialize all timers and connect game-specific signals"""
-	print("[GameManager] 🕐 Initializing game timers...")
-	
-	# Create and configure Master Clock - The single source of truth for all timing
-	if not master_clock:
-		master_clock = Timer.new()
-		add_child(master_clock)
-		master_clock.wait_time = 1.0
-		master_clock.one_shot = false
-		master_clock.timeout.connect(_on_master_clock_tick)
-		print("[GameManager] ✅ Master Clock initialized")
-	
-	# Create and configure phase timer if not exists
-	if not phase_timer:
-		phase_timer = Timer.new()
-		add_child(phase_timer)
-		phase_timer.one_shot = true
-		phase_timer.timeout.connect(_on_phase_timer_timeout)
-	
-	# Create and configure main timer if not exists
-	if not main_timer:
-		main_timer = Timer.new()
-		add_child(main_timer)
-		main_timer.one_shot = true
-		main_timer.timeout.connect(_on_main_timer_timeout)
-	
-	# Create and configure ammo cooldown timer if not exists
-	if not ammo_cooldown_timer:
-		ammo_cooldown_timer = Timer.new()
-		add_child(ammo_cooldown_timer)
-		ammo_cooldown_timer.one_shot = true
-		ammo_cooldown_timer.timeout.connect(_on_ammo_cooldown_timeout)
-	
-	print("[GameManager] ✅ Game timers initialized")
+# --- LEGACY TIMER INITIALIZATION REMOVED ---
+# _initialize_game_timers() - Redundant with _initialize_singleton_timers()
 
 # Master Clock System - Server-Authoritative Timing
 func _on_master_clock_tick() -> void:
-	"""Master clock tick - decrements countdown and broadcasts to all clients"""
+	"""Master clock tick - uses current_state to determine behavior"""
 	if not multiplayer.is_server():
 		return
 	
-	current_countdown_value -= 1
-	print("[GameManager] 🕐 Master Clock Tick: ", current_countdown_value)
-	
-	# Broadcast countdown to all clients
-	update_countdown_ui.rpc(current_countdown_value)
-	
-	# Check if countdown reached zero
-	if current_countdown_value <= 0:
-		master_clock.stop()
-		print("[GameManager] ⏰ Countdown finished - transitioning to: ", GameState.keys()[next_state_after_countdown])
-		transition_to_state(next_state_after_countdown)
+	# Use current_state to determine which countdown logic to execute
+	match current_state:
+		GameState.LOBBY:
+			# GamePrep countdown logic
+			current_countdown_value -= 1
+			print("[GameManager] ⏰ GamePrep countdown: ", current_countdown_value)
+			prep_countdown_updated.emit(current_countdown_value)
+			
+			if current_countdown_value <= 0:
+				master_clock.stop()
+				print("[GameManager] ✅ GamePrep countdown finished - transitioning to dev_world")
+				_transition_to_dev_world()
+		
+		_:
+			# Regular gameplay countdown mode
+			current_countdown_value -= 1
+			print("[GameManager] 🕐 Gameplay Clock Tick: ", current_countdown_value)
+			
+			# Broadcast countdown to all clients
+			update_countdown_ui.rpc(current_countdown_value)
+			
+			# Check if countdown reached zero
+			if current_countdown_value <= 0:
+				master_clock.stop()
+				print("[GameManager] ⏰ Countdown finished - executing next phase: ", GameState.keys()[next_state_after_countdown])
+				_execute_next_phase(next_state_after_countdown)
 
 func start_master_clock_countdown(duration: int, next_state: GameState) -> void:
 	"""Start the master clock with specified duration and next state"""
@@ -456,6 +522,27 @@ func start_master_clock_countdown(duration: int, next_state: GameState) -> void:
 	
 	# Start the master clock
 	master_clock.start()
+
+func _execute_next_phase(next_state: GameState) -> void:
+	"""Execute the next phase directly without state machine complexity"""
+	if not multiplayer.is_server():
+		return
+	
+	current_state = next_state
+	print("[GameManager] 🔄 Executing phase: ", GameState.keys()[current_state])
+	
+	match current_state:
+		GameState.HIDER_HEADSTART:
+			print("[GameManager] 🏃 HIDER_HEADSTART: Hiders can move, Seeker frozen (10s countdown)...")
+			_start_phase_2_hider_headstart()
+		
+		GameState.SEEKER_RELEASED:
+			print("[GameManager] 👁️ SEEKER_RELEASED: Seeker can move/attack, Hiders can't SAK (5s)...")
+			_start_phase_3_seeker_released()
+		
+		GameState.IN_PROGRESS:
+			print("[GameManager] 🎮 IN_PROGRESS: Full gameplay active with all mechanics!")
+			_start_phase_4_full_gameplay()
 
 # Centralized UI Broadcasting RPCs - Server Authority
 @rpc("authority", "call_local", "reliable")
@@ -515,7 +602,6 @@ func unregister_game_ui(ui_instance: Node) -> void:
 func set_game_state(new_state: GameState) -> void:
 	if game_state == new_state:
 		return
-		
 	game_state = new_state
 	game_state_changed.emit(new_state)
 
@@ -662,13 +748,8 @@ func _process(delta: float) -> void:
 	if not multiplayer.has_multiplayer_peer():
 		return
 		
-	# Handle countdown display (only update when value changes)
-	if current_state == GameState.GAME_START_COUNTDOWN or current_state == GameState.SEEKER_RELEASED:
-		if game_ui_instance and game_ui_instance.has_method("update_countdown"):
-			var current_countdown = int(ceil(phase_timer.time_left))
-			if current_countdown != _last_countdown_value:
-				_last_countdown_value = current_countdown
-				game_ui_instance.update_countdown(str(current_countdown), true)
+	# Handle countdown display (now handled by master clock system)
+	# Countdown updates are broadcast via update_countdown_ui.rpc() from master clock
 	
 	if not multiplayer.is_server():
 		return
@@ -700,8 +781,7 @@ func start_game() -> void:
 		print("[GameManager] Not enough players to start game")
 		return
 	
-	# Assign roles (1 seeker, rest are hiders)
-	_assign_roles()
+	# Role assignment now handled in GamePrep phase
 	
 	# Initialize the game mechanics
 	initialize_game()
@@ -721,9 +801,8 @@ func _start_phase_1_freeze():
 	# Show role announcements to all clients
 	_show_role_announcements.rpc()
 	
-	# Start 5-second timer for Phase 1
-	phase_timer.wait_time = 5.0
-	phase_timer.start()
+	# Start 5-second countdown for Phase 1
+	start_master_clock_countdown(5, GameState.HIDER_HEADSTART)
 
 # Phase 2: Hider Head Start & Seeker Blindness (10 seconds)
 func _start_phase_2_hider_headstart():
@@ -740,9 +819,8 @@ func _start_phase_2_hider_headstart():
 	# Show countdown to all players
 	_show_countdown.rpc(10)
 	
-	# Start 10-second timer for Phase 2
-	phase_timer.wait_time = 10.0
-	phase_timer.start()
+	# Start 10-second countdown for Phase 2
+	start_master_clock_countdown(10, GameState.SEEKER_RELEASED)
 
 # Phase 3: Seeker Release & Hider Attack Delay (5 seconds)
 func _start_phase_3_seeker_released():
@@ -760,9 +838,8 @@ func _start_phase_3_seeker_released():
 	# Show announcement
 	_show_announcement.rpc("The Seeker is on the move!")
 	
-	# Start 5-second timer for Phase 3
-	phase_timer.wait_time = 5.0
-	phase_timer.start()
+	# Start 5-second countdown for Phase 3
+	start_master_clock_countdown(5, GameState.IN_PROGRESS)
 
 # Phase 4: Full Gameplay Begins
 func _start_phase_4_full_gameplay():
@@ -780,65 +857,45 @@ func _start_phase_4_full_gameplay():
 	# Start main game timer (if needed)
 	match_start_time = Time.get_time_dict_from_system()["unix"]
 
-# Phase timer timeout handler
-func _on_phase_timer_timeout():
-	if not multiplayer.is_server():
-		return
-	
-	# State-aware timer callback - calls the correct transition based on current state
-	match current_state:
-		GameState.ROLE_TRANSITION:
-			print("[GameManager] ⏱️ Role transition finished - transitioning to PRE_GAME_FREEZE")
-			transition_to_state(GameState.PRE_GAME_FREEZE)
-		GameState.PRE_GAME_FREEZE:
-			print("[GameManager] ⏱️ Freeze timer finished - transitioning to HIDER_HEADSTART")
-			transition_to_state(GameState.HIDER_HEADSTART)
-		GameState.HIDER_HEADSTART:
-			print("[GameManager] ⏱️ Headstart timer finished - transitioning to SEEKER_RELEASED")
-			transition_to_state(GameState.SEEKER_RELEASED)
-		GameState.SEEKER_RELEASED:
-			print("[GameManager] ⏱️ Seeker release timer finished - transitioning to SAK_DELAY_ACTIVE")
-			transition_to_state(GameState.SAK_DELAY_ACTIVE)
-		GameState.SAK_DELAY_ACTIVE:
-			print("[GameManager] ⏱️ SAK delay timer finished - transitioning to IN_PROGRESS")
-			transition_to_state(GameState.IN_PROGRESS)
+# --- LEGACY PHASE TIMER CALLBACK REMOVED ---
+# _on_phase_timer_timeout() - Replaced by master clock system
 
 # New player control functions for enhanced game flow
 func _freeze_all_players():
 	"""Freeze all players - no movement, no attacks"""
-	for player in get_tree().get_nodes_in_group("player"):
-		if player.has_method("set_game_state_controls"):
-			player.set_game_state_controls.rpc(false, false, false)  # can_move, can_attack, can_sak
+	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
+	for player in players_list:
+		var player_char = player as PlayerCharacter
+		if not player_char:
+			continue
+		
+		player_char.set_player_state.rpc(false, false)  # can_move=false, can_attack=false
 
-func _enable_hider_movement_only():
-	"""Hiders can move, Seeker frozen, no attacks"""
-	for player in get_tree().get_nodes_in_group("player"):
-		if player.has_method("set_game_state_controls") and player.has_method("get_role"):
-			var role = player.get_role()
-			if role == 0:  # HIDER
-				player.set_game_state_controls.rpc(true, false, false)  # can move, no attack, no sak
-			elif role == 1:  # SEEKER
-				player.set_game_state_controls.rpc(false, false, false)  # frozen
+# Duplicate function removed - using the version at line 422 with newer API
 
 func _enable_seeker_full_control():
 	"""Seeker can move and attack, Hiders can move but no SAK"""
-	for player in get_tree().get_nodes_in_group("player"):
-		if player.has_method("set_game_state_controls") and player.has_method("get_role"):
-			var role = player.get_role()
-			if role == 0:  # HIDER
-				player.set_game_state_controls.rpc(true, false, false)  # can move, no attack, no sak (SAK delay)
-			elif role == 1:  # SEEKER
-				player.set_game_state_controls.rpc(true, true, false)  # can move, can attack, no sak
+	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
+	for player in players_list:
+		var player_char = player as PlayerCharacter
+		if not player_char:
+			continue
+		
+		if player_char.role == PlayerCharacter.PlayerRole.HIDER:
+			player_char.set_player_state.rpc(true, false)  # can_move=true, can_attack=false (SAK delay)
+		elif player_char.role == PlayerCharacter.PlayerRole.SEEKER:
+			player_char.set_player_state.rpc(true, true)  # can_move=true, can_attack=true
 
 func _enable_full_gameplay():
 	"""All players have full capabilities"""
-	for player in get_tree().get_nodes_in_group("player"):
-		if player.has_method("set_game_state_controls") and player.has_method("get_role"):
-			var role = player.get_role()
-			if role == 0:  # HIDER
-				player.set_game_state_controls.rpc(true, false, true)  # can move, no projectile attack, can sak
-			elif role == 1:  # SEEKER
-				player.set_game_state_controls.rpc(true, true, false)  # can move, can attack, no sak
+	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
+	for player in players_list:
+		var player_char = player as PlayerCharacter
+		if not player_char:
+			continue
+		
+		# Enable full capabilities for all players
+		player_char.set_player_state.rpc(true, true)  # can_move=true, can_attack=true
 
 func _start_ammo_regeneration():
 	"""Start the ammo regeneration timer"""
@@ -916,26 +973,8 @@ func change_game_state(new_state: GameState) -> void:
 		GameState.FINISHED:
 			ammo_cooldown_timer.stop()
 
-func _assign_roles() -> void:
-	if not multiplayer.is_server():
-		return
-	
-	var player_ids = players.keys()
-	if player_ids.is_empty():
-		return
-	
-	# Randomly select one seeker
-	var seeker_id = player_ids[randi() % player_ids.size()]
-	
-	for id in player_ids:
-		var role = "seeker" if id == seeker_id else "hider"
-		players[id]["role"] = role
-		
-		# Update the player's role in the network manager
-		network_manager.update_player_role(id, role)
-		
-		# Notify the player of their role
-		rpc_id(id, "_rpc_set_player_role", role)
+# --- LEGACY ROLE ASSIGNMENT REMOVED ---
+# _assign_roles() - Now handled in GamePrep phase with apply_roles_to_players()
 
 #region State Handlers
 func _handle_starting_state(delta: float) -> void:

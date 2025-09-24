@@ -29,6 +29,7 @@ const DISCOVERY_PORT := 9001
 const DISCOVERY_MAGIC := "SAKSPAN_V1"
 const DISCOVERY_DEBUG := true
 const USE_DEV_TEST_TEMP := true  # Enable dev_test environment
+const GAMEPREP_SCENE_PATH := "res://scenes/GamePrep.tscn"
 const DEV_TEST_SCENE_PATH := "res://scenes/dev/dev_world.tscn"
 const WORLD_SCENE_PATH := "res://scenes/world.tscn"
 
@@ -517,9 +518,38 @@ func rpc_load_world() -> void:
 	game_scene_loaded = false
 	emit_signal("game_started", players)
 	
-	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else WORLD_SCENE_PATH
-	print("[NetworkManager] 📡 Switching to scene: ", target_scene)
+	# PHASE 2: Load GamePrep scene first for role assignment
+	var target_scene: String = GAMEPREP_SCENE_PATH
+	print("[NetworkManager] 📡 Switching to GamePrep scene: ", target_scene)
 	get_tree().change_scene_to_file(target_scene)
+
+# PHASE 2: Function for GameManager to transition from GamePrep to dev_world
+func change_to_dev_world() -> void:
+	"""Called by GameManager after GamePrep countdown finishes"""
+	if not multiplayer.is_server():
+		return
+	
+	var target_scene: String = DEV_TEST_SCENE_PATH if USE_DEV_TEST_TEMP else WORLD_SCENE_PATH
+	print("[NetworkManager] 🎮 Transitioning from GamePrep to game world: ", target_scene)
+	
+	# Connect scene change detection for game_world_ready signal
+	get_tree().tree_changed.connect(_on_scene_changed, CONNECT_ONE_SHOT)
+	get_tree().change_scene_to_file(target_scene)
+
+func _on_scene_changed() -> void:
+	"""Called when scene transition completes - emits game_world_ready for GameManager"""
+	if not multiplayer.is_server():
+		return
+	
+	var current_scene = get_tree().current_scene
+	if current_scene and current_scene.scene_file_path == DEV_TEST_SCENE_PATH:
+		print("[NetworkManager] 🎯 Game world scene loaded: ", current_scene.scene_file_path)
+		
+		# Wait one frame to ensure scene is fully initialized
+		await get_tree().process_frame
+		
+		print("[NetworkManager] 🚀 Emitting game_world_ready signal to GameManager")
+		game_world_ready.emit()
 
 # DEFINITIVE SYNCHRONIZATION BARRIER: RPC called by dev_world.gd when scene is ready
 # The decorator MUST allow the server to call it on itself
