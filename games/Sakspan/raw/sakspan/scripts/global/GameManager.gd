@@ -181,6 +181,8 @@ func _ready() -> void:
 	print("[GameManager] DEBUG: To manually trigger role assignment, call GameManager.debug_start_role_assignment()")
 	print("[GameManager] DEBUG: To test signal handler, call GameManager.debug_test_signal_handler()")
 	print("[GameManager] DEBUG: To test RPC calls, call GameManager.debug_test_rpc_calls()")
+	print("[GameManager] DEBUG: To test complete system integration, call GameManager.debug_test_complete_system()")
+	print("[GameManager] DEBUG: To test dev_world initialization, call GameManager.debug_test_dev_world_init()")
 	print("[GameManager] DEBUG: To test scene transition, call NetworkManager.debug_transition_to_dev_world()")
 	
 	# Set process to handle game timing
@@ -294,7 +296,48 @@ func debug_test_rpc_calls() -> void:
 	
 	print("[GameManager] 🔧 DEBUG: Testing RPC calls...")
 	rpc_update_seeker_info.rpc("TestSeeker", "TestCharacter")
-	rpc_update_prep_countdown.rpc(3)
+	update_countdown_ui.rpc(3)
+	show_announcement_to_all.rpc("Test announcement!")
+	update_hiders_count_rpc.rpc(2)
+	broadcast_kill_feed_message_rpc.rpc("TestPlayer BANG'd TestVictim")
+
+func debug_test_complete_system() -> void:
+	"""Test complete system integration - for testing only"""
+	if not multiplayer.is_server():
+		print("[GameManager] DEBUG: Only server can test complete system")
+		return
+	
+	print("[GameManager] 🔧 DEBUG: Testing complete system integration...")
+	
+	# Test player state initialization
+	var players = get_tree().get_nodes_in_group("player")
+	for player in players:
+		if player.has_method("set_initial_state"):
+			player.set_initial_state.rpc(1, 3, true, true)  # Test seeker state
+			print("[GameManager] 📡 DEBUG: Sent set_initial_state to ", player.name)
+	
+	# Test UI updates
+	update_countdown_ui.rpc(10)
+	show_announcement_to_all.rpc("DEBUG: Complete system test!")
+	update_hiders_count_rpc.rpc(3)
+	broadcast_kill_feed_message_rpc.rpc("DEBUG: TestSeeker BANG'd TestHider")
+	
+	print("[GameManager] ✅ DEBUG: Complete system test executed")
+
+func debug_test_dev_world_init() -> void:
+	"""Test dev_world initialization directly - for testing only"""
+	if not multiplayer.is_server():
+		print("[GameManager] DEBUG: Only server can test dev_world initialization")
+		return
+	
+	print("[GameManager] 🔧 DEBUG: Testing dev_world initialization directly...")
+	
+	var current_scene = get_tree().current_scene
+	if current_scene and current_scene.scene_file_path == "res://scenes/dev/dev_world.tscn":
+		print("[GameManager] 🌍 DEBUG: In dev_world scene, calling initialize_game_world()...")
+		initialize_game_world()
+	else:
+		print("[GameManager] ⚠️ DEBUG: Not in dev_world scene. Current: ", current_scene.scene_file_path if current_scene else "null")
 
 func _transition_to_dev_world() -> void:
 	"""Transition from GamePrep to dev_world scene"""
@@ -313,7 +356,7 @@ func _transition_to_dev_world() -> void:
 
 # ROBUST: Single definitive trigger - no re-entrant loops
 func _on_all_peers_ready() -> void:
-	"""Called ONCE when NetworkManager confirms all peers are ready"""
+	"""Called when NetworkManager confirms all peers are ready for current scene"""
 	print("[GameManager] 🚨 DEBUG: _on_all_peers_ready() called! Server: ", multiplayer.is_server())
 	if not multiplayer.is_server():
 		print("[GameManager] 🚨 DEBUG: Not server, exiting...")
@@ -323,18 +366,17 @@ func _on_all_peers_ready() -> void:
 	if not current_scene:
 		return
 	
-	print("[GameManager] 🎯 SINGLE TRIGGER: All peers ready. Scene: ", current_scene.scene_file_path)
+	print("[GameManager] 🎯 SCENE TRIGGER: All peers ready. Scene: ", current_scene.scene_file_path)
 	
-	# Disconnect to prevent multiple calls
-	if NetworkManager and NetworkManager.all_peers_verified_and_ready.is_connected(_on_all_peers_ready):
-		NetworkManager.all_peers_verified_and_ready.disconnect(_on_all_peers_ready)
-	
+	# Handle different scenes appropriately
 	if current_scene.scene_file_path == "res://scenes/GamePrep.tscn":
-		print("[GameManager] 🎭 SINGLE EXECUTION: Starting role assignment...")
+		print("[GameManager] 🎭 GAMEPREP EXECUTION: Starting role assignment...")
 		start_role_assignment()
 	elif current_scene.scene_file_path == "res://scenes/dev/dev_world.tscn":
-		print("[GameManager] 🌍 SINGLE EXECUTION: Initializing game world...")
+		print("[GameManager] 🌍 DEV_WORLD EXECUTION: Initializing game world...")
 		initialize_game_world()
+	else:
+		print("[GameManager] ⚠️ Unknown scene for peer ready signal: ", current_scene.scene_file_path)
 
 # ROBUST: Self-contained game world initialization
 func initialize_game_world() -> void:
@@ -400,22 +442,25 @@ func apply_roles_to_players(player_nodes: Array) -> void:
 	
 	print("[GameManager] 🎭 Applying roles to ", total_players, " players...")
 	
-	# Find seeker from stored data and apply roles
+	# PHASE 1: Authoritative Player State Initialization
+	# Use comprehensive set_initial_state RPC instead of basic assign_role
 	for player_node in player_nodes:
 		var player_id = player_node.get_multiplayer_authority()
 		var player_data = players_dict.get(player_id, {})
 		var is_seeker = player_data.get("is_seeker", false)
 		
 		if is_seeker:
-			print("[GameManager] 🎯 Applying SEEKER role to: ", player_node.player_name)
-			player_node.assign_role.rpc(1, max_ammo_capacity)  # 1 = SEEKER
+			print("[GameManager] 🎯 Initializing SEEKER: ", player_node.player_name)
+			# set_initial_state(role_int, ammo_count, can_move, can_attack)
+			player_node.set_initial_state.rpc(1, max_ammo_capacity, false, false)  # Frozen during Phase 1
 			add_to_group("seeker")
 		else:
-			print("[GameManager] 🫥 Applying HIDER role to: ", player_node.player_name)
-			player_node.assign_role.rpc(0, 0)  # 0 = HIDER
+			print("[GameManager] 🫥 Initializing HIDER: ", player_node.player_name)
+			# set_initial_state(role_int, ammo_count, can_move, can_attack)
+			player_node.set_initial_state.rpc(0, 0, false, false)  # Frozen during Phase 1
 			add_to_group("hider")
 	
-	print("[GameManager] ✅ Role application complete")
+	print("[GameManager] ✅ PHASE 1: Complete player state initialization with UI configuration")
 
 func start_hider_headstart_phase() -> void:
 	"""Start the HIDER_HEADSTART phase (10 seconds)"""
@@ -569,18 +614,7 @@ func _execute_next_phase(next_state: GameState) -> void:
 			_start_phase_4_full_gameplay()
 
 # Centralized UI Broadcasting RPCs - Server Authority
-@rpc("authority", "call_local", "reliable")
-func update_countdown_ui(time: int) -> void:
-	"""Broadcast countdown update to all clients"""
-	if game_ui_instance and game_ui_instance.has_method("update_countdown"):
-		var time_text = str(time) if time > 0 else "GO!"
-		game_ui_instance.update_countdown(time_text, time > 0)
-
-@rpc("authority", "call_local", "reliable") 
-func show_announcement_to_all(text: String) -> void:
-	"""Broadcast global announcement to all clients"""
-	if game_ui_instance and game_ui_instance.has_method("update_status"):
-		game_ui_instance.update_status(text, true)
+# (Functions moved to Phase 3 section with enhanced logging)
 
 @rpc("authority", "call_local", "reliable")
 func show_role_rpc(title: String, subtitle: String) -> void:
@@ -635,22 +669,22 @@ func on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerCh
 	var message = ""
 	
 	if attacker.role == PlayerCharacter.PlayerRole.SEEKER and eliminated_player.role == PlayerCharacter.PlayerRole.HIDER:
-		# Seeker eliminates Hider
-		message = attacker.player_name + " just bonked " + eliminated_player.player_name
+		# Seeker Eliminates Hider: "Bang" projectile collision
+		message = attacker.player_name + " BANG'd " + eliminated_player.player_name
 	elif attacker.role == PlayerCharacter.PlayerRole.HIDER and eliminated_player.role == PlayerCharacter.PlayerRole.SEEKER:
-		# Hider eliminates Seeker
-		message = attacker.player_name + " just KO'ed " + eliminated_player.player_name
+		# Hider Eliminates Seeker: "Sak" melee attack
+		message = attacker.player_name + " SAK'd " + eliminated_player.player_name
 	elif attacker.role == PlayerCharacter.PlayerRole.HIDER and eliminated_player.role == PlayerCharacter.PlayerRole.HIDER:
-		# Hider accidentally eliminates another Hider
-		message = attacker.player_name + " was jumpscared and accidentally hit " + eliminated_player.player_name + "!!"
+		# Hider Eliminates Hider (Friendly Fire): "Sak" melee attack
+		message = attacker.player_name + "'s SAK found the wrong target: " + eliminated_player.player_name + "!"
 	else:
 		# Fallback for any other cases
 		message = attacker.player_name + " eliminated " + eliminated_player.player_name
 	
 	print("[GameManager] Kill feed: ", message)
 	
-	# Show kill feed globally via RPC
-	_show_kill_feed.rpc(message)
+	# Show kill feed globally via unified RPC system
+	broadcast_kill_feed_message_rpc.rpc(message)
 
 # Initialize game with proper role assignment and ammo
 func initialize_game() -> void:
@@ -671,6 +705,9 @@ func initialize_game() -> void:
 		seeker.set_ammo(all_hiders.size() + 1)
 		print("[GameMaster] Seeker ammo set to: ", seeker.ammo)
 
+	# Initialize UI with hiders count
+	_initialize_hiders_count()
+	
 	update_ui()
 	change_game_state(GameState.HIDER_HEADSTART)
 
@@ -879,7 +916,7 @@ func _start_phase_4_full_gameplay():
 	_show_hider_warning.rpc()
 	
 	# Start main game timer (if needed)
-	match_start_time = Time.get_time_dict_from_system()["unix"]
+	match_start_time = Time.get_unix_time_from_system()
 
 # --- LEGACY PHASE TIMER CALLBACK REMOVED ---
 # _on_phase_timer_timeout() - Replaced by master clock system
@@ -1119,6 +1156,42 @@ func rpc_update_prep_countdown(countdown_value: int) -> void:
 	"""RPC to update GamePrep countdown on all clients"""
 	print("[GameManager] 📡 RPC: Updating prep countdown - ", countdown_value)
 	prep_countdown_updated.emit(countdown_value)
+
+# Phase 3: Role-Aware UI and Gameplay Mechanics RPCs
+@rpc("authority", "call_local", "reliable")
+func update_hiders_count_rpc(count: int) -> void:
+	"""Broadcast hiders remaining count to all clients"""
+	print("[GameManager] 📡 RPC: Broadcasting hiders count - ", count)
+	if game_ui_instance and game_ui_instance.has_method("update_hiders_left"):
+		game_ui_instance.update_hiders_left(count)
+
+@rpc("authority", "call_local", "reliable")
+func broadcast_kill_feed_message_rpc(message: String) -> void:
+	"""Broadcast kill feed message to all clients"""
+	print("[GameManager] 📡 RPC: Broadcasting kill feed - ", message)
+	if game_ui_instance and game_ui_instance.has_method("show_kill_feed"):
+		game_ui_instance.show_kill_feed(message)
+
+@rpc("authority", "call_local", "reliable")
+func update_countdown_ui(time: int) -> void:
+	"""Broadcast countdown update to all clients"""
+	print("[GameManager] 📡 RPC: Broadcasting countdown update - ", time, " (Peer: ", multiplayer.get_unique_id(), ")")
+	if game_ui_instance and game_ui_instance.has_method("update_countdown"):
+		var time_text = str(time) if time > 0 else "GO!"
+		game_ui_instance.update_countdown(time_text, time > 0)
+
+@rpc("authority", "call_local", "reliable") 
+func show_announcement_to_all(text: String) -> void:
+	"""Broadcast global announcement to all clients"""
+	if game_ui_instance and game_ui_instance.has_method("update_status"):
+		game_ui_instance.update_status(text, true)
+
+func _initialize_hiders_count() -> void:
+	"""Initialize and broadcast the hiders count at game start"""
+	var hiders = get_tree().get_nodes_in_group("hider")
+	var hiders_count = hiders.size()
+	print("[GameManager] 📊 Initializing hiders count: ", hiders_count)
+	update_hiders_count_rpc.rpc(hiders_count)
 
 #region Helper Functions
 func _all_players_ready() -> bool:

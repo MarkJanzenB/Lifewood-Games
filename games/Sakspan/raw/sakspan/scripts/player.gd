@@ -332,8 +332,12 @@ func _eliminate_target_direct(target: PlayerCharacter) -> void:
 func _physics_process(delta: float):
 	if is_dying: return
 	
-	# SAFETY GUARD: If there is no peer assigned for any reason, do nothing this frame
+	# SAFETY GUARD: If there is no multiplayer peer assigned, do nothing this frame
 	# This prevents the "Unable to get unique ID" crash during spawn conflicts
+	if not multiplayer.has_multiplayer_peer():
+		return
+	
+	# Additional safety check for unique ID
 	if multiplayer.get_unique_id() == 0:
 		return
 	
@@ -392,6 +396,58 @@ func assign_role(new_role: PlayerRole, max_ammo: int = 0) -> void:
 		self.ammo = 0  # Hiders don't use ammo
 		self.max_ammo = 0
 		print("[Player] ", player_name, " assigned as HIDER")
+
+# PHASE 1: Authoritative Player State Initialization
+@rpc("any_peer", "call_local", "reliable")
+func set_initial_state(role_int: int, ammo_count: int, p_can_move: bool, p_can_attack: bool) -> void:
+	"""Complete player initialization from server - sets role, ammo, permissions, and UI"""
+	print("[Player] 📡 RECEIVED: set_initial_state - role=", role_int, ", ammo=", ammo_count, ", move=", p_can_move, ", attack=", p_can_attack, " (Peer: ", multiplayer.get_unique_id(), ")")
+	
+	# Set role and group membership
+	var new_role = role_int as PlayerRole
+	self.role = new_role
+	
+	if new_role == PlayerRole.SEEKER:
+		add_to_group("seeker")
+		remove_from_group("hider")
+		self.max_ammo = ammo_count
+		self.ammo = ammo_count
+		print("[Player] ✅ ", player_name, " initialized as SEEKER with ", ammo_count, " ammo")
+	elif new_role == PlayerRole.HIDER:
+		add_to_group("hider")
+		remove_from_group("seeker")
+		self.max_ammo = 0
+		self.ammo = 0
+		print("[Player] ✅ ", player_name, " initialized as HIDER")
+	
+	# Set player permissions
+	self.can_move = p_can_move
+	self.can_attack = p_can_attack
+	
+	# CRITICAL: Configure local UI if this is the local player
+	if is_multiplayer_authority():
+		_configure_local_ui_for_role(new_role, ammo_count)
+
+func _configure_local_ui_for_role(role: PlayerRole, ammo_count: int) -> void:
+	"""Configure the local GameUI for this player's role - only called on authority peer"""
+	print("[Player] 🎨 Configuring local UI for role: ", PlayerRole.keys()[role])
+	
+	# Find the GameUI instance
+	var game_ui = get_tree().current_scene.get_node_or_null("GameUI")
+	if not game_ui:
+		# Try alternative paths
+		game_ui = get_tree().current_scene.find_child("GameUI", true, false)
+	
+	if game_ui and game_ui.has_method("configure_for_role"):
+		game_ui.configure_for_role(role)
+		print("[Player] ✅ UI configured for role: ", PlayerRole.keys()[role])
+		
+		# Update ammo display if seeker
+		if role == PlayerRole.SEEKER and game_ui.has_method("update_ammo"):
+			game_ui.update_ammo(ammo_count)
+			print("[Player] ✅ UI ammo updated: ", ammo_count)
+	else:
+		print("[Player] ⚠️ GameUI not found or missing configure_for_role method")
 
 @rpc("any_peer", "call_local", "reliable")
 func set_ammo(new_ammo: int) -> void:
@@ -897,6 +953,29 @@ func _hide_spotted_alert():
 	var game_ui = _find_game_ui()
 	if game_ui and game_ui.has_method("show_spotted"):
 		game_ui.show_spotted(false)
+
+# PHASE 3: Spotted Indicator Logic
+@rpc("any_peer", "call_local", "reliable")
+func set_spotted_status(is_spotted: bool) -> void:
+	"""Server-authoritative spotted status for hiders"""
+	print("[Player] 📡 RECEIVED: set_spotted_status - ", is_spotted, " for ", player_name, " (Peer: ", multiplayer.get_unique_id(), ")")
+	
+	# Only applies to Hiders
+	if role != PlayerRole.HIDER:
+		return
+	
+	# Toggle overhead "!" icon visibility
+	var spotted_icon = get_node_or_null("SpottedIcon")  # Assuming this exists in player scene
+	if spotted_icon:
+		spotted_icon.visible = is_spotted
+		print("[Player] ✅ Overhead spotted icon ", "shown" if is_spotted else "hidden", " for ", player_name)
+	
+	# Configure local UI if this is the local player
+	if is_multiplayer_authority():
+		var game_ui = _find_game_ui()
+		if game_ui and game_ui.has_method("show_spotted"):
+			game_ui.show_spotted(is_spotted)
+			print("[Player] ✅ Local UI spotted indicator ", "shown" if is_spotted else "hidden")
 
 func _find_game_ui() -> Control:
 	"""Find the GameUI node in the scene"""
