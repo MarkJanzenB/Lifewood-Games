@@ -1128,7 +1128,7 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 	print("[Player] 🎯 SERVER: Seeker attack authorized - starting BANG animation")
 	
 	# The server validates the action, updates state, and triggers animation
-	is_in_action = true
+	# NOTE: is_in_action will be set on all clients via play_attack_animation RPC
 	set_ammo.rpc(ammo - 1) # Sync ammo change to all clients
 	
 	# Start ammo regeneration if not at max capacity
@@ -1147,14 +1147,20 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 # RPC to play attack animations on all clients
 @rpc("any_peer", "call_local", "reliable")
 func play_attack_animation(animation_name: String) -> void:
-	"""Play attack animation on all clients"""
+	"""Play attack animation on all clients - CRITICAL: Sync is_in_action state"""
 	print("[Player] 🎬 Playing attack animation: ", animation_name, " on ", player_name)
+	
+	# CRITICAL FIX: Sync is_in_action state across all clients
+	is_in_action = true
+	print("[Player] 🔒 SYNC: Set is_in_action=true for animation sync on ", player_name)
+	
 	if animated_sprite:
 		print("[Player] 🎬 AnimatedSprite2D found, current animation: ", animated_sprite.animation)
+		# Force stop current animation to prevent interference
+		animated_sprite.stop()
 		animated_sprite.play(animation_name)
 		print("[Player] 🎬 Animation set to: ", animated_sprite.animation, " - is_playing: ", animated_sprite.is_playing())
 		
-		# Force stop any current animation first for immediate response
 		if animation_name == "hider_sak":
 			print("[Player] 🗡️ HIDER_SAK animation starting - should see frame changes soon")
 		elif animation_name == "seeker_bang":
@@ -1203,7 +1209,7 @@ func request_sak_attack_rpc(target_player_id: int) -> void:
 	print("[Player] 🗡️ SERVER: Hider SAK attack authorized on ", target_player.player_name)
 	
 	# Set up SAK attack (SAK attacks do NOT consume ammo)
-	is_in_action = true
+	# NOTE: is_in_action will be set on all clients via play_attack_animation RPC
 	target_for_sak = target_player
 	
 	# Command all clients to play the SAK animation
