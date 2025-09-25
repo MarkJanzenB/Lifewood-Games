@@ -81,9 +81,73 @@ func show_kill_feed(message: String):
 func show_spotted(is_visible: bool):
 	if local_player_role == PlayerCharacter.PlayerRole.HIDER:
 		if spotted_label:
-			spotted_label.visible = is_visible
 			if is_visible:
-				spotted_timer.start()
+				_show_spotted_alert_with_animation()
+			else:
+				_hide_spotted_alert_with_animation()
+
+func _show_spotted_alert_with_animation():
+	"""Show spotted alert with dramatic animation"""
+	if not spotted_label:
+		return
+		
+	print("[GameUI] 🚨 Showing SPOTTED alert with animation")
+	
+	# Configure the spotted label
+	spotted_label.text = "⚠️ SPOTTED! ⚠️"
+	spotted_label.visible = true
+	spotted_label.modulate = Color.RED
+	spotted_label.add_theme_font_size_override("font_size", 36)
+	spotted_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	spotted_label.add_theme_constant_override("shadow_offset_x", 3)
+	spotted_label.add_theme_constant_override("shadow_offset_y", 3)
+	
+	# Start with invisible and small
+	spotted_label.modulate.a = 0.0
+	spotted_label.scale = Vector2(0.5, 0.5)
+	
+	# Create dramatic entrance animation
+	var tween = create_tween()
+	tween.set_parallel(true)
+	
+	# Fade in and scale up
+	tween.tween_property(spotted_label, "modulate:a", 1.0, 0.3)
+	tween.tween_property(spotted_label, "scale", Vector2(1.3, 1.3), 0.3)
+	tween.tween_property(spotted_label, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.3)
+	
+	# Add pulsing effect
+	tween.tween_callback(_start_spotted_pulse).set_delay(0.5)
+	
+	# Auto-hide after some time
+	spotted_timer.start()
+
+func _hide_spotted_alert_with_animation():
+	"""Hide spotted alert with fade out animation"""
+	if not spotted_label or not spotted_label.visible:
+		return
+		
+	print("[GameUI] ❌ Hiding SPOTTED alert")
+	
+	# Stop timer
+	spotted_timer.stop()
+	
+	# Create fade out animation
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(spotted_label, "modulate:a", 0.0, 0.5)
+	tween.tween_property(spotted_label, "scale", Vector2(0.8, 0.8), 0.5)
+	tween.tween_callback(func(): spotted_label.visible = false)
+
+func _start_spotted_pulse():
+	"""Start pulsing animation for spotted alert"""
+	if not spotted_label or not spotted_label.visible:
+		return
+		
+	# Create infinite pulsing
+	var pulse_tween = create_tween()
+	pulse_tween.set_loops()
+	pulse_tween.tween_property(spotted_label, "modulate", Color.YELLOW, 0.5)
+	pulse_tween.tween_property(spotted_label, "modulate", Color.RED, 0.5)
 
 func update_countdown(text: String, is_visible: bool):
 	"""Enhanced dramatic countdown display"""
