@@ -603,7 +603,7 @@ func server_request_attack() -> void:
 		return
 	
 	var requester_id = multiplayer.get_remote_sender_id()
-	print("[Player] Server received attack request from peer: ", requester_id)
+	print("[Player] Server received attack request from peer: ", requester_id, " on player: ", player_name, " (role: ", PlayerRole.keys()[role], ")")
 	
 	# Validate game state and player permissions
 	var game_manager = GameManager
@@ -619,10 +619,13 @@ func server_request_attack() -> void:
 	
 	# Role-specific validation and execution
 	if role == PlayerRole.SEEKER:
+		print("[Player] 🎯 Processing SEEKER attack request")
 		_server_validate_seeker_attack(requester_id, game_manager)
 	elif role == PlayerRole.HIDER:
+		print("[Player] 🗡️ Processing HIDER attack request")
 		_server_validate_hider_attack(requester_id, game_manager)
 	else:
+		print("[Player] ❌ Invalid role for attack: ", role)
 		show_temporary_message.rpc_id(requester_id, "Invalid role for attack!")
 
 func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> void:
@@ -646,14 +649,18 @@ func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> vo
 
 func _server_validate_hider_attack(requester_id: int, game_manager: Node) -> void:
 	"""Server validates Hider SAK attack"""
+	print("[Player] 🗡️ Server validating Hider SAK attack from peer: ", requester_id, " - can_sak: ", can_sak)
+	
 	# Check if Hider can SAK in current game state
 	if not can_sak:
+		print("[Player] ❌ Server rejected Hider SAK - can_sak is false")
 		show_temporary_message.rpc_id(requester_id, "You're panicked and can't attack yet!")
 		return
 	
 	# Find nearest target
 	var nearest_target = _find_nearest_sak_target()
 	if not nearest_target:
+		print("[Player] ❌ Server rejected Hider SAK - no targets in range")
 		show_temporary_message.rpc_id(requester_id, "No targets in range!")
 		return
 	

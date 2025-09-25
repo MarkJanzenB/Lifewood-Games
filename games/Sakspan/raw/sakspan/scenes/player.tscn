@@ -337,7 +337,7 @@ debug_color = Color(1, 1, 1, 0.42)
 light_mask = 2
 sprite_frames = SubResource("SpriteFrames_ibah8")
 animation = &"front_backward_walk"
-frame_progress = 0.813246
+frame_progress = 0.881597
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(1.33333, -0.666667)

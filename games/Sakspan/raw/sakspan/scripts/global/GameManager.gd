@@ -468,6 +468,10 @@ func apply_roles_to_players(player_nodes: Array) -> void:
 			add_to_group("hider")
 	
 	print("[GameManager] ✅ PHASE 1: Complete player state initialization with UI configuration")
+	
+	# CRITICAL: Initialize hider count AFTER all role assignments are complete
+	await get_tree().process_frame  # Wait one frame for all RPC calls to complete
+	_initialize_hiders_count()
 
 # REMOVED: start_hider_headstart_phase() - Replaced by unified phase system
 
@@ -675,9 +679,7 @@ func initialize_game() -> void:
 		seeker.set_ammo(all_hiders.size() + 1)
 		print("[GameMaster] Seeker ammo set to: ", seeker.ammo)
 
-	# Initialize UI with hiders count
-	_initialize_hiders_count()
-	
+	# Hider count initialization moved to apply_roles_to_players() for better timing
 	update_ui()
 	change_game_state(GameState.HIDER_HEADSTART)
 
@@ -1327,13 +1329,17 @@ func _set_players_attack_by_role(role_filter: String, enabled: bool):
 		print("[GameManager] ❌ No local player found for attack update")
 		return
 	
+	print("[GameManager] 🔍 DEBUG: Local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role], " | Role filter: ", role_filter)
+	
 	var should_apply = false
 	if role_filter == "all":
 		should_apply = true
 	elif role_filter == "seeker" and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
 		should_apply = true
+		print("[GameManager] 🎯 DEBUG: SEEKER MATCH - will apply attack permission: ", enabled)
 	elif role_filter == "hider" and local_player.role == PlayerCharacter.PlayerRole.HIDER:
 		should_apply = true
+		print("[GameManager] 🫥 DEBUG: HIDER MATCH - will apply attack permission: ", enabled)
 	
 	if should_apply:
 		local_player.can_attack = enabled
@@ -1342,7 +1348,7 @@ func _set_players_attack_by_role(role_filter: String, enabled: bool):
 			local_player.can_sak = enabled
 			print("[GameManager] ✅ Set attack AND sak to ", enabled, " for hider (", local_player.player_name, ") - can_attack: ", local_player.can_attack, " can_sak: ", local_player.can_sak)
 		else:
-			print("[GameManager] ✅ Set attack to ", enabled, " for ", role_filter, " (", local_player.player_name, ") - can_attack: ", local_player.can_attack)
+			print("[GameManager] ✅ SEEKER ATTACK SET: ", enabled, " for seeker (", local_player.player_name, ") - can_attack: ", local_player.can_attack)
 	else:
 		print("[GameManager] ⚠️ Attack update skipped - role filter '", role_filter, "' doesn't match local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role])
 
