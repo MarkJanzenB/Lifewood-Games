@@ -79,6 +79,11 @@ func _ready():
 	if GameManager:
 		GameManager.game_state_changed.connect(_on_game_state_changed)
 	
+	# Connect vision cone signals for spotted mechanic
+	if vision_cone:
+		vision_cone.body_entered.connect(_on_vision_cone_body_entered)
+		vision_cone.body_exited.connect(_on_vision_cone_body_exited)
+	
 	# Configure multiplayer authority
 	_configure_multiplayer_authority()
 	
@@ -806,8 +811,10 @@ func become_ghost() -> void:
 	set_collision_mask_value(3, true)    # Detect other ghosts
 	set_collision_mask_value(4, true)    # Still detect obstacles
 	
-	# Enable ghost movement (they can still move around)
-	can_move = true
+	# Disable ghost movement (ghosts are spectators only)
+	can_move = false
+	can_bang = false
+	can_sak = false
 	
 	# Update username label for ghosts
 	if username_label:
@@ -826,7 +833,7 @@ func become_ghost() -> void:
 
 func _show_ghost_status_message() -> void:
 	"""Show ghost status message to the local player"""
-	var message := "👻 You are now a ghost! You can move around but cannot interact with living players."
+	var message := "👻 You are now a ghost! You can only spectate - no movement or interactions."
 	show_temporary_message.rpc_id(multiplayer.get_unique_id(), message)
 
 func _disable_collision_areas() -> void:
@@ -1492,5 +1499,34 @@ func spawn_projectile_on_clients_rpc(spawn_pos: Vector2, spawn_rot: float, aim_d
 	# Add to the main scene tree so it's not a child of the player
 	get_tree().get_root().add_child(rock)
 	print("[Player] ✅ CLIENT: Projectile spawned successfully with direction ", aim_direction)
+
+# --- VISION CONE SIGNAL HANDLERS ---
+
+func _on_vision_cone_body_entered(body: Node2D) -> void:
+	"""Handle when a player enters seeker's vision cone"""
+	if role != PlayerRole.SEEKER:
+		return  # Only seekers can spot players
+	
+	var target_player = body as PlayerCharacter
+	if not target_player or target_player.role != PlayerRole.HIDER:
+		return  # Only hiders can be spotted
+	
+	if target_player.current_state != PlayerCharacter.PlayerState.ALIVE:
+		return  # Don't spot dead/ghost players
+	
+	print("[Player] 👁️ SEEKER ", player_name, " spotted HIDER ", target_player.player_name)
+	_show_spotted_alert_for_player(target_player)
+
+func _on_vision_cone_body_exited(body: Node2D) -> void:
+	"""Handle when a player exits seeker's vision cone"""
+	if role != PlayerRole.SEEKER:
+		return  # Only seekers can spot players
+	
+	var target_player = body as PlayerCharacter
+	if not target_player or target_player.role != PlayerRole.HIDER:
+		return  # Only hiders can be spotted
+	
+	print("[Player] 👁️ SEEKER ", player_name, " lost sight of HIDER ", target_player.player_name)
+	_hide_spotted_alert_for_player(target_player)
 
 # Removed direct RPC methods - using GameManager RPC system instead

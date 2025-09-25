@@ -970,10 +970,16 @@ func end_game(winning_team: String) -> void:
 		return
 	
 	print("[GameManager] 🏁 GAME OVER: ", winning_team, " wins!")
+	
+	# Change state and notify all clients
 	change_game_state(GameState.GAME_OVER)
 	game_ended.emit(winning_team)
+	
+	# Disable all players immediately
+	_handle_game_over_state()
+	
+	# Show game over to all clients
 	_show_game_over_announcement.rpc(winning_team)
-	rpc("_rpc_end_game", winning_team)
 	
 	# Start game over timer to return to lobby
 	_start_game_over_timer()
@@ -1049,38 +1055,67 @@ func _show_game_over_announcement(winning_team: String) -> void:
 	
 	print("[GameManager] 📢 ", message)
 	
+	# Ensure game state is set to GAME_OVER on all clients
+	if current_state != GameState.GAME_OVER:
+		change_game_state(GameState.GAME_OVER)
+	
+	# Disable all players on this client
+	_disable_all_players_local()
+	
 	# Show GameOver scene
 	_show_game_over_scene(winning_team, message)
 
 func _show_game_over_scene(winning_team: String, message: String) -> void:
 	"""Load and show the GameOver scene"""
+	print("[GameManager] 🎬 Loading GameOver scene for: ", winning_team)
+	
 	# Try to load the GameOver scene
-	var game_over_scene = preload("res://scenes/GameOverUI.tscn")
-	if game_over_scene:
-		var game_over_instance = game_over_scene.instantiate()
-		game_over_instance.add_to_group("game_over_ui")
-		
-		# Add to scene tree and make visible
-		get_tree().current_scene.add_child(game_over_instance)
-		game_over_instance.visible = true
-		
-		# Configure the game over UI
-		if game_over_instance.has_method("show_game_over"):
-			game_over_instance.show_game_over(winning_team, message)
-		elif game_over_instance.has_method("set_winner"):
-			game_over_instance.set_winner(winning_team)
-		elif game_over_instance.has_method("display_winner"):
-			game_over_instance.display_winner(winning_team)
-		
-		print("[GameManager] ✅ GameOver scene loaded and displayed")
+	var game_over_scene_path = "res://scenes/GameOverUI.tscn"
+	if ResourceLoader.exists(game_over_scene_path):
+		var game_over_scene = load(game_over_scene_path)
+		if game_over_scene:
+			var game_over_instance = game_over_scene.instantiate()
+			game_over_instance.add_to_group("game_over_ui")
+			
+			# Add to scene tree and make visible
+			get_tree().current_scene.add_child(game_over_instance)
+			game_over_instance.visible = true
+			
+			# Move to front
+			game_over_instance.z_index = 100
+			
+			# Configure the game over UI with multiple fallback methods
+			var configured = false
+			if game_over_instance.has_method("show_game_over"):
+				game_over_instance.show_game_over(winning_team, message)
+				configured = true
+			elif game_over_instance.has_method("set_winner"):
+				game_over_instance.set_winner(winning_team)
+				configured = true
+			elif game_over_instance.has_method("display_winner"):
+				game_over_instance.display_winner(winning_team)
+				configured = true
+			elif game_over_instance.has_method("setup"):
+				game_over_instance.setup(winning_team, message)
+				configured = true
+			
+			if not configured:
+				print("[GameManager] ⚠️ GameOver UI has no known configuration method")
+			
+			print("[GameManager] ✅ GameOver scene loaded and displayed")
+			return
+	
+	print("[GameManager] ❌ Failed to load GameOver scene from: ", game_over_scene_path)
+	
+	# Fallback: Show in GameUI if available
+	if game_ui_instance and game_ui_instance.has_method("show_game_over"):
+		game_ui_instance.show_game_over(winning_team, message)
+		print("[GameManager] ✅ Fallback: GameOver shown in GameUI")
+	elif game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):
+		game_ui_instance.show_dramatic_announcement(message)
+		print("[GameManager] ✅ Fallback: GameOver shown as dramatic announcement")
 	else:
-		print("[GameManager] ❌ Failed to load GameOver scene")
-		
-		# Fallback: Show in GameUI if available
-		if game_ui_instance and game_ui_instance.has_method("show_game_over"):
-			game_ui_instance.show_game_over(winning_team, message)
-		elif game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):
-			game_ui_instance.show_dramatic_announcement(message)
+		print("[GameManager] ❌ No fallback UI available for GameOver")
 
 @rpc("authority", "call_local", "reliable")
 func _update_hiders_count_ui(count: int) -> void:
@@ -1205,6 +1240,10 @@ func _reset_game_state() -> void:
 @rpc("authority", "call_local", "reliable")
 func _disable_all_players() -> void:
 	"""Disable all player abilities during game over"""
+	_disable_all_players_local()
+
+func _disable_all_players_local() -> void:
+	"""Disable all players on this client"""
 	for player in get_tree().get_nodes_in_group("player"):
 		if player is PlayerCharacter:
 			player.can_move = false
