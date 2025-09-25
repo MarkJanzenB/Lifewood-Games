@@ -1,4 +1,4 @@
-[gd_scene load_steps=45 format=3 uid="uid://c5i6ka1xh44eb"]
+[gd_scene load_steps=45 format=3 uid="uid://c7tehkh41rdlc"]
 
 [ext_resource type="Script" uid="uid://dbipxepmrkfqw" path="res://scripts/player.gd" id="1_tuyoq"]
 [ext_resource type="Texture2D" uid="uid://dtyeh4v1tvyao" path="res://sprites/Pink_Monster/Pink_Monster_Death_8.png" id="3_smehm"]
