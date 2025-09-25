@@ -1153,24 +1153,42 @@ func _show_game_over_scene(winning_team: String, message: String) -> void:
 	
 	print("[GameManager] ❌ Failed to load GameOver scene from: ", game_over_scene_path)
 	
-	# Fallback: Show in GameUI if available
-	if game_ui_instance and game_ui_instance.has_method("show_game_over"):
-		# Ensure GameUI knows the local player's role
-		var local_player = _get_local_player()
-		if local_player and game_ui_instance.has_method("set_local_player_role"):
-			game_ui_instance.set_local_player_role(local_player.role)
-			
-		game_ui_instance.show_game_over(winning_team, message)
-		print("[GameManager] ✅ Fallback: GameOver shown in GameUI")
-	elif game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):
-		game_ui_instance.show_dramatic_announcement(message)
-		print("[GameManager] ✅ Fallback: GameOver shown as dramatic announcement")
-	else:
-		print("[GameManager] ❌ No fallback UI available for GameOver")
+	# Fallback: Create GameOverUI overlay manually
+	print("[GameManager] 📄 Creating GameOverUI overlay as fallback")
+	_create_game_over_overlay(winning_team, message)
 	
 	# Auto-return to lobby after 10 seconds if no user input
 	print("[GameManager] ⏰ Auto-return to lobby in 10 seconds...")
 	get_tree().create_timer(10.0).timeout.connect(_auto_return_to_lobby)
+
+func _create_game_over_overlay(winning_team: String, message: String) -> void:
+	"""Create GameOverUI overlay manually"""
+	var local_player = _get_local_player()
+	if not local_player:
+		print("[GameManager] ❌ Cannot create game over overlay - no local player found")
+		return
+	
+	# Determine if local player won
+	var did_i_win = false
+	if local_player.role == PlayerCharacter.PlayerRole.SEEKER and winning_team == "Seekers":
+		did_i_win = true
+	elif local_player.role == PlayerCharacter.PlayerRole.HIDER and winning_team == "Hiders":
+		did_i_win = true
+	
+	# Create the GameOverUI overlay
+	var game_over_overlay = preload("res://scenes/GameOverUI.tscn").instantiate()
+	if not game_over_overlay:
+		print("[GameManager] ❌ Failed to instantiate GameOverUI")
+		return
+	
+	# Add to scene tree
+	var current_scene = get_tree().current_scene
+	if current_scene:
+		current_scene.add_child(game_over_overlay)
+		game_over_overlay.show_screen(local_player, did_i_win, message)
+		print("[GameManager] ✅ GameOverUI overlay created and displayed")
+	else:
+		print("[GameManager] ❌ No current scene to add GameOverUI to")
 
 func _auto_return_to_lobby() -> void:
 	"""Auto-return to lobby after game over timeout"""

@@ -837,7 +837,8 @@ func become_ghost() -> void:
 	set_collision_layer_value(3, true)   # Collide with other ghosts
 	set_collision_mask_value(1, false)   # Don't detect living players
 	set_collision_mask_value(3, true)    # Detect other ghosts
-	set_collision_mask_value(4, false)   # Ghosts pass through walls
+	set_collision_mask_value(4, true)    # Ghosts still collide with walls (layer 4)
+	set_collision_mask_value(5, false)   # Ghosts pass through obstacles (layer 5)
 	
 	# Ghosts can move but cannot attack
 	can_move = true   # Ghosts can move around as spectators
@@ -1336,10 +1337,15 @@ func _trigger_spotted_alert():
 	# Find GameUI and show spotted alert
 	var game_ui = _find_game_ui()
 	if game_ui:
+		print("[Player] 📝 Found GameUI: ", game_ui.name, " - Setting up spotted alert")
+		
 		# Ensure GameUI knows the local player's role
 		if game_ui.has_method("set_local_player_role"):
 			game_ui.set_local_player_role(role)
-			print("[Player] 📝 Set GameUI local player role to: ", role)
+			print("[Player] 📝 Set GameUI local player role to: ", PlayerRole.keys()[role])
+		
+		# Wait a frame to ensure role is set
+		await get_tree().process_frame
 		
 		# Try multiple methods to show spotted alert
 		if game_ui.has_method("show_spotted"):

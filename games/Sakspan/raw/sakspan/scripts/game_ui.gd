@@ -79,12 +79,18 @@ func show_kill_feed(message: String):
 		fade_out_label(kill_feed_label, message)
 
 func show_spotted(is_visible: bool):
+	print("[GameUI] 🎯 show_spotted called - is_visible: ", is_visible, " local_role: ", local_player_role, " spotted_label exists: ", spotted_label != null)
+	
 	if local_player_role == PlayerCharacter.PlayerRole.HIDER:
 		if spotted_label:
 			if is_visible:
 				_show_spotted_alert_with_animation()
 			else:
 				_hide_spotted_alert_with_animation()
+		else:
+			print("[GameUI] ❌ spotted_label is null - cannot show spotted alert")
+	else:
+		print("[GameUI] ⚠️ Not showing spotted alert - player is not a HIDER (role: ", local_player_role, ")")
 
 func _show_spotted_alert_with_animation():
 	"""Show spotted alert with dramatic animation"""
