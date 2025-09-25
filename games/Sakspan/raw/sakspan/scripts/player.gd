@@ -745,9 +745,9 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	# REFACTORED: Disable all abilities
 	can_bang = false
 	can_sak = false
-	collision_shape.disabled = true
-	melee_range.monitoring = false
-	vision_cone.monitoring = false
+	
+	# Use call_deferred to avoid physics flushing errors
+	call_deferred("_disable_collision_areas")
 	
 	# Stop any current actions
 	is_in_action = false
@@ -828,6 +828,67 @@ func _show_ghost_status_message() -> void:
 	"""Show ghost status message to the local player"""
 	var message := "👻 You are now a ghost! You can move around but cannot interact with living players."
 	show_temporary_message.rpc_id(multiplayer.get_unique_id(), message)
+
+func _disable_collision_areas() -> void:
+	"""Safely disable collision areas during elimination"""
+	if collision_shape:
+		collision_shape.disabled = true
+	if melee_range:
+		melee_range.monitoring = false
+	if vision_cone:
+		vision_cone.monitoring = false
+	print("[Player] 🚫 Collision areas disabled for ", player_name)
+
+func reset_to_lobby_state() -> void:
+	"""Reset player to lobby state after game over"""
+	print("[Player] 🔄 Resetting ", player_name, " to lobby state")
+	
+	# Reset all states
+	current_state = PlayerState.ALIVE
+	is_dying = false
+	is_in_action = false
+	target_for_sak = null
+	
+	# Reset abilities
+	can_move = true
+	can_bang = false
+	can_sak = false
+	
+	# Reset visual appearance
+	animated_sprite.modulate = Color.WHITE
+	if username_label:
+		username_label.add_theme_color_override("font_color", Color.WHITE)
+		username_label.text = player_name
+	
+	# Re-enable collision
+	if collision_shape:
+		collision_shape.disabled = false
+	if melee_range:
+		melee_range.monitoring = true
+	if vision_cone:
+		vision_cone.monitoring = true
+	
+	# Remove ghost effects
+	var glow_sprite = get_node_or_null("GhostGlow")
+	if glow_sprite:
+		glow_sprite.queue_free()
+	
+	# Reset collision layers
+	set_collision_layer_value(1, true)   # Normal players
+	set_collision_layer_value(3, false)  # Ghosts
+	set_collision_mask_value(1, true)    # Detect normal players
+	set_collision_mask_value(3, false)   # Don't detect ghosts
+	
+	# Reset vision light
+	if vision_light:
+		vision_light.color = Color.WHITE
+		vision_light.energy = 1.0
+	
+	# Play idle animation
+	if animated_sprite:
+		animated_sprite.play("idle")
+	
+	print("[Player] ✅ ", player_name, " reset to lobby state complete")
 
 func _add_ghost_glow_effect() -> void:
 	"""Add a subtle glow effect to make ghosts more visible"""

@@ -52,6 +52,7 @@ var main_timer: Timer
 var ammo_cooldown_timer: Timer
 var sak_delay_timer: Timer
 var ammo_regen_timer: Timer
+var game_over_timer: Timer
 # phase_timer removed - replaced by master clock system
 
 # Working game mechanics variables
@@ -972,6 +973,9 @@ func end_game(winning_team: String) -> void:
 	game_ended.emit(winning_team)
 	_show_game_over_announcement.rpc(winning_team)
 	rpc("_rpc_end_game", winning_team)
+	
+	# Start game over timer to return to lobby
+	_start_game_over_timer()
 
 # Player elimination and win condition system
 func _on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerCharacter) -> void:
@@ -985,8 +989,8 @@ func _on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerC
 	if eliminated_player.role == PlayerCharacter.PlayerRole.HIDER:
 		_update_hiders_count()
 	
-	# Check win conditions after elimination
-	check_win_conditions()
+	# Check win conditions after elimination (deferred to ensure state is updated)
+	call_deferred("check_win_conditions")
 
 func check_win_conditions() -> void:
 	"""Check if game should end based on current player states"""
@@ -1128,8 +1132,86 @@ func _handle_game_over_state() -> void:
 	
 	# Disable all player abilities
 	if multiplayer.is_server():
-		_set_players_abilities_by_role.rpc("all", false, false)
-		_set_players_movement_by_role.rpc("all", false)
+		_disable_all_players.rpc()
+
+func _start_game_over_timer() -> void:
+	"""Start timer to return to lobby after game over"""
+	if not multiplayer.is_server():
+		return
+	
+	if not game_over_timer:
+		game_over_timer = Timer.new()
+		add_child(game_over_timer)
+		game_over_timer.timeout.connect(_on_game_over_timer_timeout)
+	
+	game_over_timer.wait_time = 10.0  # 10 seconds to view results
+	game_over_timer.one_shot = true
+	game_over_timer.start()
+	
+	print("[GameManager] ⏰ Game over timer started - returning to lobby in 10 seconds")
+
+func _on_game_over_timer_timeout() -> void:
+	"""Reset game and return to lobby"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[GameManager] 🔄 Resetting game and returning to lobby")
+	
+	# Reset all game state
+	_reset_game_state()
+	
+	# Change to lobby state
+	change_game_state(GameState.LOBBY)
+	
+	# Notify all clients to reset
+	_reset_all_players.rpc()
+
+func _reset_game_state() -> void:
+	"""Reset all game variables and timers"""
+	# Stop and clear all timers
+	if master_clock:
+		master_clock.stop()
+	if ammo_regen_timer:
+		ammo_regen_timer.stop()
+	if sak_delay_timer:
+		sak_delay_timer.stop()
+	if game_over_timer:
+		game_over_timer.stop()
+	
+	# Reset game variables
+	total_players = 0
+	max_ammo_capacity = 0
+	sak_delay_active = false
+	
+	# Clear player data
+	players.clear()
+	
+	print("[GameManager] ✅ Game state reset complete")
+
+@rpc("authority", "call_local", "reliable")
+func _disable_all_players() -> void:
+	"""Disable all player abilities during game over"""
+	for player in get_tree().get_nodes_in_group("player"):
+		if player is PlayerCharacter:
+			player.can_move = false
+			player.can_bang = false
+			player.can_sak = false
+	print("[GameManager] 🚫 All players disabled for game over")
+
+@rpc("authority", "call_local", "reliable")
+func _reset_all_players() -> void:
+	"""Reset all players to lobby state"""
+	# Reset all player nodes
+	for player in get_tree().get_nodes_in_group("player"):
+		if player is PlayerCharacter:
+			player.reset_to_lobby_state()
+	
+	# Hide game over UI
+	var game_over_ui = get_tree().get_first_node_in_group("game_over_ui")
+	if game_over_ui:
+		game_over_ui.queue_free()
+	
+	print("[GameManager] 🔄 All players reset to lobby state")
 
 #region Player Management
 func _on_player_connected(player_id: int) -> void:
