@@ -60,7 +60,7 @@ var game_state: GameState = GameState.LOBBY  # Legacy compatibility - kept in sy
 var total_players: int = 0
 var max_ammo_capacity: int = 0  # Will be set to total player count
 var sak_delay_active: bool = false  # Prevents hiders from SAK during delay
-var seeker_can_attack: bool = false  # Requires full ammo to attack
+# REMOVED: var seeker_can_attack - replaced with granular can_bang system
 
 func _enter_tree():
 	if instance != null:
@@ -915,11 +915,11 @@ func _apply_phase_permissions(permissions: Dictionary):
 	
 	# Apply hider permissions
 	_set_hiders_movement(permissions.hider_movement)
-	_set_hiders_attack(permissions.hider_attack)
+	_set_hiders_sak(permissions.hider_attack)  # FIXED: Use granular SAK permission
 	
 	# Apply seeker permissions
 	_set_seekers_movement(permissions.seeker_movement)
-	_set_seekers_attack(permissions.seeker_attack)
+	_set_seekers_bang(permissions.seeker_attack)  # FIXED: Use granular BANG permission
 
 # Execute special effects for the phase
 func _execute_phase_effects(effects: Array):
@@ -1243,7 +1243,7 @@ func _handle_fire_request(player_id: int) -> void:
 	if not player or player.role != PlayerCharacter.PlayerRole.SEEKER:
 		return
 	
-	if player.ammo <= 0 or not player.can_attack:
+	if player.ammo <= 0 or not player.can_bang:
 		return
 	
 	# Approve the action
@@ -1262,7 +1262,7 @@ func _handle_sak_request(player_id: int) -> void:
 	if not player or player.role != PlayerCharacter.PlayerRole.HIDER:
 		return
 	
-	if not player.can_attack:
+	if not player.can_sak:
 		return
 	
 	# Find valid targets in melee range
@@ -1604,5 +1604,5 @@ func _on_sak_delay_timer_timeout() -> void:
 	for hider in get_tree().get_nodes_in_group("hider"):
 		var hider_player: PlayerCharacter = hider as PlayerCharacter
 		if hider_player:
-			hider_player.can_attack = true
+			hider_player.can_sak = true
 	print("[GameMaster] Hiders can now SAK!")

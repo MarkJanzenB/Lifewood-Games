@@ -405,7 +405,7 @@ func _debug_check_all_players():
 			print("  - Is Multiplayer Authority: ", player.is_multiplayer_authority())
 			print("  - Is Local Player: ", player.is_main_player)
 			print("  - Can Move: ", player.can_move)
-			print("  - Can Attack: ", player.can_attack)
+			print("  - Can BANG: ", player.can_bang, " Can SAK: ", player.can_sak)
 			print("  - Global Position: ", player.global_position)
 			print("  - Current Unique ID: ", multiplayer.get_unique_id())
 		else:
@@ -513,7 +513,7 @@ func _test_fire_sak_functions():
 			print("  - Has set_ammo: ", p.has_method("set_ammo"))
 			print("  - Has eliminate: ", p.has_method("eliminate"))
 			print("  - Current ammo: ", p.ammo)
-			print("  - Can attack: ", p.can_attack)
+			print("  - Can BANG: ", p.can_bang, " Can SAK: ", p.can_sak)
 			print("  - Can move: ", p.can_move)
 			
 			# Check GameManager connection
@@ -538,12 +538,12 @@ func _manual_role_assignment():
 			# First player becomes seeker, rest become hiders
 			if i == 0:
 				player.assign_role(PlayerCharacter.PlayerRole.SEEKER)
-				player.can_attack = true
+				player.can_bang = true
 				player.can_move = true
 				print("[World] Assigned SEEKER role to: ", player.player_name)
 			else:
 				player.assign_role(PlayerCharacter.PlayerRole.HIDER)
-				player.can_attack = true
+				player.can_sak = true
 				player.can_move = true
 				print("[World] Assigned HIDER role to: ", player.player_name)
 	
@@ -559,7 +559,7 @@ func _check_player_states():
 			print("[World] Player: ", p.player_name)
 			print("  - Role: ", PlayerCharacter.PlayerRole.keys()[p.role])
 			print("  - Ammo: ", p.ammo)
-			print("  - Can attack: ", p.can_attack)
+			print("  - Can BANG: ", p.can_bang, " Can SAK: ", p.can_sak)
 			print("  - Can move: ", p.can_move)
 			print("  - Is main player: ", p.is_main_player)
 			print("  - Is multiplayer authority: ", p.is_multiplayer_authority())
@@ -631,13 +631,13 @@ func _quick_role_assignment():
 			if i == 0:
 				# First player becomes seeker
 				player.assign_role(PlayerCharacter.PlayerRole.SEEKER)
-				player.can_attack = true
+				player.can_bang = true
 				player.can_move = true
 				print("[World] ✅ Assigned SEEKER to: ", player.player_name, " (Ammo: ", player.ammo, ")")
 			else:
 				# Rest become hiders
 				player.assign_role(PlayerCharacter.PlayerRole.HIDER)
-				player.can_attack = true
+				player.can_sak = true
 				player.can_move = true
 				print("[World] ✅ Assigned HIDER to: ", player.player_name)
 		else:
