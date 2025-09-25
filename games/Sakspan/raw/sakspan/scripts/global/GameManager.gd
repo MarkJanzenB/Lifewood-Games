@@ -1039,11 +1039,32 @@ func _show_game_over_announcement(winning_team: String) -> void:
 	
 	print("[GameManager] 📢 ", message)
 	
-	# Show in GameUI if available
-	if game_ui_instance and game_ui_instance.has_method("show_game_over"):
-		game_ui_instance.show_game_over(winning_team, message)
-	elif game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):
-		game_ui_instance.show_dramatic_announcement(message)
+	# Show GameOver scene
+	_show_game_over_scene(winning_team, message)
+
+func _show_game_over_scene(winning_team: String, message: String) -> void:
+	"""Load and show the GameOver scene"""
+	# Try to load the GameOver scene
+	var game_over_scene = preload("res://scenes/GameOverUI.tscn")
+	if game_over_scene:
+		var game_over_instance = game_over_scene.instantiate()
+		get_tree().current_scene.add_child(game_over_instance)
+		
+		# Configure the game over UI
+		if game_over_instance.has_method("show_game_over"):
+			game_over_instance.show_game_over(winning_team, message)
+		elif game_over_instance.has_method("set_winner"):
+			game_over_instance.set_winner(winning_team)
+		
+		print("[GameManager] ✅ GameOver scene loaded and displayed")
+	else:
+		print("[GameManager] ❌ Failed to load GameOver scene")
+		
+		# Fallback: Show in GameUI if available
+		if game_ui_instance and game_ui_instance.has_method("show_game_over"):
+			game_ui_instance.show_game_over(winning_team, message)
+		elif game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):
+			game_ui_instance.show_dramatic_announcement(message)
 
 @rpc("authority", "call_local", "reliable")
 func _update_hiders_count_ui(count: int) -> void:

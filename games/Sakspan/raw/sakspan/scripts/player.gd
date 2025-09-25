@@ -881,11 +881,11 @@ func _start_ghost_floating_animation() -> void:
 	var ghost_tween = create_tween()
 	ghost_tween.set_loops()  # Loop forever
 	
-	# Float up and down by 5 pixels over 2 seconds
+	# Float up and down by 5 pixels over 4 seconds total
 	var original_position = animated_sprite.position
-	ghost_tween.tween_to_method(_set_ghost_float_position, original_position.y, original_position.y - 5, 1.0)
-	ghost_tween.tween_to_method(_set_ghost_float_position, original_position.y - 5, original_position.y + 5, 2.0)
-	ghost_tween.tween_to_method(_set_ghost_float_position, original_position.y + 5, original_position.y, 1.0)
+	ghost_tween.tween_method(_set_ghost_float_position, original_position.y, original_position.y - 5, 1.0)
+	ghost_tween.tween_method(_set_ghost_float_position, original_position.y - 5, original_position.y + 5, 2.0)
+	ghost_tween.tween_method(_set_ghost_float_position, original_position.y + 5, original_position.y, 1.0)
 	
 	print("[Player] 🌊 Started floating animation for ghost ", player_name)
 
@@ -1124,10 +1124,12 @@ func _show_spotted_alert_for_player(target_player: PlayerCharacter):
 		return
 	
 	var target_id = target_player.get_multiplayer_authority()
-	if GameManager and GameManager.multiplayer.is_server():
-		GameManager.forward_spotted_alert.rpc_id(1, target_id, true)
-	else:
+	if multiplayer.is_server():
+		# Server directly triggers the alert on the target client
 		_trigger_spotted_alert.rpc_id(target_id)
+	else:
+		# Client requests server to trigger alert
+		_request_spotted_alert.rpc_id(1, target_id, true)
 
 func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
 	"""Hide spotted alert on the target player's screen"""
@@ -1135,12 +1137,25 @@ func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
 		return
 	
 	var target_id = target_player.get_multiplayer_authority()
-	if GameManager and GameManager.multiplayer.is_server():
-		GameManager.forward_spotted_alert.rpc_id(1, target_id, false)
+	if multiplayer.is_server():
+		# Server directly hides the alert on the target client
+		_hide_spotted_alert.rpc_id(target_id)
+	else:
+		# Client requests server to hide alert
+		_request_spotted_alert.rpc_id(1, target_id, false)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _request_spotted_alert(target_id: int, show: bool):
+	"""RPC to request server to handle spotted alert"""
+	if not multiplayer.is_server():
+		return
+	
+	if show:
+		_trigger_spotted_alert.rpc_id(target_id)
 	else:
 		_hide_spotted_alert.rpc_id(target_id)
 
-@rpc("any_peer", "call_local", "reliable")
+@rpc("authority", "call_remote", "reliable")
 func _trigger_spotted_alert():
 	"""RPC to trigger spotted alert on this client"""
 	# Only show for Hiders
@@ -1152,7 +1167,7 @@ func _trigger_spotted_alert():
 	if game_ui and game_ui.has_method("show_spotted"):
 		game_ui.show_spotted(true)
 
-@rpc("any_peer", "call_local", "reliable")
+@rpc("authority", "call_remote", "reliable")
 func _hide_spotted_alert():
 	"""RPC to hide spotted alert on this client"""
 	# Only for Hiders
