@@ -804,12 +804,11 @@ func handle_visuals() -> void:
 	if velocity.length() > 0:
 		var is_running = Input.is_action_pressed("run")
 		var anim_to_play = ""
-		if is_aiming_up: anim_to_play = "back_run" if is_running else "back_walk"
+		if is_aiming_up: anim_to_play = "front_backward_run" if is_running else "front_backward_walk"
 		else: anim_to_play = "front_run" if is_running else "front_walk"
 		animated_sprite.play(anim_to_play)
 	else:
-		if is_aiming_up: animated_sprite.play("back_idle")
-		else: animated_sprite.play("idle")
+		animated_sprite.play("idle")
 
 func handle_remote_visuals() -> void:
 	# Handle animations for remote players based on velocity and synced state
@@ -838,7 +837,7 @@ func handle_remote_visuals() -> void:
 			# Determine primary direction
 			if abs(vel_normalized.y) > 0.7:  # Mostly vertical movement
 				if vel_normalized.y < 0:
-					anim_to_play = "back_run" if is_running else "back_walk"
+					anim_to_play = "front_backward_run" if is_running else "front_backward_walk"
 				else:
 					anim_to_play = "front_run" if is_running else "front_walk"
 			else:
