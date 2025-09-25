@@ -69,6 +69,15 @@ func rpc_request_char_selection(index: int) -> void:
 	if index < -1 or index > 10:
 		print("[LobbySync] Invalid character index: ", index)
 		return
+	
+	# Validate character availability (only if not deselecting)
+	if index >= 0:
+		for player_id in mgr.players:
+			if player_id != sender_id and mgr.players[player_id].get("char_index", -1) == index:
+				print("[LobbySync] Character ", index, " already taken by player ", player_id)
+				# Send error message back to requesting client
+				_notify_character_unavailable.rpc_id(sender_id, index)
+				return
 		
 	if mgr.players.has(sender_id):
 		mgr.players[sender_id]["char_index"] = index
@@ -87,6 +96,23 @@ func rpc_request_char_selection(index: int) -> void:
 	else:
 		print("[LobbySync] ERROR: Player ", sender_id, " not found in players list")
 		print("[LobbySync] Available players: ", mgr.players.keys())
+
+# Notify client that character is unavailable
+@rpc("authority", "call_remote", "reliable")
+func _notify_character_unavailable(char_index: int) -> void:
+	"""Server notifies client that character is already taken"""
+	print("[LobbySync] Character ", char_index, " is unavailable - already taken")
+	
+	# Find the lobby wait room to show error message
+	var lobby_wait_room = get_tree().get_first_node_in_group("lobby_wait_room")
+	if not lobby_wait_room:
+		# Try alternative method
+		lobby_wait_room = get_node_or_null("/root/LobbyWaitRoomMenu")
+	
+	if lobby_wait_room and lobby_wait_room.has_method("show_character_unavailable_message"):
+		lobby_wait_room.show_character_unavailable_message(char_index)
+	else:
+		print("[LobbySync] Could not find lobby wait room to show error message")
 
 @rpc("authority", "call_local", "reliable")
 func sync_char_selection(id: int, index: int) -> void:

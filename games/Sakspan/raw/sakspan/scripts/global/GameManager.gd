@@ -1045,11 +1045,13 @@ func _calculate_and_broadcast_hiders_count() -> void:
 @rpc("authority", "call_local", "reliable")
 func _show_game_over_announcement(winning_team: String) -> void:
 	"""Show game over announcement to all players"""
+	print("[GameManager] 🎬 _show_game_over_announcement called on peer ", multiplayer.get_unique_id(), " for team: ", winning_team)
+	
 	var message := ""
 	if winning_team == "Seekers":
 		message = "🎯 SEEKERS WIN! All hiders eliminated!"
 	elif winning_team == "Hiders":
-		message = "🫥 HIDERS WIN! All seekers eliminated!"
+		message = "🪫 HIDERS WIN! All seekers eliminated!"
 	else:
 		message = "🏁 GAME OVER: " + winning_team + " wins!"
 	
@@ -1062,27 +1064,63 @@ func _show_game_over_announcement(winning_team: String) -> void:
 	# Disable all players on this client
 	_disable_all_players_local()
 	
-	# Show GameOver scene
+	# Show GameOver scene with error handling
+	await get_tree().process_frame  # Wait one frame to ensure state is updated
 	_show_game_over_scene(winning_team, message)
 
 func _show_game_over_scene(winning_team: String, message: String) -> void:
 	"""Load and show the GameOver scene"""
-	print("[GameManager] 🎬 Loading GameOver scene for: ", winning_team)
+	print("[GameManager] 🎬 Loading GameOver scene for: ", winning_team, " on peer: ", multiplayer.get_unique_id())
 	
-	# Try to load the GameOver scene
+	# Safety check: ensure we have a valid scene tree
+	if not get_tree() or not get_tree().current_scene:
+		print("[GameManager] ⚠️ No valid scene tree, cannot show GameOver UI")
+		return
+	
+	# PRIORITY: Try GameUI first (more reliable)
+	if game_ui_instance and game_ui_instance.has_method("show_game_over"):
+		# Ensure GameUI knows the local player's role
+		var local_player = _get_local_player()
+		if local_player and game_ui_instance.has_method("set_local_player_role"):
+			game_ui_instance.set_local_player_role(local_player.role)
+			
+		game_ui_instance.show_game_over(winning_team, message)
+		print("[GameManager] ✅ PRIMARY: GameOver shown in GameUI")
+		return
+	
+	# FALLBACK: Try to load the separate GameOver scene
 	var game_over_scene_path = "res://scenes/GameOverUI.tscn"
 	if ResourceLoader.exists(game_over_scene_path):
 		var game_over_scene = load(game_over_scene_path)
 		if game_over_scene:
 			var game_over_instance = game_over_scene.instantiate()
+			if not game_over_instance:
+				print("[GameManager] ❌ Failed to instantiate GameOver scene")
+				return
+				
 			game_over_instance.add_to_group("game_over_ui")
 			
 			# Add to scene tree and make visible
-			get_tree().current_scene.add_child(game_over_instance)
-			game_over_instance.visible = true
+			var current_scene = get_tree().current_scene
+			if current_scene and is_instance_valid(current_scene):
+				current_scene.add_child(game_over_instance)
+				game_over_instance.visible = true
+				print("[GameManager] ✅ GameOver UI added to scene tree")
+			else:
+				print("[GameManager] ❌ Failed to add GameOver UI - invalid current scene")
+				return
 			
-			# Move to front
-			game_over_instance.z_index = 100
+			# Move to front - handle different node types
+			if game_over_instance is CanvasLayer:
+				# CanvasLayer uses 'layer' property, not 'z_index'
+				game_over_instance.layer = 100
+				print("[GameManager] Set CanvasLayer layer to 100")
+			elif game_over_instance is Control:
+				# Control nodes use 'z_index'
+				game_over_instance.z_index = 100
+				print("[GameManager] Set Control z_index to 100")
+			else:
+				print("[GameManager] Unknown node type for z-ordering: ", game_over_instance.get_class())
 			
 			# Configure the game over UI with multiple fallback methods
 			var configured = false
@@ -1109,6 +1147,11 @@ func _show_game_over_scene(winning_team: String, message: String) -> void:
 	
 	# Fallback: Show in GameUI if available
 	if game_ui_instance and game_ui_instance.has_method("show_game_over"):
+		# Ensure GameUI knows the local player's role
+		var local_player = _get_local_player()
+		if local_player and game_ui_instance.has_method("set_local_player_role"):
+			game_ui_instance.set_local_player_role(local_player.role)
+			
 		game_ui_instance.show_game_over(winning_team, message)
 		print("[GameManager] ✅ Fallback: GameOver shown in GameUI")
 	elif game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):

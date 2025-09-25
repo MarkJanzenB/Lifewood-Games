@@ -51,6 +51,9 @@ func _ready():
 	# Start background music
 	MusicManager.force_start_main_theme()
 	
+	# Add to group so LobbySync can find us
+	add_to_group("lobby_wait_room")
+	
 	var game_manager = get_node_or_null("/root/GameManager")
 	if game_manager and game_manager.has_method("reset_to_lobby"):
 		game_manager.reset_to_lobby()
@@ -244,11 +247,18 @@ func _update_character_grid_lock(players: Dictionary):
 	for i in range(character_grid.get_child_count()):
 		var btn = character_grid.get_child(i)
 		btn.disabled = (i in picked and i != my_char)
+		
 		# Show who selected this character (tooltip)
 		if i in picked_by:
-			btn.tooltip_text = "Selected by %s" % String(picked_by[i])
+			btn.tooltip_text = "Selected by: " + picked_by[i]
+			# Visual indicator for taken characters
+			if i != my_char:
+				btn.modulate = Color(0.5, 0.5, 0.5, 0.7)  # Grayed out
+			else:
+				btn.modulate = Color(1.0, 1.0, 1.0, 1.0)  # Normal
 		else:
 			btn.tooltip_text = ""
+			btn.modulate = Color(1.0, 1.0, 1.0, 1.0)  # Normal
 
 func _update_player_list(players: Dictionary):
 	if not player_list_container:
@@ -378,12 +388,43 @@ func _on_lock_in_button_pressed():
 
 	_update_start_game_button()
 
-func _update_status(message: String):
-	print("[LobbyWaitRoom] ", message)
-	# You can add a status label to show messages to the player if needed
+func _update_status(message: String) -> void:
+	if selection_label:
+		selection_label.text = message
+		print("[LobbyWaitRoom] Status updated: ", message)
 
-# Debug function to manually refresh UI
-func _input(event):
+func show_character_unavailable_message(char_index: int) -> void:
+	"""Show error message when character is already taken"""
+	var char_name = CHARACTER_NAMES[char_index] if char_index < CHARACTER_NAMES.size() else "Character " + str(char_index)
+	
+	_update_status(char_name + " is already taken! Please select another character.")
+	
+	# Clear the selection and reset UI
+	selected_char_index = -1
+	locked_in = false
+	if lock_in_button:
+		lock_in_button.text = "LOCK IN"
+	
+	# Update character grid to show current state
+	_update_character_grid_highlight()
+	
+	# Auto-clear the error message after 3 seconds
+	get_tree().create_timer(3.0).timeout.connect(_clear_status_message)
+
+func _clear_status_message() -> void:
+	"""Clear the status message"""
+	if selection_label:
+		# Restore normal selection text if we have a selection
+		if selected_char_index >= 0:
+			var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
+			if locked_in:
+				selection_label.text = "Locked in as: " + character_name + " ✓"
+			else:
+				selection_label.text = "You selected: " + character_name + " (press LOCK IN to confirm)"
+		else:
+			selection_label.text = "No selection yet"
+
+func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_F5:
 			print("[LobbyWaitRoom] F5 pressed - Manual UI refresh")
