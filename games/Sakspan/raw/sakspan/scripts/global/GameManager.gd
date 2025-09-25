@@ -53,6 +53,7 @@ var ammo_cooldown_timer: Timer
 var sak_delay_timer: Timer
 var ammo_regen_timer: Timer
 var game_over_timer: Timer
+var players_disabled: bool = false
 # phase_timer removed - replaced by master clock system
 
 # Working game mechanics variables
@@ -1022,6 +1023,11 @@ func check_win_conditions() -> void:
 
 func _update_hiders_count() -> void:
 	"""Update and broadcast the current hiders count"""
+	# Use call_deferred to ensure player state is updated first
+	call_deferred("_calculate_and_broadcast_hiders_count")
+
+func _calculate_and_broadcast_hiders_count() -> void:
+	"""Calculate and broadcast hiders count after state updates"""
 	var alive_hiders := 0
 	for player in get_tree().get_nodes_in_group("player"):
 		if player is PlayerCharacter and player.current_state == PlayerCharacter.PlayerState.ALIVE and player.role == PlayerCharacter.PlayerRole.HIDER:
@@ -1052,13 +1058,19 @@ func _show_game_over_scene(winning_team: String, message: String) -> void:
 	var game_over_scene = preload("res://scenes/GameOverUI.tscn")
 	if game_over_scene:
 		var game_over_instance = game_over_scene.instantiate()
+		game_over_instance.add_to_group("game_over_ui")
+		
+		# Add to scene tree and make visible
 		get_tree().current_scene.add_child(game_over_instance)
+		game_over_instance.visible = true
 		
 		# Configure the game over UI
 		if game_over_instance.has_method("show_game_over"):
 			game_over_instance.show_game_over(winning_team, message)
 		elif game_over_instance.has_method("set_winner"):
 			game_over_instance.set_winner(winning_team)
+		elif game_over_instance.has_method("display_winner"):
+			game_over_instance.display_winner(winning_team)
 		
 		print("[GameManager] ✅ GameOver scene loaded and displayed")
 	else:
@@ -1130,8 +1142,9 @@ func _handle_game_over_state() -> void:
 	if sak_delay_timer and not sak_delay_timer.is_stopped():
 		sak_delay_timer.stop()
 	
-	# Disable all player abilities
-	if multiplayer.is_server():
+	# Disable all player abilities (only once)
+	if multiplayer.is_server() and not players_disabled:
+		players_disabled = true
 		_disable_all_players.rpc()
 
 func _start_game_over_timer() -> void:
@@ -1182,6 +1195,7 @@ func _reset_game_state() -> void:
 	total_players = 0
 	max_ammo_capacity = 0
 	sak_delay_active = false
+	players_disabled = false
 	
 	# Clear player data
 	players.clear()

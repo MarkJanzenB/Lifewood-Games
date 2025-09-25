@@ -1182,14 +1182,19 @@ func check_line_of_sight() -> void:
 func _show_spotted_alert_for_player(target_player: PlayerCharacter):
 	"""Show spotted alert on the target player's screen"""
 	if not target_player or target_player.role != PlayerRole.HIDER:
+		print("[Player] ⚠️ Spotted alert skipped - invalid target or not hider")
 		return
 	
 	var target_id = target_player.get_multiplayer_authority()
+	print("[Player] 🚨 Showing spotted alert for ", target_player.player_name, " (ID: ", target_id, ")")
+	
 	if multiplayer.is_server():
 		# Server directly triggers the alert on the target client
+		print("[Player] 📡 SERVER: Sending spotted alert to client ", target_id)
 		_trigger_spotted_alert.rpc_id(target_id)
 	else:
 		# Client requests server to trigger alert
+		print("[Player] 📡 CLIENT: Requesting server to show spotted alert for ", target_id)
 		_request_spotted_alert.rpc_id(1, target_id, true)
 
 func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
@@ -1219,14 +1224,20 @@ func _request_spotted_alert(target_id: int, show: bool):
 @rpc("authority", "call_remote", "reliable")
 func _trigger_spotted_alert():
 	"""RPC to trigger spotted alert on this client"""
+	print("[Player] 📡 RECEIVED: _trigger_spotted_alert on ", player_name, " (Role: ", role, ", Main: ", is_main_player, ")")
+	
 	# Only show for Hiders
 	if role != PlayerRole.HIDER or not is_main_player:
+		print("[Player] ⚠️ Spotted alert ignored - not main hider player")
 		return
 	
 	# Find GameUI and trigger spotted alert
 	var game_ui = _find_game_ui()
 	if game_ui and game_ui.has_method("show_spotted"):
 		game_ui.show_spotted(true)
+		print("[Player] ✅ Spotted alert shown via GameUI")
+	else:
+		print("[Player] ❌ Failed to show spotted alert - GameUI not found or missing method")
 
 @rpc("authority", "call_remote", "reliable")
 func _hide_spotted_alert():
@@ -1265,14 +1276,32 @@ func set_spotted_status(is_spotted: bool) -> void:
 
 func _find_game_ui() -> Control:
 	"""Find the GameUI node in the scene"""
-	# Try to find GameUI in the current scene
+	# Try multiple methods to find GameUI
+	
+	# Method 1: Try GameManager's reference
+	if GameManager and GameManager.game_ui_instance:
+		return GameManager.game_ui_instance
+	
+	# Method 2: Search by group
+	var game_ui = get_tree().get_first_node_in_group("game_ui")
+	if game_ui:
+		return game_ui
+	
+	# Method 3: Try to find GameUI in the current scene
 	var world = get_tree().get_first_node_in_group("world")
 	if not world:
-		world = get_node("/root/DevWorld") # For dev_world.tscn
+		world = get_node_or_null("/root/DevWorld") # For dev_world.tscn
 	
 	if world and world.has_node("UI/GameUI"):
 		return world.get_node("UI/GameUI")
 	
+	# Method 4: Search the entire scene tree
+	var nodes = get_tree().get_nodes_in_group("ui")
+	for node in nodes:
+		if node.name == "GameUI":
+			return node
+	
+	print("[Player] ⚠️ GameUI not found for spotted alert")
 	return null
 
 # --- SIGNAL FUNCTIONS ---
