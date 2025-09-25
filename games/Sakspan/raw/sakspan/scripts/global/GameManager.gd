@@ -984,31 +984,11 @@ func _set_seekers_movement(enabled: bool):
 
 func _set_hiders_attack(enabled: bool):
 	print("[GameManager] 🗡️ SERVER: Setting hider attack permission: ", enabled)
-	
-	# CRITICAL FIX: Send RPC directly to each player instance instead of GameManager
-	var all_players = get_tree().get_nodes_in_group("player")
-	print("[GameManager] 🔍 DEBUG: Found ", all_players.size(), " players to update")
-	
-	for player in all_players:
-		if player.role == PlayerCharacter.PlayerRole.HIDER:
-			print("[GameManager] 🗡️ Sending SAK permission to HIDER: ", player.player_name, " (Authority: ", player.get_multiplayer_authority(), ")")
-			player.set_sak_permission.rpc_id(player.get_multiplayer_authority(), enabled)
-		else:
-			print("[GameManager] ⚠️ Skipping non-hider: ", player.player_name, " (Role: ", PlayerCharacter.PlayerRole.keys()[player.role], ")")
+	_set_players_attack_by_role.rpc("hider", enabled)
 
 func _set_seekers_attack(enabled: bool):
 	print("[GameManager] 🎯 SERVER: Setting seeker attack permission: ", enabled)
-	
-	# CRITICAL FIX: Send RPC directly to each player instance instead of GameManager
-	var all_players = get_tree().get_nodes_in_group("player")
-	print("[GameManager] 🔍 DEBUG: Found ", all_players.size(), " players to update")
-	
-	for player in all_players:
-		if player.role == PlayerCharacter.PlayerRole.SEEKER:
-			print("[GameManager] 🎯 Sending attack permission to SEEKER: ", player.player_name, " (Authority: ", player.get_multiplayer_authority(), ")")
-			player.set_attack_permission.rpc_id(player.get_multiplayer_authority(), enabled)
-		else:
-			print("[GameManager] ⚠️ Skipping non-seeker: ", player.player_name, " (Role: ", PlayerCharacter.PlayerRole.keys()[player.role], ")")
+	_set_players_attack_by_role.rpc("seeker", enabled)
 
 func end_game(winning_team: String) -> void:
 	if not multiplayer.is_server():
