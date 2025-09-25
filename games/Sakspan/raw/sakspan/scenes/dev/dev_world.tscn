@@ -26,6 +26,32 @@ texture = ExtResource("2_ep40k")
 position = Vector2(1992, 176)
 scale = Vector2(0.430302, 0.430302)
 
+[node name="SpawnPoints" type="Node2D" parent="."]
+
+[node name="SafeSpawn1" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(500, 500)
+
+[node name="SafeSpawn2" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(-500, 500)
+
+[node name="SafeSpawn3" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(500, -500)
+
+[node name="SafeSpawn4" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(-500, -500)
+
+[node name="SafeSpawn5" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(800, 0)
+
+[node name="SafeSpawn6" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(-800, 0)
+
+[node name="SafeSpawn7" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(0, 800)
+
+[node name="SafeSpawn8" type="Marker2D" parent="SpawnPoints"]
+position = Vector2(0, -800)
+
 [node name="GameUI" parent="." instance=ExtResource("2_game_ui")]
 
 [node name="Walls" type="StaticBody2D" parent="."]

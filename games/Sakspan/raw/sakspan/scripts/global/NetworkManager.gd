@@ -612,17 +612,21 @@ func report_readiness(peer_id: int) -> void:
 	if ready_peers.size() == players.size():
 		print("[NetworkManager] ✅ All peers are ready. Beginning spawn sequence.")
 		
-		# Define staggered spawn points to prevent overlapping
-		var spawn_points = [
-			Vector2(200, 0),
-			Vector2(-200, 0), 
-			Vector2(0, 200),
-			Vector2(0, -200),
-			Vector2(150, 150),
-			Vector2(-150, 150),
-			Vector2(150, -150),
-			Vector2(-150, -150)
-		]
+		# Get safe spawn points from the scene (if available)
+		var spawn_points = _get_safe_spawn_points()
+		if spawn_points.is_empty():
+			# Fallback spawn points if scene markers not found
+			spawn_points = [
+				Vector2(500, 500),    # Bottom right safe area
+				Vector2(-500, 500),   # Bottom left safe area
+				Vector2(500, -500),   # Top right safe area
+				Vector2(-500, -500),  # Top left safe area
+				Vector2(800, 0),      # Right side safe area
+				Vector2(-800, 0),     # Left side safe area
+				Vector2(0, 800),      # Bottom safe area
+				Vector2(0, -800)      # Top safe area
+			]
+			print("[NetworkManager] ⚠️ Using fallback spawn points")
 		
 		# Spawn players on all clients with staggered positions
 		var spawn_index = 0
@@ -839,6 +843,50 @@ func rpc_spawn_player_instance(player_id: int, player_data: Dictionary, spawn_po
 		player_instance.setup_multiplayer_player(player_data, is_local)
 	
 	print("[NetworkManager] ✅ Player ", player_id, " spawned successfully at ", spawn_position, " on peer ", multiplayer.get_unique_id())
+
+func _get_safe_spawn_points() -> Array[Vector2]:
+	"""Get safe spawn points from the current scene's SpawnPoints node"""
+	var spawn_points: Array[Vector2] = []
+	var current_scene = get_tree().current_scene
+	
+	if not current_scene:
+		print("[NetworkManager] ❌ No current scene found")
+		return spawn_points
+	
+	var spawn_points_node = current_scene.get_node_or_null("SpawnPoints")
+	if not spawn_points_node:
+		print("[NetworkManager] ⚠️ No SpawnPoints node found in scene")
+		return spawn_points
+	
+	# Collect all Marker2D children as spawn points
+	for child in spawn_points_node.get_children():
+		if child is Marker2D:
+			var spawn_pos = child.global_position
+			# Validate spawn point is not inside walls
+			if _is_spawn_point_safe(spawn_pos):
+				spawn_points.append(spawn_pos)
+				print("[NetworkManager] ✅ Safe spawn point found: ", spawn_pos)
+			else:
+				print("[NetworkManager] ⚠️ Unsafe spawn point rejected: ", spawn_pos)
+	
+	print("[NetworkManager] 📍 Found ", spawn_points.size(), " safe spawn points")
+	return spawn_points
+
+func _is_spawn_point_safe(position: Vector2) -> bool:
+	"""Check if a spawn point is safe (not inside walls)"""
+	var space_state = get_tree().current_scene.get_world_2d().direct_space_state
+	if not space_state:
+		return true  # Assume safe if we can't check
+	
+	# Create a small collision query around the spawn point
+	var query = PhysicsPointQueryParameters2D.new()
+	query.position = position
+	query.collision_mask = 4  # Check against walls (layer 4)
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	
+	var result = space_state.intersect_point(query)
+	return result.is_empty()  # Safe if no collision detected
 
 # REMOVED: Old confirm_all_players_are_in_scene() function
 # Replaced by synchronization barrier pattern in report_readiness()
