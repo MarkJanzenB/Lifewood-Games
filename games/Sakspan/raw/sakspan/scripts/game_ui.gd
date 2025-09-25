@@ -253,10 +253,11 @@ func _create_game_over_overlay(did_i_win: bool, message: String) -> void:
 	overlay.z_index = 1000  # Ensure it's on top
 	add_child(overlay)
 	
-	# Create main container
+	# Create main container with proper centering
 	var main_container = VBoxContainer.new()
 	main_container.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	main_container.add_theme_constant_override("separation", 30)
+	main_container.custom_minimum_size = Vector2(400, 300)  # Set minimum size
 	overlay.add_child(main_container)
 	
 	# Create title label

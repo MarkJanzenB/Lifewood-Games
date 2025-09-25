@@ -1323,7 +1323,7 @@ func _request_spotted_alert(target_id: int, show: bool):
 	else:
 		_hide_spotted_alert.rpc_id(target_id)
 
-@rpc("authority", "call_remote", "reliable")
+@rpc("authority", "call_local", "reliable")
 func _trigger_spotted_alert():
 	"""RPC to trigger spotted alert on this client's GameUI"""
 	print("[Player] 📡 RECEIVED: _trigger_spotted_alert on ", player_name, " (Role: ", role, ", Main: ", is_main_player, ")")
@@ -1336,6 +1336,11 @@ func _trigger_spotted_alert():
 	# Find GameUI and show spotted alert
 	var game_ui = _find_game_ui()
 	if game_ui:
+		# Ensure GameUI knows the local player's role
+		if game_ui.has_method("set_local_player_role"):
+			game_ui.set_local_player_role(role)
+			print("[Player] 📝 Set GameUI local player role to: ", role)
+		
 		# Try multiple methods to show spotted alert
 		if game_ui.has_method("show_spotted"):
 			game_ui.show_spotted(true)
@@ -1343,13 +1348,15 @@ func _trigger_spotted_alert():
 		elif game_ui.has_node("MarginContainer/SpottedLabel"):
 			var spotted_label = game_ui.get_node("MarginContainer/SpottedLabel")
 			spotted_label.visible = true
+			spotted_label.text = "⚠️ SPOTTED! ⚠️"
+			spotted_label.modulate = Color.RED
 			print("[Player] ✅ Spotted alert shown via SpottedLabel visibility")
 		else:
 			print("[Player] ❌ No spotted alert method found in GameUI")
 	else:
 		print("[Player] ❌ GameUI not found for spotted alert")
 
-@rpc("authority", "call_remote", "reliable")
+@rpc("authority", "call_local", "reliable")
 func _hide_spotted_alert():
 	"""RPC to hide spotted alert on this client's GameUI"""
 	# Only for local Hiders
@@ -1501,14 +1508,15 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 
 	print("[Player] 🎯 SERVER: Seeker attack authorized - starting BANG animation")
 	
-	# The server validates the action, updates state, and triggers animation
-	# NOTE: is_in_action will be set on all clients via play_attack_animation RPC
-	set_ammo.rpc(ammo - 1) # Sync ammo change to all clients
+	# Reduce ammo and sync to all clients
+	ammo -= 1
+	set_ammo.rpc(ammo) # Sync ammo change to all clients
+	print("[Player] 🔄 Ammo reduced to: ", ammo, "/", max_ammo)
 	
 	# Start ammo regeneration if not at max capacity
-	if ammo - 1 < max_ammo and GameManager:
+	if ammo < max_ammo and GameManager:
 		GameManager._start_ammo_regeneration()
-		print("[Player] 🔄 Started ammo regeneration - current: ", ammo - 1, "/", max_ammo)
+		print("[Player] 🔄 Started ammo regeneration - current: ", ammo, "/", max_ammo)
 	
 	# Store aim direction for use in animation frame 2
 	# (We'll use get_global_mouse_position() in the frame handler)
