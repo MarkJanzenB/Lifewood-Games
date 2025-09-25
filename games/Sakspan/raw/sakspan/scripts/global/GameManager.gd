@@ -983,10 +983,24 @@ func _set_seekers_movement(enabled: bool):
 	_set_players_movement_by_role.rpc("seeker", enabled)
 
 func _set_hiders_attack(enabled: bool):
+	print("[GameManager] 🗡️ SERVER: Broadcasting hider attack permission: ", enabled, " to all clients")
 	_set_players_attack_by_role.rpc("hider", enabled)
+	
+	# CRITICAL FIX: Also send individual RPCs to ensure delivery
+	var connected_peers = multiplayer.get_peers()
+	for peer_id in connected_peers:
+		_set_players_attack_by_role.rpc_id(peer_id, "hider", enabled)
 
 func _set_seekers_attack(enabled: bool):
+	print("[GameManager] 🎯 SERVER: Broadcasting seeker attack permission: ", enabled, " to all clients")
 	_set_players_attack_by_role.rpc("seeker", enabled)
+	
+	# CRITICAL FIX: Also send individual RPCs to ensure delivery
+	var connected_peers = multiplayer.get_peers()
+	print("[GameManager] 🔍 DEBUG: Sending individual RPCs to peers: ", connected_peers)
+	for peer_id in connected_peers:
+		_set_players_attack_by_role.rpc_id(peer_id, "seeker", enabled)
+		print("[GameManager] 📡 Sent individual RPC to peer: ", peer_id)
 
 func end_game(winning_team: String) -> void:
 	if not multiplayer.is_server():
@@ -1323,6 +1337,8 @@ func _set_players_movement_by_role(role_filter: String, enabled: bool):
 func _set_players_attack_by_role(role_filter: String, enabled: bool):
 	"""Set attack ability for players by role"""
 	print("[GameManager] 📡 RPC RECEIVED: _set_players_attack_by_role(", role_filter, ", ", enabled, ") on peer ", multiplayer.get_unique_id())
+	print("[GameManager] 🔍 DEBUG: Connected peers: ", multiplayer.get_peers())
+	print("[GameManager] 🔍 DEBUG: Is server: ", multiplayer.is_server())
 	
 	var local_player = _get_local_player()
 	if not local_player:
