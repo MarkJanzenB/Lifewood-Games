@@ -460,12 +460,12 @@ func apply_roles_to_players(player_nodes: Array) -> void:
 			print("[GameManager] 🎯 Initializing SEEKER: ", player_node.player_name)
 			# set_initial_state(role_int, ammo_count, can_move, can_attack)
 			player_node.set_initial_state.rpc(1, max_ammo_capacity, false, false)  # Frozen during Phase 1
-			add_to_group("seeker")
+			player_node.add_to_group("seeker")
 		else:
 			print("[GameManager] 🫥 Initializing HIDER: ", player_node.player_name)
 			# set_initial_state(role_int, ammo_count, can_move, can_attack)
 			player_node.set_initial_state.rpc(0, 0, false, false)  # Frozen during Phase 1
-			add_to_group("hider")
+			player_node.add_to_group("hider")
 	
 	print("[GameManager] ✅ PHASE 1: Complete player state initialization with UI configuration")
 	
@@ -983,24 +983,32 @@ func _set_seekers_movement(enabled: bool):
 	_set_players_movement_by_role.rpc("seeker", enabled)
 
 func _set_hiders_attack(enabled: bool):
-	print("[GameManager] 🗡️ SERVER: Broadcasting hider attack permission: ", enabled, " to all clients")
-	_set_players_attack_by_role.rpc("hider", enabled)
+	print("[GameManager] 🗡️ SERVER: Setting hider attack permission: ", enabled)
 	
-	# CRITICAL FIX: Also send individual RPCs to ensure delivery
-	var connected_peers = multiplayer.get_peers()
-	for peer_id in connected_peers:
-		_set_players_attack_by_role.rpc_id(peer_id, "hider", enabled)
+	# CRITICAL FIX: Send RPC directly to each player instance instead of GameManager
+	var all_players = get_tree().get_nodes_in_group("player")
+	print("[GameManager] 🔍 DEBUG: Found ", all_players.size(), " players to update")
+	
+	for player in all_players:
+		if player.role == PlayerCharacter.PlayerRole.HIDER:
+			print("[GameManager] 🗡️ Sending SAK permission to HIDER: ", player.player_name, " (Authority: ", player.get_multiplayer_authority(), ")")
+			player.set_sak_permission.rpc_id(player.get_multiplayer_authority(), enabled)
+		else:
+			print("[GameManager] ⚠️ Skipping non-hider: ", player.player_name, " (Role: ", PlayerCharacter.PlayerRole.keys()[player.role], ")")
 
 func _set_seekers_attack(enabled: bool):
-	print("[GameManager] 🎯 SERVER: Broadcasting seeker attack permission: ", enabled, " to all clients")
-	_set_players_attack_by_role.rpc("seeker", enabled)
+	print("[GameManager] 🎯 SERVER: Setting seeker attack permission: ", enabled)
 	
-	# CRITICAL FIX: Also send individual RPCs to ensure delivery
-	var connected_peers = multiplayer.get_peers()
-	print("[GameManager] 🔍 DEBUG: Sending individual RPCs to peers: ", connected_peers)
-	for peer_id in connected_peers:
-		_set_players_attack_by_role.rpc_id(peer_id, "seeker", enabled)
-		print("[GameManager] 📡 Sent individual RPC to peer: ", peer_id)
+	# CRITICAL FIX: Send RPC directly to each player instance instead of GameManager
+	var all_players = get_tree().get_nodes_in_group("player")
+	print("[GameManager] 🔍 DEBUG: Found ", all_players.size(), " players to update")
+	
+	for player in all_players:
+		if player.role == PlayerCharacter.PlayerRole.SEEKER:
+			print("[GameManager] 🎯 Sending attack permission to SEEKER: ", player.player_name, " (Authority: ", player.get_multiplayer_authority(), ")")
+			player.set_attack_permission.rpc_id(player.get_multiplayer_authority(), enabled)
+		else:
+			print("[GameManager] ⚠️ Skipping non-seeker: ", player.player_name, " (Role: ", PlayerCharacter.PlayerRole.keys()[player.role], ")")
 
 func end_game(winning_team: String) -> void:
 	if not multiplayer.is_server():

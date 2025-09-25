@@ -7,7 +7,7 @@
 radius = 7.0
 
 [node name="RockProjectile" type="Area2D"]
-scale = Vector2(2.59735, 2.62694)
+scale = Vector2(2.62651, 2.618)
 script = ExtResource("1_3lw5f")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]

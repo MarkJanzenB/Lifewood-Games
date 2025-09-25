@@ -1189,3 +1189,25 @@ func spawn_projectile_on_clients_rpc(spawn_pos: Vector2, spawn_rot: float, aim_d
 	# Add to the main scene tree so it's not a child of the player
 	get_tree().get_root().add_child(rock)
 	print("[Player] ✅ CLIENT: Projectile spawned successfully with direction ", aim_direction)
+
+# CRITICAL FIX: Direct RPC methods for attack permissions
+@rpc("any_peer", "call_local", "reliable")
+func set_attack_permission(enabled: bool):
+	"""Set seeker attack permission directly"""
+	print("[Player] 📡 RPC RECEIVED: set_attack_permission(", enabled, ") for ", player_name, " (Role: ", PlayerRole.keys()[role], ")")
+	if role == PlayerRole.SEEKER:
+		can_attack = enabled
+		print("[Player] ✅ SEEKER attack permission set to: ", enabled, " for ", player_name)
+	else:
+		print("[Player] ⚠️ Ignoring seeker attack permission for non-seeker: ", player_name)
+
+@rpc("any_peer", "call_local", "reliable")
+func set_sak_permission(enabled: bool):
+	"""Set hider SAK permission directly"""
+	print("[Player] 📡 RPC RECEIVED: set_sak_permission(", enabled, ") for ", player_name, " (Role: ", PlayerRole.keys()[role], ")")
+	if role == PlayerRole.HIDER:
+		can_sak = enabled
+		can_attack = enabled  # Hiders use can_attack for general attack validation
+		print("[Player] ✅ HIDER SAK permission set to: ", enabled, " for ", player_name, " - can_attack: ", can_attack, " can_sak: ", can_sak)
+	else:
+		print("[Player] ⚠️ Ignoring hider SAK permission for non-hider: ", player_name)
