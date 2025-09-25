@@ -137,9 +137,10 @@ func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
 		if camera:
 			camera.enabled = false
 
-# PHASE 1: Basic controls enablement for MPS testing
+# DEPRECATED: Bypasses GameManager authority - use GameManager RPC system instead
 func enable_basic_controls() -> void:
-	"""Enable immediate movement and attack capabilities for testing"""
+	"""DEPRECATED: Enable immediate movement and attack capabilities for testing"""
+	print("[Player] ⚠️ DEPRECATED: enable_basic_controls() bypasses GameManager authority")
 	can_move = true
 	can_attack = true
 	print("[Player] ", player_name, " - Basic controls enabled for MPS testing")
@@ -371,9 +372,10 @@ func _physics_process(delta: float):
 		# Handle animations for remote players based on movement
 		handle_remote_visuals()
 
-# This is the single, authoritative function for updating player controls.
+# DEPRECATED: Use set_initial_state() or set_game_state_controls() instead
 @rpc("any_peer", "call_local", "reliable")
 func set_player_state(p_can_move: bool, p_can_attack: bool) -> void:
+	print("[Player] ⚠️ DEPRECATED: set_player_state() called - use set_initial_state() or set_game_state_controls()")
 	self.can_move = p_can_move
 	self.can_attack = p_can_attack
 
@@ -585,6 +587,9 @@ func _handle_fire_sak_input() -> void:
 	elif role == PlayerRole.SEEKER and not can_attack:
 		print("[Player] ❌ CLIENT: Seeker cannot attack yet - can_attack is false") 
 		return
+	elif role == PlayerRole.SEEKER and ammo <= 0:
+		print("[Player] ❌ CLIENT: Seeker has no ammo - ammo: ", ammo, "/", max_ammo)
+		return
 	
 	# Send attack request to server - let server validate everything
 	print("[Player] 🎯 Sending attack request to server")
@@ -624,16 +629,18 @@ func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> vo
 	"""Server validates Seeker BANG attack"""
 	# Check if Seeker can attack in current game state
 	if not can_attack:
+		print("[Player] ❌ Server rejected Seeker attack - can_attack is false")
 		show_temporary_message.rpc_id(requester_id, "Attacks disabled - wait for your turn!")
 		return
 	
-	# Check ammo requirement
-	if ammo < max_ammo:
-		show_temporary_message.rpc_id(requester_id, "Need full ammo to attack! (" + str(ammo) + "/" + str(max_ammo) + ")")
+	# Check ammo requirement - Seeker needs at least 1 ammo to attack
+	if ammo <= 0:
+		print("[Player] ❌ Server rejected Seeker attack - no ammo (", ammo, "/", max_ammo, ")")
+		show_temporary_message.rpc_id(requester_id, "No ammo! (" + str(ammo) + "/" + str(max_ammo) + ")")
 		return
 	
 	# Execute BANG attack
-	print("[Player] 🎯 Server authorizing Seeker BANG attack")
+	print("[Player] 🎯 Server authorizing Seeker BANG attack - ammo: ", ammo, "/", max_ammo)
 	var aim_direction = (get_global_mouse_position() - global_position).normalized()
 	request_fire_projectile_rpc.rpc_id(1, aim_direction)
 
@@ -1000,29 +1007,9 @@ func _find_game_ui() -> Control:
 # --- SIGNAL FUNCTIONS ---
 
 func _on_game_state_changed(new_state: int) -> void:
-	if not GameManager:
-		# For dev_world, allow attacks by default
-		can_move = true
-		can_attack = true
-		print("[Player] No GameManager found - enabling attacks for dev testing")
-		return
-		
-	match new_state:
-		GameManager.GameState.HIDER_HEADSTART:
-			if role == PlayerRole.HIDER: can_move = true
-			elif role == PlayerRole.SEEKER: can_move = false
-		GameManager.GameState.GAME_START_COUNTDOWN:
-			# Legacy countdown state - Seeker can move, Hiders can't attack yet
-			if role == PlayerRole.SEEKER: can_move = true
-			elif role == PlayerRole.HIDER: can_move = true
-			can_attack = (role == PlayerRole.SEEKER)  # Only Seeker can attack during countdown
-		GameManager.GameState.IN_PROGRESS:
-			can_move = true
-			can_attack = true  # Default to enabled for dev testing
-			can_attack = true  # Enable attacks for both roles
-		_:
-			can_move = true
-			can_attack = true  # Default to enabled for dev testing
+	# CRITICAL FIX: Remove local state overrides - GameManager RPC system is authoritative
+	# This function should only handle UI updates, not permission changes
+	print("[Player] Game state changed to: ", new_state, " for ", player_name, " - GameManager controls permissions via RPC")
 
 func _on_animated_sprite_2d_animation_finished() -> void:
 	print("[Player] Animation finished: ", animated_sprite.animation, " for ", player_name, " - is_in_action was: ", is_in_action)

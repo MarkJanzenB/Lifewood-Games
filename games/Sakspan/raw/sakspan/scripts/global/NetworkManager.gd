@@ -508,7 +508,8 @@ func _on_countdown_tick(remaining_seconds: int, timer: Timer) -> void:
 		
 		# Only server actually starts the game
 		if multiplayer.is_server():
-			rpc_start_game.rpc(my_lobby_data)
+			# FIXED: Use scene-driven pattern instead of deprecated rpc_start_game
+			rpc_load_world.rpc()
 
 # SCENE-DRIVEN INITIALIZATION: Simple scene loader
 @rpc("any_peer", "call_local", "reliable")

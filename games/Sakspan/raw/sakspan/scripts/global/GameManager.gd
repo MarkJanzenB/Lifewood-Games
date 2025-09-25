@@ -1009,17 +1009,18 @@ func change_game_state(new_state: GameState) -> void:
 		GameState.HIDER_HEADSTART:
 			if game_ui_instance and game_ui_instance.has_method("update_status"):
 				game_ui_instance.update_status("Hiders, GO! Seeker is frozen.", true)
-			main_timer.start(5.0)
+			# LEGACY: main_timer.start(5.0) - REMOVED to prevent conflicts with master_clock
 		GameState.GAME_START_COUNTDOWN:
 			# Legacy state - redirect to SEEKER_RELEASED behavior
 			if game_ui_instance and game_ui_instance.has_method("update_status"):
 				game_ui_instance.update_status("The Seeker is on the move!", true)
 				game_ui_instance.update_countdown("5", true)
-			main_timer.start(10.0)
+			# LEGACY: main_timer.start(10.0) - REMOVED to prevent conflicts with master_clock
 		GameState.IN_PROGRESS:
 			if game_ui_instance and game_ui_instance.has_method("update_status"):
 				game_ui_instance.update_status("The Hunt is On!", true)
 				game_ui_instance.update_countdown("GO!", false)
+			# SAK delay timer is still valid for gameplay mechanics
 			sak_delay_timer.start(3.0)
 		GameState.FINISHED:
 			ammo_cooldown_timer.stop()
@@ -1512,11 +1513,10 @@ func _get_player_by_id(player_id: int) -> PlayerCharacter:
 # --- SIGNAL HANDLERS ---
 
 func _on_main_timer_timeout() -> void:
-	# Legacy timer handler - integrate with new staged system
-	if current_state == GameState.HIDER_HEADSTART:
-		change_game_state(GameState.GAME_START_COUNTDOWN)  # Legacy transition
-	elif current_state == GameState.GAME_START_COUNTDOWN:
-		change_game_state(GameState.IN_PROGRESS)
+	# LEGACY TIMER HANDLER - DISABLED TO PREVENT CONFLICTS
+	# This function is kept for compatibility but should not interfere with master_clock
+	print("[GameManager] ⚠️ LEGACY: main_timer timeout ignored - master_clock is authoritative")
+	# All phase transitions now handled by master_clock system
 
 func _on_ammo_cooldown_timeout() -> void:
 	var seekers: Array[Node] = get_tree().get_nodes_in_group("seeker")
