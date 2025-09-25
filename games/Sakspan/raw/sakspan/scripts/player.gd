@@ -487,6 +487,9 @@ func regenerate_ammo(max_capacity: int) -> void:
 		# Update seeker attack capability based on ammo
 		if ammo >= max_capacity:
 			print("[Player] 🎯 SEEKER READY: Full ammo capacity reached - attacks enabled!")
+			# Stop regeneration when max ammo reached
+			if multiplayer.is_server():
+				GameManager.ammo_regen_timer.stop()
 		else:
 			print("[Player] ⏳ SEEKER CHARGING: ", (max_capacity - ammo), " more stones needed")
 	
@@ -1079,9 +1082,9 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 		print("[Player] Server rejected fire request - can_attack: ", can_attack, " role: ", PlayerRole.keys()[role])
 		return
 	
-	# NEW: Seeker must have FULL ammo capacity to attack
-	if ammo < max_ammo:
-		print("[Player] Server rejected fire request - insufficient ammo: ", ammo, "/", max_ammo, " (must be full)")
+	# Seeker must have at least 1 ammo to attack
+	if ammo <= 0:
+		print("[Player] Server rejected fire request - no ammo: ", ammo, "/", max_ammo)
 		return
 
 	print("[Player] 🎯 SERVER: Seeker attack authorized - starting BANG animation")
@@ -1089,6 +1092,10 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 	# The server validates the action, updates state, and triggers animation
 	is_in_action = true
 	set_ammo.rpc(ammo - 1) # Sync ammo change to all clients
+	
+	# Start ammo regeneration if not at max capacity
+	if ammo - 1 < max_ammo:
+		GameManager._start_ammo_regeneration()
 	
 	# Store aim direction for use in animation frame 2
 	# (We'll use get_global_mouse_position() in the frame handler)

@@ -82,7 +82,7 @@ func _initialize_timers():
 	
 	if not ammo_regen_timer:
 		ammo_regen_timer = Timer.new()
-		ammo_regen_timer.wait_time = 1.0
+		ammo_regen_timer.wait_time = 0.5  # 0.5 seconds per stone regeneration
 		ammo_regen_timer.one_shot = false
 		ammo_regen_timer.timeout.connect(_on_ammo_regen_timer_timeout)
 		add_child(ammo_regen_timer)
@@ -959,7 +959,7 @@ func _start_ammo_regeneration():
 	if ammo_regen_timer and not ammo_regen_timer.is_stopped():
 		ammo_regen_timer.stop()
 	ammo_regen_timer.start()
-	print("[GameManager] 🔄 Ammo regeneration started - 1 stone per second")
+	print("[GameManager] 🔄 Ammo regeneration started - 1 stone per 0.5 seconds")
 
 # Ammo regeneration callback
 func _on_ammo_regen_timer_timeout():
@@ -1411,13 +1411,17 @@ func _show_hider_warning():
 func _get_local_player() -> PlayerCharacter:
 	"""Get the local player instance"""
 	var players_in_scene = get_tree().get_nodes_in_group("player")
+	var my_peer_id = multiplayer.get_unique_id()
 	print("[GameManager] 🔍 DEBUG: Found ", players_in_scene.size(), " players in 'player' group")
+	print("[GameManager] 🔍 DEBUG: My peer ID: ", my_peer_id)
+	
 	for player in players_in_scene:
-		print("[GameManager] 🔍 DEBUG: Checking player ", player.player_name, " - Authority: ", player.is_multiplayer_authority())
-		if player.is_multiplayer_authority():
+		var player_authority = player.get_multiplayer_authority()
+		print("[GameManager] 🔍 DEBUG: Checking player ", player.player_name, " - Authority: ", player_authority, " vs My ID: ", my_peer_id)
+		if player_authority == my_peer_id:
 			print("[GameManager] ✅ Found local player: ", player.player_name)
 			return player as PlayerCharacter
-	print("[GameManager] ❌ No local player found with authority")
+	print("[GameManager] ❌ No local player found with matching authority")
 	return null
 
 func _create_blindness_overlay():
