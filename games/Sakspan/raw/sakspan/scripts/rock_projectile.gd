@@ -27,15 +27,19 @@ func _physics_process(delta: float) -> void:
 func _on_body_entered(body: Node2D) -> void:
 	var was_hit_processed = false
 
-	# PHASE 1: Hit any player (regardless of role) for testing
+	# Hit detection for living players
 	if body.is_in_group("player"):
 		var target_player = body as PlayerCharacter
 		if target_player and target_player.current_state == PlayerCharacter.PlayerState.ALIVE:
 			# Don't hit yourself
 			if target_player != owner_player:
-				print("[RockProjectile] Rock hit player: ", target_player.player_name)
-				# For Phase 1, just print hit - no elimination yet
+				print("[RockProjectile] 🎯 Rock hit player: ", target_player.player_name)
 				print("[RockProjectile] ✅ HIT CONFIRMED - ", owner_player.player_name, " hit ", target_player.player_name)
+				
+				# Eliminate the target player
+				target_player.eliminate(owner_player)
+				print("[RockProjectile] 💀 ", target_player.player_name, " eliminated by ", owner_player.player_name)
+				
 				was_hit_processed = true
 
 	if body.is_in_group("walls"):

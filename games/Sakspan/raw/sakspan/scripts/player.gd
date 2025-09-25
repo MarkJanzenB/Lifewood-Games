@@ -350,7 +350,11 @@ func _physics_process(delta: float):
 	# Only the multiplayer authority simulates input and movement
 	if is_multiplayer_authority():
 		handle_movement()
-		if current_state == PlayerState.GHOST: return
+		# Ghosts have limited interactions
+		if current_state == PlayerState.GHOST:
+			_handle_ghost_visuals()
+			return
+			
 		handle_visuals()
 		update_all_players_in_cone()
 		check_line_of_sight()
@@ -733,7 +737,7 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	if is_dying or current_state == PlayerState.GHOST: 
 		return
 	
-	print("[Player] Eliminating ", player_name, " - starting death sequence")
+	print("[Player] 💀 Eliminating ", player_name, " - starting death sequence")
 	is_dying = true
 	
 	# Disable all interactions immediately
@@ -745,42 +749,154 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	melee_range.monitoring = false
 	vision_cone.monitoring = false
 	
-	# Notify GameManager of elimination
-	if GameManager:
+	# Stop any current actions
+	is_in_action = false
+	target_for_sak = null
+	
+	# Notify GameManager of elimination (server-side only)
+	if multiplayer.is_server() and GameManager:
 		GameManager.player_eliminated.emit(self, attacker)
 	
-	# Play death animation - become_ghost() will be called when animation finishes
+	# Play death animation on all clients
+	play_death_animation.rpc()
+	
+	print("[Player] 🎬 Death sequence initiated for ", player_name)
+
+# RPC to play death animation on all clients
+@rpc("any_peer", "call_local", "reliable")
+func play_death_animation() -> void:
+	"""Play death animation synchronized across all clients"""
+	print("[Player] 🎬 Playing death animation on ", player_name)
+	
+	# Stop current animation and play death
 	animated_sprite.stop()
-	animated_sprite.play("death")
-	print("[Player] Playing death animation for ", player_name, " - current: ", animated_sprite.animation)
+	if animated_sprite.sprite_frames and animated_sprite.sprite_frames.has_animation("death"):
+		animated_sprite.play("death")
+		print("[Player] ✅ Death animation started for ", player_name)
+	else:
+		print("[Player] ⚠️ No death animation found, becoming ghost immediately")
+		# If no death animation exists, become ghost immediately
+		become_ghost()
 
 func become_ghost() -> void:
-	print(player_name, " has become a ghost!")
+	print("[Player] 👻 ", player_name, " has become a ghost!")
 	current_state = PlayerState.GHOST
+	is_dying = false  # Death sequence complete
 	
-	# Make ghost semi-transparent
-	animated_sprite.modulate = Color(1.0, 1.0, 1.0, 0.5)  # Semi-transparent white
+	# Visual changes for ghost state - make them much more transparent and ghostly
+	animated_sprite.modulate = Color(0.7, 0.9, 1.0, 0.4)  # More transparent with blue tint
 	
-	# Change vision light to cyan for ghosts
+	# Add a subtle glow effect by duplicating the sprite with a larger, more transparent version
+	_add_ghost_glow_effect()
+	
+	# Start floating animation for ghosts
+	_start_ghost_floating_animation()
+	
+	# Change vision light to cyan for ghosts (if they have one)
 	if vision_light:
 		vision_light.color = Color.CYAN
+		vision_light.energy = 0.3  # Dimmer light for ghosts
 	
-	# Disable collision for ghosts
-	set_collision_layer_value(1, false)
-	set_collision_mask_value(1, false)
+	# Configure ghost collision layers
+	# Layer 1: Normal players (disable)
+	# Layer 3: Ghosts (enable)
+	set_collision_layer_value(1, false)  # Don't collide with living players
+	set_collision_layer_value(3, true)   # Collide with other ghosts
+	set_collision_mask_value(1, false)   # Don't detect living players
+	set_collision_mask_value(3, true)    # Detect other ghosts
+	set_collision_mask_value(4, true)    # Still detect obstacles
 	
-	# Notify GameManager for win condition checking
-	if GameManager and GameManager.has_method("check_win_conditions"):
+	# Enable ghost movement (they can still move around)
+	can_move = true
+	
+	# Update username label for ghosts
+	if username_label:
+		username_label.add_theme_color_override("font_color", Color.CYAN)
+		username_label.text = "👻 " + player_name
+	
+	# Notify GameManager for win condition checking (server only)
+	if multiplayer.is_server() and GameManager and GameManager.has_method("check_win_conditions"):
 		GameManager.check_win_conditions()
 	
-	print("[Player] ", player_name, " is now a ghost (transparent: ", animated_sprite.modulate.a, ")")
-	set_collision_mask_value(1, false)
-	set_collision_mask_value(2, true)
-	set_collision_mask_value(3, true)
-	animated_sprite.set_visibility_layer_bit(1, false)
-	animated_sprite.set_visibility_layer_bit(2, true)
+	# Show ghost status to local player
 	if is_main_player:
-		camera.set_cull_mask_bit(2, true)
+		_show_ghost_status_message()
+	
+	print("[Player] ✅ ", player_name, " ghost transformation complete (alpha: ", animated_sprite.modulate.a, ")")
+
+func _show_ghost_status_message() -> void:
+	"""Show ghost status message to the local player"""
+	var message := "👻 You are now a ghost! You can move around but cannot interact with living players."
+	show_temporary_message.rpc_id(multiplayer.get_unique_id(), message)
+
+func _add_ghost_glow_effect() -> void:
+	"""Add a subtle glow effect to make ghosts more visible"""
+	if not animated_sprite:
+		return
+	
+	# Create a glow sprite behind the main sprite
+	var glow_sprite = AnimatedSprite2D.new()
+	glow_sprite.name = "GhostGlow"
+	glow_sprite.sprite_frames = animated_sprite.sprite_frames
+	glow_sprite.animation = animated_sprite.animation
+	glow_sprite.frame = animated_sprite.frame
+	
+	# Make the glow larger and more transparent
+	glow_sprite.scale = Vector2(1.2, 1.2)
+	glow_sprite.modulate = Color(0.5, 0.8, 1.0, 0.2)  # Very transparent blue glow
+	glow_sprite.z_index = animated_sprite.z_index - 1  # Behind the main sprite
+	
+	# Add it as a child
+	add_child(glow_sprite)
+	
+	# Sync the glow animation with the main sprite
+	if animated_sprite.is_connected("animation_changed", _on_ghost_animation_changed):
+		animated_sprite.animation_changed.disconnect(_on_ghost_animation_changed)
+	if animated_sprite.is_connected("frame_changed", _on_ghost_frame_changed):
+		animated_sprite.frame_changed.disconnect(_on_ghost_frame_changed)
+	
+	animated_sprite.animation_changed.connect(_on_ghost_animation_changed)
+	animated_sprite.frame_changed.connect(_on_ghost_frame_changed)
+	
+	print("[Player] ✨ Added ghost glow effect to ", player_name)
+
+func _on_ghost_animation_changed() -> void:
+	"""Sync glow sprite animation with main sprite"""
+	var glow_sprite = get_node_or_null("GhostGlow")
+	if glow_sprite and animated_sprite:
+		glow_sprite.animation = animated_sprite.animation
+
+func _on_ghost_frame_changed() -> void:
+	"""Sync glow sprite frame with main sprite"""
+	var glow_sprite = get_node_or_null("GhostGlow")
+	if glow_sprite and animated_sprite:
+		glow_sprite.frame = animated_sprite.frame
+
+func _start_ghost_floating_animation() -> void:
+	"""Add a subtle floating/bobbing animation to ghosts"""
+	if not animated_sprite:
+		return
+	
+	# Create a tween for the floating effect
+	var ghost_tween = create_tween()
+	ghost_tween.set_loops()  # Loop forever
+	
+	# Float up and down by 5 pixels over 2 seconds
+	var original_position = animated_sprite.position
+	ghost_tween.tween_to_method(_set_ghost_float_position, original_position.y, original_position.y - 5, 1.0)
+	ghost_tween.tween_to_method(_set_ghost_float_position, original_position.y - 5, original_position.y + 5, 2.0)
+	ghost_tween.tween_to_method(_set_ghost_float_position, original_position.y + 5, original_position.y, 1.0)
+	
+	print("[Player] 🌊 Started floating animation for ghost ", player_name)
+
+func _set_ghost_float_position(y_pos: float) -> void:
+	"""Helper function for floating animation"""
+	if animated_sprite:
+		animated_sprite.position.y = y_pos
+		# Also move the glow sprite
+		var glow_sprite = get_node_or_null("GhostGlow")
+		if glow_sprite:
+			glow_sprite.position.y = y_pos
 
 # Called by GameManager when fire action is approved
 func execute_fire_projectile() -> void:
@@ -821,6 +937,17 @@ func execute_sak_attack(target: PlayerCharacter) -> void:
 	print("[Player] Playing hider_sak animation - current: ", animated_sprite.animation)
 
 func handle_movement() -> void:
+	# Handle ghost movement separately
+	if current_state == PlayerState.GHOST:
+		_handle_ghost_movement()
+		return
+	
+	# Block movement for dying players
+	if is_dying:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+	
 	# CRITICAL: Movement is now strictly gated by the can_move boolean
 	if not can_move:
 		velocity = Vector2.ZERO
@@ -841,6 +968,26 @@ func handle_movement() -> void:
 	# Debug output for movement
 	if input_direction != Vector2.ZERO and randf() < 0.05:
 		print("[Player] ", player_name, " moving with input: ", input_direction, " velocity: ", velocity, " position: ", global_position)
+
+func _handle_ghost_movement() -> void:
+	"""Handle movement for ghost players - they can move but with different physics"""
+	var input_direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var ghost_speed = walk_speed * 0.8  # Ghosts move slightly slower
+	velocity = input_direction * ghost_speed
+	move_and_slide()
+	
+	# Debug output for ghost movement
+	if input_direction != Vector2.ZERO and randf() < 0.1:
+		print("[Player] 👻 Ghost ", player_name, " moving: ", input_direction, " velocity: ", velocity)
+
+func _handle_ghost_visuals() -> void:
+	"""Handle visual updates for ghost players"""
+	var mouse_position = get_global_mouse_position()
+	animated_sprite.flip_h = (mouse_position.x < global_position.x)
+	
+	# Ghosts always use idle animation
+	if animated_sprite.animation != "idle":
+		animated_sprite.play("idle")
 
 func handle_visuals() -> void:
 	var mouse_position = get_global_mouse_position()
@@ -1060,16 +1207,16 @@ func _on_game_state_changed(new_state: int) -> void:
 	print("[Player] Game state changed to: ", new_state, " for ", player_name, " - GameManager controls permissions via RPC")
 
 func _on_animated_sprite_2d_animation_finished() -> void:
-	print("[Player] Animation finished: ", animated_sprite.animation, " for ", player_name, " - is_in_action was: ", is_in_action)
+	print("[Player] 🎬 Animation finished: ", animated_sprite.animation, " for ", player_name, " - is_in_action was: ", is_in_action)
 	
 	if animated_sprite.animation == "death":
-		print("[Player] Death animation completed, becoming ghost...")
+		print("[Player] 💀 Death animation completed, becoming ghost...")
 		become_ghost()
 	else:
 		# Reset action state for all non-death animations
 		is_in_action = false
 		target_for_sak = null
-		print("[Player] Reset is_in_action to false for ", player_name) 
+		print("[Player] ✅ Reset is_in_action to false for ", player_name) 
 
 func _on_animated_sprite_2d_frame_changed() -> void:
 	print("[Player] Frame changed - Animation: ", animated_sprite.animation, " Frame: ", animated_sprite.frame, " on ", player_name)

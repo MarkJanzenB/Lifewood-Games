@@ -18,13 +18,13 @@ enum GameState {
 }
 
 # Signals
-signal game_state_changed(new_state: int)
+signal game_state_changed(new_state: GameState)
+signal game_ended(winning_team: String)
+signal player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerCharacter)
 signal player_joined(player_id: int, player_data: Dictionary)
 signal player_left(player_id: int)
 signal player_ready_changed(player_id: int, is_ready: bool)
 signal game_starting(countdown: int)
-signal game_ended(winning_team: String)
-signal player_eliminated(eliminated_player: Object, attacker: Object)
 signal seeker_revealed(seeker_name: String, seeker_character: String)
 signal prep_countdown_updated(time_remaining: int)
 
@@ -111,44 +111,7 @@ func _exit_tree():
 
 # Game management functions
 
-func check_win_conditions() -> void:
-	await get_tree().process_frame # Wait one frame to ensure nodes are updated
-	
-	var all_hiders: Array[Node] = get_tree().get_nodes_in_group("hider")
-	var all_seekers: Array[Node] = get_tree().get_nodes_in_group("seeker")
-	
-	var living_hiders_count: int = all_hiders.filter(func(hider): return (hider as PlayerCharacter).current_state == PlayerCharacter.PlayerState.ALIVE).size()
-	var living_seekers_count: int = all_seekers.filter(func(seeker): return (seeker as PlayerCharacter).current_state == PlayerCharacter.PlayerState.ALIVE).size()
-
-	var game_over: bool = false
-	var winning_text: String = ""
-	var seekers_win: bool = false
-
-	if living_hiders_count == 0:
-		winning_text = "SEEKERS WIN!"
-		seekers_win = true
-		game_over = true
-		
-	if living_seekers_count == 0:
-		winning_text = "HIDERS WIN!"
-		seekers_win = false
-		game_over = true
-		
-	if game_over:
-		print(winning_text)
-		change_game_state(GameState.FINISHED)
-		
-		var players_list: Array[Node] = all_hiders + all_seekers
-		for p in players_list:
-			var player_instance: PlayerCharacter = p as PlayerCharacter
-			if player_instance and player_instance.is_main_player:
-				var did_i_win: bool = (player_instance.role == PlayerCharacter.PlayerRole.SEEKER and seekers_win) or \
-								(player_instance.role == PlayerCharacter.PlayerRole.HIDER and not seekers_win)
-				# Show game over UI if available
-				if game_ui_instance and game_ui_instance.has_method("show_game_over"):
-					game_ui_instance.show_game_over(did_i_win, winning_text)
-				get_tree().paused = true
-				break
+# REMOVED: Duplicate check_win_conditions function - using the enhanced version below
 
 
 # References (Statically Typed)
@@ -169,7 +132,7 @@ func _ready() -> void:
 		print("[GameManager] ❌ DEBUG: NetworkManager not found during _ready()!")
 	
 	# Connect player elimination signal
-	player_eliminated.connect(on_player_eliminated)
+	player_eliminated.connect(_on_player_eliminated)
 	
 	# Initialize singleton-level timers that persist across scene transitions
 	_initialize_singleton_timers()
@@ -1004,9 +967,89 @@ func end_game(winning_team: String) -> void:
 	if not multiplayer.is_server():
 		return
 	
+	print("[GameManager] 🏁 GAME OVER: ", winning_team, " wins!")
 	change_game_state(GameState.GAME_OVER)
 	game_ended.emit(winning_team)
+	_show_game_over_announcement.rpc(winning_team)
 	rpc("_rpc_end_game", winning_team)
+
+# Player elimination and win condition system
+func _on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerCharacter) -> void:
+	"""Handle player elimination and check win conditions"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[GameManager] 💀 Player eliminated: ", eliminated_player.player_name, " by ", attacker.player_name)
+	
+	# Update hiders count if a hider was eliminated
+	if eliminated_player.role == PlayerCharacter.PlayerRole.HIDER:
+		_update_hiders_count()
+	
+	# Check win conditions after elimination
+	check_win_conditions()
+
+func check_win_conditions() -> void:
+	"""Check if game should end based on current player states"""
+	if not multiplayer.is_server():
+		return
+	
+	if current_state != GameState.IN_PROGRESS:
+		return  # Only check during active gameplay
+	
+	var alive_hiders := 0
+	var alive_seekers := 0
+	
+	# Count alive players by role
+	for player in get_tree().get_nodes_in_group("player"):
+		if player is PlayerCharacter and player.current_state == PlayerCharacter.PlayerState.ALIVE:
+			if player.role == PlayerCharacter.PlayerRole.HIDER:
+				alive_hiders += 1
+			elif player.role == PlayerCharacter.PlayerRole.SEEKER:
+				alive_seekers += 1
+	
+	print("[GameManager] 🏁 Win check - Alive Hiders: ", alive_hiders, ", Alive Seekers: ", alive_seekers)
+	
+	# Determine win conditions
+	if alive_hiders == 0:
+		end_game("Seekers")
+	elif alive_seekers == 0:
+		end_game("Hiders")
+	# Game continues if both sides have alive players
+
+func _update_hiders_count() -> void:
+	"""Update and broadcast the current hiders count"""
+	var alive_hiders := 0
+	for player in get_tree().get_nodes_in_group("player"):
+		if player is PlayerCharacter and player.current_state == PlayerCharacter.PlayerState.ALIVE and player.role == PlayerCharacter.PlayerRole.HIDER:
+			alive_hiders += 1
+	
+	print("[GameManager] 📊 Updated hiders count: ", alive_hiders)
+	_update_hiders_count_ui.rpc(alive_hiders)
+
+@rpc("authority", "call_local", "reliable")
+func _show_game_over_announcement(winning_team: String) -> void:
+	"""Show game over announcement to all players"""
+	var message := ""
+	if winning_team == "Seekers":
+		message = "🎯 SEEKERS WIN! All hiders eliminated!"
+	elif winning_team == "Hiders":
+		message = "🫥 HIDERS WIN! All seekers eliminated!"
+	else:
+		message = "🏁 GAME OVER: " + winning_team + " wins!"
+	
+	print("[GameManager] 📢 ", message)
+	
+	# Show in GameUI if available
+	if game_ui_instance and game_ui_instance.has_method("show_game_over"):
+		game_ui_instance.show_game_over(winning_team, message)
+	elif game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):
+		game_ui_instance.show_dramatic_announcement(message)
+
+@rpc("authority", "call_local", "reliable")
+func _update_hiders_count_ui(count: int) -> void:
+	"""Update hiders count in UI"""
+	if game_ui_instance and game_ui_instance.has_method("update_hiders_count"):
+		game_ui_instance.update_hiders_count(count)
 
 func change_game_state(new_state: GameState) -> void:
 	if current_state == new_state: return
@@ -1053,8 +1096,19 @@ func _handle_in_progress_state(delta: float) -> void:
 	pass
 
 func _handle_game_over_state() -> void:
-	# Handle game over state
-	pass
+	"""Handle game over state - stop all timers and disable interactions"""
+	# Stop all game timers
+	if master_clock and not master_clock.is_stopped():
+		master_clock.stop()
+	if ammo_regen_timer and not ammo_regen_timer.is_stopped():
+		ammo_regen_timer.stop()
+	if sak_delay_timer and not sak_delay_timer.is_stopped():
+		sak_delay_timer.stop()
+	
+	# Disable all player abilities
+	if multiplayer.is_server():
+		_set_players_abilities_by_role.rpc("all", false, false)
+		_set_players_movement_by_role.rpc("all", false)
 
 #region Player Management
 func _on_player_connected(player_id: int) -> void:
