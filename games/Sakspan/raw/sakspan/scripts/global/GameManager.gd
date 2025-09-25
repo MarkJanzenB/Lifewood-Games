@@ -935,7 +935,8 @@ func _on_ammo_regen_timer_timeout():
 	for player in get_tree().get_nodes_in_group("player"):
 		if player.has_method("get_role") and player.get_role() == 1:  # SEEKER
 			if player.has_method("regenerate_ammo"):
-				player.regenerate_ammo.rpc(max_ammo_capacity)
+				player.regenerate_ammo.rpc(player.max_ammo)
+				print("[GameManager] 🔄 Regenerating ammo for seeker: ", player.player_name)
 			break
 
 # Player control helper functions
@@ -991,6 +992,13 @@ func _on_player_eliminated(eliminated_player: PlayerCharacter, attacker: PlayerC
 		return
 	
 	print("[GameManager] 💀 Player eliminated: ", eliminated_player.player_name, " by ", attacker.player_name)
+	
+	# Show kill feed notification to all clients
+	var attacker_name = attacker.player_name if attacker else "Unknown"
+	var victim_name = eliminated_player.player_name
+	var method = "SAK" if attacker and attacker.role == PlayerCharacter.PlayerRole.HIDER else "BANG"
+	var kill_message = attacker_name + " eliminated " + victim_name + " with " + method
+	_show_kill_feed.rpc(kill_message)
 	
 	# Update hiders count if a hider was eliminated
 	if eliminated_player.role == PlayerCharacter.PlayerRole.HIDER:
@@ -1159,6 +1167,23 @@ func _show_game_over_scene(winning_team: String, message: String) -> void:
 		print("[GameManager] ✅ Fallback: GameOver shown as dramatic announcement")
 	else:
 		print("[GameManager] ❌ No fallback UI available for GameOver")
+	
+	# Auto-return to lobby after 10 seconds if no user input
+	print("[GameManager] ⏰ Auto-return to lobby in 10 seconds...")
+	get_tree().create_timer(10.0).timeout.connect(_auto_return_to_lobby)
+
+func _auto_return_to_lobby() -> void:
+	"""Auto-return to lobby after game over timeout"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[GameManager] ⏰ Auto-returning to lobby...")
+	# Use SceneChanger to return to lobby
+	if SceneChanger:
+		SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/lobby_wait_room_menu.tscn")
+	else:
+		# Fallback: direct scene change
+		get_tree().change_scene_to_file("res://scenes/UI/Multiplayer/lobby_wait_room_menu.tscn")
 
 @rpc("authority", "call_local", "reliable")
 func _update_hiders_count_ui(count: int) -> void:

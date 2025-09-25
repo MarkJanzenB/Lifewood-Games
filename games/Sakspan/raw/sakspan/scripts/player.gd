@@ -578,9 +578,15 @@ func _sync_player_position(pos: Vector2, vel: Vector2):
 	_sync_player_state(pos, vel, "", false)
 
 func _input(event: InputEvent) -> void:
-	# Block ALL input for dying or ghost players
-	if is_dying or current_state == PlayerState.GHOST: 
+	# Block ALL input for dying players
+	if is_dying: 
 		return
+	
+	# Block attack input for ghosts (but allow movement)
+	if current_state == PlayerState.GHOST and event is InputEventKey:
+		if Input.is_action_just_pressed("fire"):
+			print("[Player] 👻 Ghost cannot attack!")
+			return
 	
 	# DEBUG: Test spotted alert with T key (now uses GameUI)
 	if event is InputEventKey and event.pressed:
@@ -724,9 +730,10 @@ func _server_validate_hider_attack(requester_id: int, game_manager: Node) -> voi
 		show_temporary_message.rpc_id(requester_id, "No targets in range!")
 		return
 	
-	# Execute SAK attack
+	# Execute SAK attack directly (we're already on the server)
 	print("[Player] 🗡️ Server authorizing Hider SAK attack on: ", nearest_target.player_name)
-	request_sak_attack_rpc.rpc_id(1, nearest_target.get_multiplayer_authority())
+	target_for_sak = nearest_target
+	play_attack_animation.rpc("hider_sak")
 
 @rpc("any_peer", "call_local", "reliable")
 func show_temporary_message(message: String) -> void:
@@ -782,6 +789,10 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	play_death_animation.rpc()
 	
 	print("[Player] 🎬 Death sequence initiated for ", player_name)
+	
+	# Ensure elimination is synced to all clients
+	if multiplayer.is_server():
+		sync_elimination_to_all_clients.rpc(get_multiplayer_authority(), attacker.get_multiplayer_authority() if attacker else 0)
 
 # RPC to play death animation on all clients
 @rpc("any_peer", "call_local", "reliable")
@@ -804,8 +815,9 @@ func become_ghost() -> void:
 	current_state = PlayerState.GHOST
 	is_dying = false  # Death sequence complete
 	
-	# Visual changes for ghost state - make them much more transparent and ghostly
-	animated_sprite.modulate = Color(0.7, 0.9, 1.0, 0.4)  # More transparent with blue tint
+	# CRITICAL: Ghosts are invisible to living players, only visible to other ghosts
+	# We'll handle visibility per-player basis in _update_ghost_visibility()
+	animated_sprite.modulate = Color(0.7, 0.9, 1.0, 0.0)  # Invisible by default
 	
 	# Add a subtle glow effect by duplicating the sprite with a larger, more transparent version
 	_add_ghost_glow_effect()
@@ -825,12 +837,12 @@ func become_ghost() -> void:
 	set_collision_layer_value(3, true)   # Collide with other ghosts
 	set_collision_mask_value(1, false)   # Don't detect living players
 	set_collision_mask_value(3, true)    # Detect other ghosts
-	set_collision_mask_value(4, true)    # Still detect obstacles
+	set_collision_mask_value(4, false)   # Ghosts pass through walls
 	
-	# Disable ghost movement (ghosts are spectators only)
-	can_move = false
-	can_bang = false
-	can_sak = false
+	# Ghosts can move but cannot attack
+	can_move = true   # Ghosts can move around as spectators
+	can_bang = false  # No BANG attacks
+	can_sak = false   # No SAK attacks
 	
 	# Update username label for ghosts
 	if username_label:
@@ -840,6 +852,9 @@ func become_ghost() -> void:
 	# Notify GameManager for win condition checking (server only)
 	if multiplayer.is_server() and GameManager and GameManager.has_method("check_win_conditions"):
 		GameManager.check_win_conditions()
+	
+	# Update ghost visibility for all players
+	_update_ghost_visibility_for_all_players.rpc()
 	
 	# Show ghost status to local player
 	if is_main_player:
@@ -851,6 +866,56 @@ func _show_ghost_status_message() -> void:
 	"""Show ghost status message to the local player"""
 	var message := "👻 You are now a ghost! You can only spectate - no movement or interactions."
 	show_temporary_message.rpc_id(multiplayer.get_unique_id(), message)
+
+@rpc("authority", "call_local", "reliable")
+func _update_ghost_visibility_for_all_players() -> void:
+	"""Update ghost visibility - only ghosts can see other ghosts"""
+	# This runs on all clients
+	for player in get_tree().get_nodes_in_group("player"):
+		if player != self:  # Don't update self
+			_update_ghost_visibility_for_player(player)
+
+func _update_ghost_visibility_for_player(other_player: PlayerCharacter) -> void:
+	"""Update visibility of this ghost for a specific player"""
+	if not other_player or not other_player.animated_sprite:
+		return
+	
+	# If this player is a ghost
+	if current_state == PlayerState.GHOST:
+		# Only other ghosts can see this ghost
+		if other_player.current_state == PlayerState.GHOST:
+			# Make visible to other ghosts
+			animated_sprite.modulate = Color(0.7, 0.9, 1.0, 0.6)  # Semi-transparent blue
+			if username_label:
+				username_label.modulate = Color(1, 1, 1, 0.8)
+		else:
+			# Invisible to living players
+			animated_sprite.modulate = Color(0.7, 0.9, 1.0, 0.0)  # Completely invisible
+			if username_label:
+				username_label.modulate = Color(1, 1, 1, 0.0)
+
+func _process(delta: float) -> void:
+	"""Update ghost visibility every frame based on local player state"""
+	if current_state == PlayerState.GHOST:
+		# Find the local player
+		var local_player = null
+		for player in get_tree().get_nodes_in_group("player"):
+			if player.is_main_player:
+				local_player = player
+				break
+		
+		if local_player:
+			# Update visibility based on local player's state
+			if local_player.current_state == PlayerState.GHOST:
+				# Local player is ghost - show this ghost
+				animated_sprite.modulate = Color(0.7, 0.9, 1.0, 0.6)
+				if username_label:
+					username_label.modulate = Color(1, 1, 1, 0.8)
+			else:
+				# Local player is alive - hide this ghost
+				animated_sprite.modulate = Color(0.7, 0.9, 1.0, 0.0)
+				if username_label:
+					username_label.modulate = Color(1, 1, 1, 0.0)
 
 func _disable_collision_areas() -> void:
 	"""Safely disable collision areas during elimination"""
@@ -912,6 +977,19 @@ func reset_to_lobby_state() -> void:
 		animated_sprite.play("idle")
 	
 	print("[Player] ✅ ", player_name, " reset to lobby state complete")
+
+@rpc("authority", "call_local", "reliable")
+func sync_elimination_to_all_clients(victim_id: int, attacker_id: int) -> void:
+	"""Sync elimination state to all clients for proper ghost transition"""
+	print("[Player] 📡 SYNC: Elimination sync received - victim: ", victim_id, " attacker: ", attacker_id)
+	
+	# Find the victim player and ensure they become a ghost
+	for player in get_tree().get_nodes_in_group("player"):
+		if player.get_multiplayer_authority() == victim_id:
+			if player.current_state != PlayerState.GHOST:
+				print("[Player] 👻 SYNC: Forcing ghost transition for ", player.player_name)
+				player.become_ghost()
+			break
 
 func _add_ghost_glow_effect() -> void:
 	"""Add a subtle glow effect to make ghosts more visible"""
@@ -1428,8 +1506,9 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 	set_ammo.rpc(ammo - 1) # Sync ammo change to all clients
 	
 	# Start ammo regeneration if not at max capacity
-	if ammo - 1 < max_ammo:
+	if ammo - 1 < max_ammo and GameManager:
 		GameManager._start_ammo_regeneration()
+		print("[Player] 🔄 Started ammo regeneration - current: ", ammo - 1, "/", max_ammo)
 	
 	# Store aim direction for use in animation frame 2
 	# (We'll use get_global_mouse_position() in the frame handler)
