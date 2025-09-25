@@ -423,6 +423,7 @@ func set_initial_state(role_int: int, ammo_count: int, p_can_move: bool, p_can_a
 	# Set player permissions
 	self.can_move = p_can_move
 	self.can_attack = p_can_attack
+	self.can_sak = false  # Always start with SAK disabled, GameManager will enable it later
 	
 	# CRITICAL: Configure local UI if this is the local player
 	if is_multiplayer_authority():
@@ -570,11 +571,19 @@ func _handle_phase1_fire_input() -> void:
 
 # Simplified input handling - just send attack request to server
 func _handle_fire_sak_input() -> void:
-	print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role])
+	print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " CanAttack: ", can_attack, " CanSak: ", can_sak)
 	
 	# Simple client-side check - don't spam if already in action
 	if is_in_action:
 		print("[Player] Cannot attack - already in action")
+		return
+	
+	# CLIENT-SIDE VALIDATION: Check basic permissions
+	if role == PlayerRole.HIDER and not can_sak:
+		print("[Player] ❌ CLIENT: Hider cannot SAK yet - can_sak is false")
+		return
+	elif role == PlayerRole.SEEKER and not can_attack:
+		print("[Player] ❌ CLIENT: Seeker cannot attack yet - can_attack is false") 
 		return
 	
 	# Send attack request to server - let server validate everything
@@ -592,7 +601,7 @@ func server_request_attack() -> void:
 	print("[Player] Server received attack request from peer: ", requester_id)
 	
 	# Validate game state and player permissions
-	var game_manager = get_node_or_null("/root/GameManager")
+	var game_manager = GameManager
 	if not game_manager:
 		print("[Player] Server rejected attack - GameManager not found")
 		return

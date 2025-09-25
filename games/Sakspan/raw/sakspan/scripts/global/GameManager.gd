@@ -416,11 +416,11 @@ func start_game_flow() -> void:
 	# Roles already assigned in GamePrep, start directly at HIDER_HEADSTART
 	print("[GameManager] 🎮 Starting dev_world game logic with ", player_nodes.size(), " players")
 	
-	# Apply roles to spawned players (roles were determined in GamePrep)
+	# Apply roles to all players with proper UI configuration
 	apply_roles_to_players(player_nodes)
 	
-	# Start directly at HIDER_HEADSTART phase (skip role assignment phase)
-	start_hider_headstart_phase()
+	# Start directly with HIDER_HEADSTART phase (skip PRE_GAME_FREEZE since we have game prep screen)
+	_execute_phase_transition(GameState.HIDER_HEADSTART)
 	
 	print("[GameManager] ✅ DEFINITIVE BARRIER: Game flow started successfully")
 
@@ -431,7 +431,7 @@ func apply_roles_to_players(player_nodes: Array) -> void:
 		return
 	
 	# Get the seeker info from NetworkManager (stored during GamePrep)
-	var network_manager = get_node_or_null("/root/NetworkManager")
+	var network_manager = NetworkManager
 	if not network_manager:
 		print("[GameManager] ❌ NetworkManager not found for role application!")
 		return
@@ -462,51 +462,11 @@ func apply_roles_to_players(player_nodes: Array) -> void:
 	
 	print("[GameManager] ✅ PHASE 1: Complete player state initialization with UI configuration")
 
-func start_hider_headstart_phase() -> void:
-	"""Start the HIDER_HEADSTART phase (10 seconds)"""
-	if not multiplayer.is_server():
-		return
-	
-	print("[GameManager] 🏃 Starting HIDER_HEADSTART phase...")
-	current_state = GameState.HIDER_HEADSTART
-	
-	# Freeze seeker, enable hider movement
-	_enable_hider_movement_only()
-	
-	# Send role-specific announcements
-	_send_role_announcements()
-	
-	# Start 10-second countdown
-	start_master_clock_countdown(10, GameState.SEEKER_RELEASED)
+# REMOVED: start_hider_headstart_phase() - Replaced by unified phase system
 
-func _enable_hider_movement_only() -> void:
-	"""Enable movement for hiders only, freeze seeker"""
-	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
-	for player in players_list:
-		var player_char = player as PlayerCharacter
-		if not player_char:
-			continue
-		
-		if player_char.role == PlayerCharacter.PlayerRole.HIDER:
-			player_char.set_player_state.rpc(true, false)  # can_move=true, can_attack=false
-		elif player_char.role == PlayerCharacter.PlayerRole.SEEKER:
-			player_char.set_player_state.rpc(false, false)  # can_move=false, can_attack=false
-			# Apply seeker blindness
-			player_char.set_seeker_blinded.rpc(true)
-
-func _send_role_announcements() -> void:
-	"""Send role-specific announcements to players"""
-	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
-	for player in players_list:
-		var player_char = player as PlayerCharacter
-		if not player_char:
-			continue
-		
-		var player_id = player_char.get_multiplayer_authority()
-		if player_char.role == PlayerCharacter.PlayerRole.HIDER:
-			show_role_rpc.rpc_id(player_id, "You're one of the hiders!", "Hide and survive!")
-		elif player_char.role == PlayerCharacter.PlayerRole.SEEKER:
-			show_role_rpc.rpc_id(player_id, "You're cursed with blindness...", "Wait for your vision to return!")
+# REMOVED: Legacy functions replaced by unified role-based permission system:
+# - _enable_hider_movement_only() - Use _set_hiders_movement(true) + _set_seekers_movement(false)
+# - _send_role_announcements() - Use _show_role_announcements() RPC (already implemented)
 
 func _remove_seeker_blindness() -> void:
 	"""Remove blindness from seeker when SEEKER_RELEASED phase starts"""
@@ -834,8 +794,8 @@ func start_game() -> void:
 	# Initialize the game mechanics
 	initialize_game()
 	
-	# Start Phase 1: Pre-Game Freeze (5 seconds)
-	_start_phase_1_freeze()
+	# Start directly with Hider Head Start (10 seconds)
+	_execute_phase_transition(GameState.HIDER_HEADSTART)
 
 # === REFACTORED PHASE TRANSITION SYSTEM ===
 
@@ -956,65 +916,18 @@ func _show_phase_announcements(announcements: Array):
 	for announcement in announcements:
 		_show_announcement.rpc(announcement)
 
-# Legacy phase functions (kept for compatibility, but redirect to new system)
-func _start_phase_1_freeze():
-	_execute_phase_transition(GameState.PRE_GAME_FREEZE)
-
-func _start_phase_2_hider_headstart():
-	_execute_phase_transition(GameState.HIDER_HEADSTART)
-
-func _start_phase_3_seeker_released():
-	_execute_phase_transition(GameState.SEEKER_RELEASED)
-
-func _start_phase_4_full_gameplay():
-	_execute_phase_transition(GameState.IN_PROGRESS)
-	
-	# Show role-specific announcements
-	_show_seeker_warning.rpc()
-	_show_hider_warning.rpc()
-	
-	# Start main game timer (if needed)
-	match_start_time = Time.get_unix_time_from_system()
+# REMOVED: Legacy phase functions - replaced with direct _execute_phase_transition() calls
+# All phase transitions now use the unified configuration-driven system
 
 # --- LEGACY PHASE TIMER CALLBACK REMOVED ---
 # _on_phase_timer_timeout() - Replaced by master clock system
 
-# New player control functions for enhanced game flow
-func _freeze_all_players():
-	"""Freeze all players - no movement, no attacks"""
-	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
-	for player in players_list:
-		var player_char = player as PlayerCharacter
-		if not player_char:
-			continue
-		
-		player_char.set_player_state.rpc(false, false)  # can_move=false, can_attack=false
-
-# Duplicate function removed - using the version at line 422 with newer API
-
-func _enable_seeker_full_control():
-	"""Seeker can move and attack, Hiders can move but no SAK"""
-	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
-	for player in players_list:
-		var player_char = player as PlayerCharacter
-		if not player_char:
-			continue
-		
-		if player_char.role == PlayerCharacter.PlayerRole.HIDER:
-			player_char.set_player_state.rpc(true, false)  # can_move=true, can_attack=false (SAK delay)
-		elif player_char.role == PlayerCharacter.PlayerRole.SEEKER:
-			player_char.set_player_state.rpc(true, true)  # can_move=true, can_attack=true
-
-func _enable_full_gameplay():
-	"""All players have full capabilities"""
-	var players_list: Array[Node] = get_tree().get_nodes_in_group("player")
-	for player in players_list:
-		var player_char = player as PlayerCharacter
-		if not player_char:
-			continue
-		
-		# Enable full capabilities for all players
-		player_char.set_player_state.rpc(true, true)  # can_move=true, can_attack=true
+# REMOVED: Legacy player control functions - replaced by unified role-based permission system
+# The following functions were redundant with the new phase configuration system:
+# - _freeze_all_players() - Use _apply_phase_permissions() with all false permissions
+# - _enable_seeker_full_control() - Use role-specific _set_hiders_*() and _set_seekers_*() functions  
+# - _enable_full_gameplay() - Use _apply_phase_permissions() with all true permissions
+# All player control now goes through the configuration-driven phase system
 
 func _start_ammo_regeneration():
 	"""Start the ammo regeneration timer"""
@@ -1036,13 +949,7 @@ func _on_ammo_regen_timer_timeout():
 			break
 
 # Player control helper functions
-func _set_all_players_movement(enabled: bool):
-	print("[GameManager] 🎮 SERVER: Setting ALL players movement to ", enabled)
-	_set_players_movement_by_role.rpc("all", enabled)
-
-func _set_all_players_attack(enabled: bool):
-	print("[GameManager] 🎮 SERVER: Setting ALL players attack to ", enabled)
-	_set_players_attack_by_role.rpc("all", enabled)
+# REMOVED: _set_all_players_movement() and _set_all_players_attack() - redundant with role-specific functions
 
 func _set_hiders_movement(enabled: bool):
 	_set_players_movement_by_role.rpc("hider", enabled)
@@ -1406,7 +1313,12 @@ func _set_players_attack_by_role(role_filter: String, enabled: bool):
 	
 	if should_apply:
 		local_player.can_attack = enabled
-		print("[GameManager] ✅ Set attack to ", enabled, " for ", role_filter, " (", local_player.player_name, ")")
+		# CRITICAL FIX: Hiders need can_sak to be set as well
+		if local_player.role == PlayerCharacter.PlayerRole.HIDER:
+			local_player.can_sak = enabled
+			print("[GameManager] ✅ Set attack AND sak to ", enabled, " for hider (", local_player.player_name, ") - can_attack: ", local_player.can_attack, " can_sak: ", local_player.can_sak)
+		else:
+			print("[GameManager] ✅ Set attack to ", enabled, " for ", role_filter, " (", local_player.player_name, ") - can_attack: ", local_player.can_attack)
 	else:
 		print("[GameManager] ⚠️ Attack update skipped - role filter '", role_filter, "' doesn't match local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role])
 
@@ -1436,9 +1348,14 @@ func _show_countdown(seconds: int):
 
 @rpc("any_peer", "call_local", "reliable")
 func _show_announcement(message: String):
-	"""Show announcement to all players"""
-	print("[GameManager] Announcement: ", message)
-	# This would integrate with the GameUI to show announcement
+	"""Show dramatic announcement to all players"""
+	print("[GameManager] 🎯 DRAMATIC ANNOUNCEMENT: ", message)
+	
+	# Show announcement in GameUI if available
+	if game_ui_instance and game_ui_instance.has_method("show_dramatic_announcement"):
+		game_ui_instance.show_dramatic_announcement(message)
+	elif game_ui_instance and game_ui_instance.has_method("update_status"):
+		game_ui_instance.update_status(message, true)
 
 @rpc("authority", "call_local", "reliable")
 func _show_seeker_warning():

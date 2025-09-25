@@ -81,10 +81,43 @@ func show_spotted(is_visible: bool):
 				spotted_timer.start()
 
 func update_countdown(text: String, is_visible: bool):
-	"""Passive display - simply shows the countdown value from server"""
+	"""Enhanced dramatic countdown display"""
 	if countdown_label:
 		countdown_label.text = text
 		countdown_label.visible = is_visible
+		
+		# Make countdown more dramatic
+		if text.is_valid_int():
+			var count = text.to_int()
+			if count <= 3 and count > 0:
+				# Critical countdown - make it red and larger
+				countdown_label.modulate = Color.RED
+				countdown_label.scale = Vector2(1.5, 1.5)
+				# Add pulsing effect
+				var tween = create_tween()
+				tween.tween_property(countdown_label, "scale", Vector2(1.8, 1.8), 0.3)
+				tween.tween_property(countdown_label, "scale", Vector2(1.5, 1.5), 0.3)
+			elif count <= 10:
+				# Warning countdown - make it orange
+				countdown_label.modulate = Color.ORANGE
+				countdown_label.scale = Vector2(1.2, 1.2)
+			else:
+				# Normal countdown
+				countdown_label.modulate = Color.WHITE
+				countdown_label.scale = Vector2(1.0, 1.0)
+		elif text == "GO!":
+			# Dramatic GO! message
+			countdown_label.modulate = Color.GREEN
+			countdown_label.scale = Vector2(2.0, 2.0)
+			var tween = create_tween()
+			tween.tween_property(countdown_label, "scale", Vector2(2.5, 2.5), 0.2)
+			tween.tween_property(countdown_label, "scale", Vector2(2.0, 2.0), 0.2)
+			tween.tween_callback(func(): countdown_label.visible = false).set_delay(1.0)
+		else:
+			# Reset to normal
+			countdown_label.modulate = Color.WHITE
+			countdown_label.scale = Vector2(1.0, 1.0)
+		
 		print("[GameUI] 📡 CLIENT RECEIVED: Countdown updated to '", text, "' (Peer: ", multiplayer.get_unique_id(), ")")
 
 func update_status(text: String, is_visible: bool):
@@ -93,6 +126,21 @@ func update_status(text: String, is_visible: bool):
 			fade_out_label(status_label, text)
 		else:
 			status_label.visible = false
+
+func show_dramatic_announcement(message: String):
+	"""Show a dramatic announcement with enhanced visual effects"""
+	if status_label:
+		status_label.text = message
+		status_label.visible = true
+		status_label.modulate = Color.YELLOW
+		status_label.scale = Vector2(1.5, 1.5)
+		
+		# Create dramatic entrance effect
+		var tween = create_tween()
+		tween.tween_property(status_label, "scale", Vector2(1.8, 1.8), 0.3)
+		tween.tween_property(status_label, "scale", Vector2(1.5, 1.5), 0.3)
+		tween.tween_property(status_label, "modulate", Color.WHITE, 1.0)
+		tween.tween_callback(func(): fade_out_label(status_label, message)).set_delay(2.0)
 
 # Called by GameManager when the match ends
 func show_game_over(did_i_win: bool, message: String) -> void:
