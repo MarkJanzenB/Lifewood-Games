@@ -158,7 +158,10 @@ func check_win_conditions() -> void:
 func _ready() -> void:
 	# This function runs ONCE when the app starts.
 	# GameManager is now PURELY PASSIVE - only responds to NetworkManager signals
-	print("[GameManager] 🔧 DEBUG: _ready() called, connecting to NetworkManager...")
+	print("[GameManager] 🔧 DEBUG: _ready() called - current_state: ", GameState.keys()[current_state])
+	print("[GameManager] 🔧 DEBUG: Multiplayer peer ID: ", multiplayer.get_unique_id())
+	print("[GameManager] 🔧 DEBUG: Is server: ", multiplayer.is_server())
+	
 	if NetworkManager:
 		NetworkManager.all_peers_verified_and_ready.connect(_on_all_peers_ready)
 		print("[GameManager] ✅ DEBUG: Successfully connected to all_peers_verified_and_ready signal")
@@ -175,7 +178,11 @@ func _ready() -> void:
 	
 	# Connect all timer signals ONCE in _ready() - no more dynamic connections
 	if master_clock:
-		master_clock.timeout.connect(_on_master_clock_tick)
+		# Use a callable with proper binding to ensure 'self' context is preserved
+		master_clock.timeout.connect(_on_master_clock_tick.bind())
+		print("[GameManager] ✅ DEBUG: master_clock connected to _on_master_clock_tick")
+	else:
+		print("[GameManager] ❌ DEBUG: master_clock is null during _ready()!")
 	
 	# DEBUG: Manual trigger for testing (remove in production)
 	print("[GameManager] DEBUG: To manually trigger role assignment, call GameManager.debug_start_role_assignment()")
@@ -508,6 +515,22 @@ func _debug_print_scene_tree(node: Node, depth: int) -> void:
 func _on_master_clock_tick() -> void:
 	"""Master clock tick - uses current_state to determine behavior"""
 	if not multiplayer.is_server():
+		return
+	
+	# CRITICAL SAFETY CHECK: Ensure GameManager singleton is properly initialized
+	if not self:
+		print("[GameManager] ❌ CRITICAL: GameManager instance is null during clock tick!")
+		return
+	
+	# Check if current_state is properly initialized
+	if current_state == null:
+		print("[GameManager] ❌ CRITICAL: current_state is null! Initializing to LOBBY...")
+		current_state = GameState.LOBBY
+		return
+	
+	# Additional safety check for master_clock
+	if not master_clock:
+		print("[GameManager] ❌ CRITICAL: master_clock is null during tick!")
 		return
 	
 	# Use current_state to determine which countdown logic to execute
