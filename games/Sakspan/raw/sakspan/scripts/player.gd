@@ -61,15 +61,14 @@ var spotted_targets: Array[PlayerCharacter] = []  # Currently spotted Hiders
 # Username display
 var username_label: Label = null
 
-# Spotted alert visual indicator
-var spotted_icon: Label = null
-var spotted_icon_tween: Tween = null
+# Spotted alert now handled by GameUI - no overhead icons needed
 
 # Collision layers:
-# 1 - Default (players, obstacles)
+# 1 - Players (default layer for player bodies)
 # 2 - Vision (for line of sight checks)
 # 3 - Ghosts (visible to all players)
-# 4 - Obstacles
+# 4 - Obstacles/Walls (static environment)
+# 5 - Combined mask for players (1 + 4 = detect players and obstacles)
 
 # --- CORE FUNCTIONS ---
 
@@ -94,9 +93,9 @@ func _ready():
 	# Configure multiplayer authority
 	_configure_multiplayer_authority()
 	
-	# Create username label and spotted icon
+	# Create username label only - spotted indicator is now in GameUI
 	_create_username_label()
-	_create_spotted_icon()  # Ensure spotted icon is always created
+	# Removed: _create_spotted_icon() - now handled by GameUI
 	
 	# Setup MultiplayerSynchronizer with empty config (for spawning only)
 	if sync:
@@ -177,34 +176,7 @@ func _create_username_label():
 	add_child(username_label)
 	print("[Player] Created username label: ", player_name)
 
-func _create_spotted_icon():
-	"""Create the spotted alert icon (warning) above the player"""
-	print("[Player] 🔴 Creating ENHANCED spotted icon for ", player_name)
-	spotted_icon = Label.new()
-	spotted_icon.name = "SpottedIcon"
-	spotted_icon.text = "⚠️"  # Warning emoji for better visibility
-	spotted_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	spotted_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	spotted_icon.position = Vector2(-35, -120)  # Higher and centered
-	spotted_icon.size = Vector2(70, 70)
-	spotted_icon.add_theme_font_size_override("font_size", 80)
-	spotted_icon.add_theme_color_override("font_color", Color.ORANGE_RED)
-	spotted_icon.add_theme_color_override("font_shadow_color", Color.BLACK)
-	spotted_icon.add_theme_constant_override("shadow_offset_x", 6)
-	spotted_icon.add_theme_constant_override("shadow_offset_y", 6)
-	spotted_icon.add_theme_color_override("font_outline_color", Color.WHITE)
-	spotted_icon.add_theme_constant_override("outline_size", 5)
-	spotted_icon.visible = false
-	spotted_icon.z_index = 2000
-	
-	# Ensure it stays above the character by making it a child of the player
-	add_child(spotted_icon)
-	
-	# Move it to the front of the draw order
-	move_child(spotted_icon, get_child_count() - 1)
-	
-	print("[Player] ✅ Created ENHANCED spotted alert icon for ", player_name, " at position ", spotted_icon.position)
-	print("[Player] 📌 Spotted icon z_index: ", spotted_icon.z_index, " child count: ", get_child_count())
+# Removed: _create_spotted_icon() - spotted alerts now handled by GameUI
 
 func update_username_display():
 	if username_label:
@@ -610,17 +582,11 @@ func _input(event: InputEvent) -> void:
 	if is_dying or current_state == PlayerState.GHOST: 
 		return
 	
-	# DEBUG: Test spotted alert with T key
+	# DEBUG: Test spotted alert with T key (now uses GameUI)
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_T and is_main_player:
-			print("[Player] 🔴 DEBUG: T pressed - testing LARGE spotted alert")
-			debug_test_spotted_alert()
-		elif event.keycode == KEY_Y and is_main_player:
-			print("[Player] 🔄 DEBUG: Y pressed - testing spotted sync")
-			debug_test_spotted_sync()
-		elif event.keycode == KEY_U and is_main_player:
-			print("[Player] 📌 DEBUG: U pressed - showing spotted icon permanently")
-			debug_show_spotted_icon_permanently()
+			print("[Player] 🔴 DEBUG: T pressed - testing GameUI spotted alert")
+			debug_test_gameui_spotted_alert()
 	# Only the authority handles inputs
 	if not is_multiplayer_authority(): 
 		return
@@ -1237,21 +1203,12 @@ func check_line_of_sight() -> void:
 # --- SPOTTED ALERT SYSTEM ---
 
 func _show_spotted_alert_for_player(target_player: PlayerCharacter):
-	"""Show spotted alert on the target player's screen and overhead icon"""
+	"""Show spotted alert on the target player's GameUI"""
 	if not target_player or target_player.role != PlayerRole.HIDER:
-		print("[Player] ⚠️ Spotted alert skipped - invalid target or not hider")
 		return
 	
 	var target_id = target_player.get_multiplayer_authority()
 	print("[Player] 🚨 Showing spotted alert for ", target_player.player_name, " (ID: ", target_id, ")")
-	
-	# Show overhead icon locally first for immediate feedback
-	target_player._show_overhead_spotted_icon()
-	print("[Player] 🔴 LOCAL: Overhead icon shown immediately for ", target_player.player_name)
-	
-	# Sync to ALL clients (including this one) for consistency
-	target_player._sync_spotted_icon.rpc(true)
-	print("[Player] 📡 RPC: Broadcasting spotted icon to ALL peers for ", target_player.player_name)
 	
 	if multiplayer.is_server():
 		# Server directly triggers the UI alert on the target client
@@ -1263,20 +1220,12 @@ func _show_spotted_alert_for_player(target_player: PlayerCharacter):
 		_request_spotted_alert.rpc_id(1, target_id, true)
 
 func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
-	"""Hide spotted alert on the target player's screen and overhead icon"""
+	"""Hide spotted alert on the target player's GameUI"""
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return
 	
 	var target_id = target_player.get_multiplayer_authority()
 	print("[Player] 🚫 Hiding spotted alert for ", target_player.player_name, " (ID: ", target_id, ")")
-	
-	# Hide overhead icon locally first for immediate feedback
-	target_player._hide_overhead_spotted_icon()
-	print("[Player] ❌ LOCAL: Overhead icon hidden immediately for ", target_player.player_name)
-	
-	# Sync to ALL clients (including this one) for consistency
-	target_player._sync_spotted_icon.rpc(false)
-	print("[Player] 📡 RPC: Broadcasting spotted icon hide to ALL peers for ", target_player.player_name)
 	
 	if multiplayer.is_server():
 		# Server directly hides the alert on the target client
@@ -1298,33 +1247,50 @@ func _request_spotted_alert(target_id: int, show: bool):
 
 @rpc("authority", "call_remote", "reliable")
 func _trigger_spotted_alert():
-	"""RPC to trigger spotted alert on this client"""
+	"""RPC to trigger spotted alert on this client's GameUI"""
 	print("[Player] 📡 RECEIVED: _trigger_spotted_alert on ", player_name, " (Role: ", role, ", Main: ", is_main_player, ")")
 	
-	# Only show for Hiders
+	# Only show for local Hiders
 	if role != PlayerRole.HIDER or not is_main_player:
 		print("[Player] ⚠️ Spotted alert ignored - not main hider player")
 		return
 	
-	# Find GameUI and trigger spotted alert
+	# Find GameUI and show spotted alert
 	var game_ui = _find_game_ui()
-	if game_ui and game_ui.has_method("show_spotted"):
-		game_ui.show_spotted(true)
-		print("[Player] ✅ Spotted alert shown via GameUI")
+	if game_ui:
+		# Try multiple methods to show spotted alert
+		if game_ui.has_method("show_spotted"):
+			game_ui.show_spotted(true)
+			print("[Player] ✅ Spotted alert shown via GameUI.show_spotted()")
+		elif game_ui.has_node("MarginContainer/SpottedLabel"):
+			var spotted_label = game_ui.get_node("MarginContainer/SpottedLabel")
+			spotted_label.visible = true
+			print("[Player] ✅ Spotted alert shown via SpottedLabel visibility")
+		else:
+			print("[Player] ❌ No spotted alert method found in GameUI")
 	else:
-		print("[Player] ❌ Failed to show spotted alert - GameUI not found or missing method")
+		print("[Player] ❌ GameUI not found for spotted alert")
 
 @rpc("authority", "call_remote", "reliable")
 func _hide_spotted_alert():
-	"""RPC to hide spotted alert on this client"""
-	# Only for Hiders
+	"""RPC to hide spotted alert on this client's GameUI"""
+	# Only for local Hiders
 	if role != PlayerRole.HIDER or not is_main_player:
 		return
 	
 	# Find GameUI and hide spotted alert
 	var game_ui = _find_game_ui()
-	if game_ui and game_ui.has_method("show_spotted"):
-		game_ui.show_spotted(false)
+	if game_ui:
+		# Try multiple methods to hide spotted alert
+		if game_ui.has_method("show_spotted"):
+			game_ui.show_spotted(false)
+			print("[Player] ✅ Spotted alert hidden via GameUI.show_spotted()")
+		elif game_ui.has_node("MarginContainer/SpottedLabel"):
+			var spotted_label = game_ui.get_node("MarginContainer/SpottedLabel")
+			spotted_label.visible = false
+			print("[Player] ✅ Spotted alert hidden via SpottedLabel visibility")
+		else:
+			print("[Player] ❌ No spotted alert method found in GameUI")
 
 # PHASE 3: Spotted Indicator Logic
 @rpc("any_peer", "call_local", "reliable")
@@ -1379,93 +1345,8 @@ func _find_game_ui() -> Control:
 	print("[Player] ⚠️ GameUI not found for spotted alert")
 	return null
 
-# --- OVERHEAD SPOTTED ICON SYSTEM ---
-
-func _show_overhead_spotted_icon():
-	"""Show the overhead exclamation mark with SUPER dramatic animation"""
-	if not spotted_icon:
-		return
-	
-	print("[Player] ❗ Showing ENHANCED overhead spotted icon for ", player_name)
-	
-	# Optional: play a sfx here via your AudioManager
-	# AudioManager.play_sound("spotted_alert")
-	
-	spotted_icon.visible = true
-	spotted_icon.modulate = Color.ORANGE_RED
-	spotted_icon.modulate.a = 0.0
-	spotted_icon.scale = Vector2(0.1, 0.1)
-	spotted_icon.rotation = 0.0
-	
-	# Stop any existing tween
-	if spotted_icon_tween:
-		spotted_icon_tween.kill()
-	
-	# Entrance animation
-	spotted_icon_tween = create_tween()
-	spotted_icon_tween.set_parallel(true)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate:a", 1.0, 0.3)
-	spotted_icon_tween.tween_property(spotted_icon, "scale", Vector2(2.0, 2.0), 0.5).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
-	spotted_icon_tween.tween_property(spotted_icon, "rotation", PI * 2, 0.5)
-	spotted_icon_tween.tween_property(spotted_icon, "scale", Vector2(1.5, 1.5), 0.3).set_delay(0.5)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate", Color.YELLOW, 0.15).set_delay(0.8)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate", Color.WHITE, 0.15).set_delay(0.95)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate", Color.ORANGE_RED, 0.15).set_delay(1.1)
-	spotted_icon_tween.tween_callback(_start_spotted_icon_pulse).set_delay(1.3)
-
-func _hide_overhead_spotted_icon():
-	"""Hide the overhead exclamation mark with animation"""
-	if not spotted_icon:
-		return
-	
-	# Stop pulsing and fade out quickly
-	if spotted_icon_tween:
-		spotted_icon_tween.kill()
-	spotted_icon_tween = create_tween()
-	spotted_icon_tween.set_parallel(true)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate:a", 0.0, 0.2)
-	spotted_icon_tween.tween_property(spotted_icon, "scale", Vector2(0.8, 0.8), 0.2)
-	spotted_icon_tween.tween_callback(func(): spotted_icon.visible = false)
-
-func _start_spotted_icon_pulse():
-	"""Start the pulsing animation for the spotted icon"""
-	if not spotted_icon or not spotted_icon.visible:
-		return
-	
-		
-	# Create infinite SUPER dramatic pulsing animation
-	spotted_icon_tween = create_tween()
-	spotted_icon_tween.set_loops()
-	spotted_icon_tween.set_parallel(true)
-	
-	# Extreme scale pulsing with bounce effect
-	spotted_icon_tween.tween_property(spotted_icon, "scale", Vector2(2.2, 2.2), 0.8).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
-	spotted_icon_tween.tween_property(spotted_icon, "scale", Vector2(1.3, 1.3), 0.8).set_delay(0.8).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_IN)
-	
-	# Multi-color cycling (more vibrant colors)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate", Color.RED, 0.4)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate", Color.ORANGE, 0.4).set_delay(0.4)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate", Color.YELLOW, 0.4).set_delay(0.8)
-	spotted_icon_tween.tween_property(spotted_icon, "modulate", Color.WHITE, 0.4).set_delay(1.2)
-	
-	# Add subtle rotation for extra attention
-	spotted_icon_tween.tween_property(spotted_icon, "rotation", PI * 0.2, 0.8)
-	spotted_icon_tween.tween_property(spotted_icon, "rotation", -PI * 0.2, 0.8).set_delay(0.8)
-
-@rpc("any_peer", "call_local", "reliable")
-func _sync_spotted_icon(show: bool):
-	"""Synchronize spotted icon visibility across all clients"""
-	print("[Player] 🔄 SYNC: Spotted icon for ", player_name, " - show: ", show, " on peer: ", multiplayer.get_unique_id())
-	
-	# Ensure spotted icon exists before trying to show/hide it
-	if not spotted_icon:
-		print("[Player] ⚠️ WARNING: Spotted icon not found, creating it now")
-		_create_spotted_icon()
-	
-	if show:
-		_show_overhead_spotted_icon()
-	else:
-		_hide_overhead_spotted_icon()
+# --- REMOVED: OVERHEAD SPOTTED ICON SYSTEM ---
+# Spotted alerts are now handled by GameUI instead of overhead icons
 
 # --- SIGNAL FUNCTIONS ---
 
@@ -1696,35 +1577,27 @@ func _on_vision_cone_body_exited(body: Node2D) -> void:
 
 # --- DEBUG FUNCTIONS ---
 
-func debug_test_spotted_alert():
-	"""Debug function to test spotted alert system"""
-	print("[Player] 📝 DEBUG: Testing spotted alert for ", player_name)
-	if spotted_icon:
-		print("[Player] 📝 Spotted icon exists, showing it...")
-		_show_overhead_spotted_icon()
-		# Auto-hide after 5 seconds for testing
-		get_tree().create_timer(5.0).timeout.connect(_hide_overhead_spotted_icon)
+func debug_test_gameui_spotted_alert():
+	"""Debug function to test GameUI spotted alert system"""
+	print("[Player] 📝 DEBUG: Testing GameUI spotted alert for ", player_name)
+	
+	# Find GameUI and test spotted alert
+	var game_ui = _find_game_ui()
+	if game_ui:
+		if game_ui.has_method("show_spotted"):
+			game_ui.show_spotted(true)
+			print("[Player] ✅ GameUI spotted alert shown")
+			# Auto-hide after 3 seconds for testing
+			get_tree().create_timer(3.0).timeout.connect(func(): game_ui.show_spotted(false))
+		elif game_ui.has_node("MarginContainer/SpottedLabel"):
+			var spotted_label = game_ui.get_node("MarginContainer/SpottedLabel")
+			spotted_label.visible = true
+			print("[Player] ✅ SpottedLabel shown directly")
+			# Auto-hide after 3 seconds for testing
+			get_tree().create_timer(3.0).timeout.connect(func(): spotted_label.visible = false)
+		else:
+			print("[Player] ❌ No spotted alert method found in GameUI")
 	else:
-		print("[Player] ❌ Spotted icon does not exist!")
-
-func debug_show_spotted_icon_permanently():
-	"""Debug function to show spotted icon permanently"""
-	print("[Player] 📝 DEBUG: Showing LARGE spotted icon permanently for ", player_name)
-	if spotted_icon:
-		spotted_icon.visible = true
-		spotted_icon.modulate = Color.RED
-		spotted_icon.scale = Vector2(1.4, 1.4)  # Large and visible
-		print("[Player] ✅ LARGE spotted icon now visible at scale 1.4x")
-	else:
-		print("[Player] ❌ No spotted icon to show!")
-
-func debug_test_spotted_sync():
-	"""Debug function to test spotted alert synchronization"""
-	print("[Player] 🔄 DEBUG: Testing spotted sync for ", player_name)
-	# Show locally
-	_show_overhead_spotted_icon()
-	# Sync to all clients
-	_sync_spotted_icon.rpc(true)
-	print("[Player] 📡 Spotted sync RPC sent to all clients")
+		print("[Player] ❌ GameUI not found for testing")
 
 # Removed direct RPC methods - using GameManager RPC system instead
