@@ -942,18 +942,22 @@ func _show_spotted_alert_for_player(target_player: PlayerCharacter):
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return
 	
-	# Send RPC to show spotted alert on the target's client
 	var target_id = target_player.get_multiplayer_authority()
-	_trigger_spotted_alert.rpc_id(target_id)
+	if GameManager and GameManager.multiplayer.is_server():
+		GameManager.forward_spotted_alert.rpc_id(1, target_id, true)
+	else:
+		_trigger_spotted_alert.rpc_id(target_id)
 
 func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
 	"""Hide spotted alert on the target player's screen"""
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return
 	
-	# Send RPC to hide spotted alert on the target's client
 	var target_id = target_player.get_multiplayer_authority()
-	_hide_spotted_alert.rpc_id(target_id)
+	if GameManager and GameManager.multiplayer.is_server():
+		GameManager.forward_spotted_alert.rpc_id(1, target_id, false)
+	else:
+		_hide_spotted_alert.rpc_id(target_id)
 
 @rpc("any_peer", "call_local", "reliable")
 func _trigger_spotted_alert():

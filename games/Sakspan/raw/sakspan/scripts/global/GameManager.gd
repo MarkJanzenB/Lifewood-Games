@@ -1327,34 +1327,31 @@ func _set_players_attack_by_role(role_filter: String, enabled: bool):
 	print("[GameManager] 📡 RPC RECEIVED: _set_players_attack_by_role(", role_filter, ", ", enabled, ") on peer ", multiplayer.get_unique_id())
 	print("[GameManager] 🔍 DEBUG: Connected peers: ", multiplayer.get_peers())
 	print("[GameManager] 🔍 DEBUG: Is server: ", multiplayer.is_server())
-	
-	var local_player = _get_local_player()
-	if not local_player:
-		print("[GameManager] ❌ No local player found for attack update")
-		return
-	
-	print("[GameManager] 🔍 DEBUG: Local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role], " | Role filter: ", role_filter)
-	
-	var should_apply = false
-	if role_filter == "all":
-		should_apply = true
-	elif role_filter == "seeker" and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
-		should_apply = true
-		print("[GameManager] 🎯 DEBUG: SEEKER MATCH - will apply attack permission: ", enabled)
-	elif role_filter == "hider" and local_player.role == PlayerCharacter.PlayerRole.HIDER:
-		should_apply = true
-		print("[GameManager] 🫥 DEBUG: HIDER MATCH - will apply attack permission: ", enabled)
-	
-	if should_apply:
-		local_player.can_attack = enabled
-		# CRITICAL FIX: Hiders need can_sak to be set as well
-		if local_player.role == PlayerCharacter.PlayerRole.HIDER:
-			local_player.can_sak = enabled
-			print("[GameManager] ✅ Set attack AND sak to ", enabled, " for hider (", local_player.player_name, ") - can_attack: ", local_player.can_attack, " can_sak: ", local_player.can_sak)
+
+	var players_in_scene = get_tree().get_nodes_in_group("player")
+	print("[GameManager] 🔍 DEBUG: Evaluating attack permissions for ", players_in_scene.size(), " players")
+
+	for player in players_in_scene:
+		if not player is PlayerCharacter:
+			continue
+
+		var should_apply := false
+		if role_filter == "all":
+			should_apply = true
+		elif role_filter == "seeker" and player.role == PlayerCharacter.PlayerRole.SEEKER:
+			should_apply = true
+		elif role_filter == "hider" and player.role == PlayerCharacter.PlayerRole.HIDER:
+			should_apply = true
+
+		if not should_apply:
+			continue
+
+		player.can_attack = enabled
+		if player.role == PlayerCharacter.PlayerRole.HIDER:
+			player.can_sak = enabled
+			print("[GameManager] ✅ Applied attack+sak=", enabled, " to Hider (", player.player_name, ") on peer ", multiplayer.get_unique_id())
 		else:
-			print("[GameManager] ✅ SEEKER ATTACK SET: ", enabled, " for seeker (", local_player.player_name, ") - can_attack: ", local_player.can_attack)
-	else:
-		print("[GameManager] ⚠️ Attack update skipped - role filter '", role_filter, "' doesn't match local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role])
+			print("[GameManager] ✅ Applied attack=", enabled, " to Seeker (", player.player_name, ") on peer ", multiplayer.get_unique_id())
 
 @rpc("any_peer", "call_local", "reliable")
 func _activate_seeker_blindness():
@@ -1407,6 +1404,35 @@ func _show_hider_warning():
 		print("[GameManager] Hider warning: You can now 'Sak'! Be careful not to hit other Hiders.")
 		# Show warning in UI
 
+@rpc("any_peer", "reliable")
+func forward_spotted_alert(target_peer_id: int, show: bool) -> void:
+	"""Server authoritative relay for spotted alert UI RPCs"""
+	if not multiplayer.is_server():
+		return
+
+	var target_player := _get_player_by_authority(target_peer_id)
+	if not target_player:
+		print("[GameManager] ⚠️ forward_spotted_alert: No player found for authority ", target_peer_id)
+		return
+
+	var server_id := multiplayer.get_unique_id()
+	if target_peer_id != server_id and not multiplayer.has_peer(target_peer_id):
+		print("[GameManager] ⚠️ forward_spotted_alert: Peer ", target_peer_id, " no longer connected")
+		return
+
+	if show:
+		if target_peer_id == server_id:
+			target_player._trigger_spotted_alert()
+		else:
+			target_player._trigger_spotted_alert.rpc_id(target_peer_id)
+		print("[GameManager] 📢 Forwarded SHOW spotted alert to peer ", target_peer_id)
+	else:
+		if target_peer_id == server_id:
+			target_player._hide_spotted_alert()
+		else:
+			target_player._hide_spotted_alert.rpc_id(target_peer_id)
+		print("[GameManager] 📢 Forwarded HIDE spotted alert to peer ", target_peer_id)
+
 # Helper functions for staged gameplay
 func _get_local_player() -> PlayerCharacter:
 	"""Get the local player instance"""
@@ -1422,6 +1448,13 @@ func _get_local_player() -> PlayerCharacter:
 			print("[GameManager] ✅ Found local player: ", player.player_name)
 			return player as PlayerCharacter
 	print("[GameManager] ❌ No local player found with matching authority")
+	return null
+
+func _get_player_by_authority(authority_id: int) -> PlayerCharacter:
+	"""Find player node that has the specified multiplayer authority"""
+	for player in get_tree().get_nodes_in_group("player"):
+		if player is PlayerCharacter and player.get_multiplayer_authority() == authority_id:
+			return player as PlayerCharacter
 	return null
 
 func _create_blindness_overlay():
