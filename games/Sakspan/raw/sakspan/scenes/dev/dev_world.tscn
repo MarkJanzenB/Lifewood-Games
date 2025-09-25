@@ -1,9 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://cyohslubumgn8"]
+[gd_scene load_steps=4 format=3 uid="uid://cyohslubumgn8"]
 
 [ext_resource type="Script" uid="uid://cncj11m5kppt2" path="res://scripts/dev/dev_world.gd" id="1_dev_world"]
 [ext_resource type="Texture2D" uid="uid://cu6nuh5q6323o" path="res://tilesets/earth/keld.png" id="2_ep40k"]
 [ext_resource type="PackedScene" uid="uid://c7s3d55ma5x4d" path="res://scenes/GameUI.tscn" id="2_game_ui"]
-[ext_resource type="PackedScene" uid="uid://b5w5d5f5g5h5" path="res://scenes/player/Player.tscn" id="4_scnqt"]
 
 [node name="DevWorld" type="Node2D"]
 script = ExtResource("1_dev_world")
@@ -65,6 +64,3 @@ polygon = PackedVector2Array(1659, -81, 1692, -77, 1722, -66, 1755, -49, 1794, -
 [node name="Cafeteria_Table_C" type="CollisionPolygon2D" parent="Obstacles"]
 position = Vector2(382, -342)
 polygon = PackedVector2Array(1659, -81, 1692, -77, 1722, -66, 1755, -49, 1794, -16, 1817, 13, 1826, 30, 1831, 48, 1837, 80, 1835, 118, 1818, 165, 1786, 209, 1733, 243, 1672, 261, 1562, 262, 1529, 255, 1494, 244, 1450, 218, 1431, 202, 1416, 189, 1400, 169, 1387, 146, 1380, 117, 1380, 84, 1382, 60, 1390, 33, 1401, 12, 1422, -13, 1455, -44, 1485, -60, 1514, -74, 1547, -83, 1572, -85)
-
-[node name="Player" parent="." instance=ExtResource("4_scnqt")]
-position = Vector2(1702, -287)
