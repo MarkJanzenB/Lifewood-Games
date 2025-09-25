@@ -53,7 +53,7 @@ layout_mode = 2
 
 [node name="AmmoLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
-text = "Ammo: 0"
+text = "Cursed Stones: 0"
 
 [node name="Control" type="Control" parent="MarginContainer/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -69,4 +69,6 @@ theme_override_font_sizes/font_size = 50
 [node name="SpottedLabel" type="Label" parent="MarginContainer"]
 layout_mode = 2
 size_flags_horizontal = 4
-text = "SPOTTED!"
+theme_override_colors/font_color = Color(1, 0, 0, 1)
+theme_override_font_sizes/font_size = 20
+text = "!"
