@@ -48,8 +48,9 @@ var is_in_action: bool = false
 var target_for_sak: PlayerCharacter = null
 var is_dying: bool = false
 var can_move: bool = false  # Controlled by GameManager
-var can_attack: bool = false  # Controlled by GameManager
-var can_sak: bool = false  # Controlled by GameManager - separate SAK control
+# REFACTORED: Granular ability system - removed global can_attack
+var can_bang: bool = false  # Seeker BANG attack ability
+var can_sak: bool = false  # Hider SAK attack ability
 var max_ammo: int = 0  # Maximum ammo capacity (set by GameManager)
 
 # LOS (Line of Sight) system for Seeker
@@ -110,7 +111,7 @@ func _configure_multiplayer_authority():
 		# This is the local player - enable everything
 		is_main_player = true
 		can_move = true
-		can_attack = true
+		# REFACTORED: No default attack permissions - GameManager controls these
 		if camera:
 			camera.enabled = true
 			camera.make_current()
@@ -120,9 +121,9 @@ func setup_multiplayer_player(player_data: Dictionary, is_local: bool):
 	player_name = player_data.get("name", "Player")
 	is_main_player = is_local
 	
-	# Enable movement and attacks for all players
+	# Enable movement for all players - abilities controlled by GameManager
 	can_move = true
-	can_attack = true
+	# REFACTORED: Removed default attack permission
 	
 	# Update username display
 	update_username_display()
@@ -142,7 +143,11 @@ func enable_basic_controls() -> void:
 	"""DEPRECATED: Enable immediate movement and attack capabilities for testing"""
 	print("[Player] ⚠️ DEPRECATED: enable_basic_controls() bypasses GameManager authority")
 	can_move = true
-	can_attack = true
+	# REFACTORED: Enable role-specific abilities for testing
+	if role == PlayerRole.SEEKER:
+		can_bang = true
+	elif role == PlayerRole.HIDER:
+		can_sak = true
 	print("[Player] ", player_name, " - Basic controls enabled for MPS testing")
 
 func _create_username_label():
@@ -372,12 +377,16 @@ func _physics_process(delta: float):
 		# Handle animations for remote players based on movement
 		handle_remote_visuals()
 
-# DEPRECATED: Use set_initial_state() or set_game_state_controls() instead
+# DEPRECATED: Use set_initial_state() or set_ability_permissions() instead
 @rpc("any_peer", "call_local", "reliable")
 func set_player_state(p_can_move: bool, p_can_attack: bool) -> void:
-	print("[Player] ⚠️ DEPRECATED: set_player_state() called - use set_initial_state() or set_game_state_controls()")
+	print("[Player] ⚠️ DEPRECATED: set_player_state() called - use set_initial_state() or set_ability_permissions()")
 	self.can_move = p_can_move
-	self.can_attack = p_can_attack
+	# REFACTORED: Convert legacy can_attack to role-specific abilities
+	if role == PlayerRole.SEEKER:
+		self.can_bang = p_can_attack
+	elif role == PlayerRole.HIDER:
+		self.can_sak = p_can_attack
 
 # This is the single, authoritative function for setting a player's role.
 @rpc("any_peer", "call_local", "reliable")
@@ -422,10 +431,14 @@ func set_initial_state(role_int: int, ammo_count: int, p_can_move: bool, p_can_a
 		self.ammo = 0
 		print("[Player] ✅ ", player_name, " initialized as HIDER")
 	
-	# Set player permissions
+	# Set player permissions - REFACTORED: Role-specific abilities
 	self.can_move = p_can_move
-	self.can_attack = p_can_attack
-	self.can_sak = false  # Always start with SAK disabled, GameManager will enable it later
+	if new_role == PlayerRole.SEEKER:
+		self.can_bang = p_can_attack
+		self.can_sak = false  # Seekers cannot SAK
+	elif new_role == PlayerRole.HIDER:
+		self.can_bang = false  # Hiders cannot BANG
+		self.can_sak = false  # Start disabled, GameManager will enable later
 	
 	# CRITICAL: Configure local UI if this is the local player
 	if is_multiplayer_authority():
@@ -464,14 +477,26 @@ func set_ammo(new_ammo: int) -> void:
 		if game_manager and game_manager.has_method("update_ui"):
 			game_manager.update_ui()
 
-# New enhanced control system for game states
+# REFACTORED: Granular ability permission system
+@rpc("any_peer", "call_local", "reliable")
+func set_ability_permissions(p_can_move: bool, p_can_bang: bool, p_can_sak: bool) -> void:
+	"""Granular ability control system - role-specific permissions"""
+	self.can_move = p_can_move
+	self.can_bang = p_can_bang
+	self.can_sak = p_can_sak
+	print("[Player] Abilities updated for ", player_name, " - Move: ", can_move, " BANG: ", can_bang, " SAK: ", can_sak)
+
+# DEPRECATED: Legacy compatibility wrapper
 @rpc("any_peer", "call_local", "reliable")
 func set_game_state_controls(p_can_move: bool, p_can_attack: bool, p_can_sak: bool) -> void:
-	"""Enhanced control system with separate SAK control"""
+	"""DEPRECATED: Use set_ability_permissions() instead"""
+	print("[Player] ⚠️ DEPRECATED: set_game_state_controls() - use set_ability_permissions()")
 	self.can_move = p_can_move
-	self.can_attack = p_can_attack
-	self.can_sak = p_can_sak
-	print("[Player] Controls updated for ", player_name, " - Move: ", can_move, " Attack: ", can_attack, " SAK: ", can_sak)
+	if role == PlayerRole.SEEKER:
+		self.can_bang = p_can_attack
+	elif role == PlayerRole.HIDER:
+		self.can_sak = p_can_sak
+	print("[Player] Controls updated for ", player_name, " - Move: ", can_move, " BANG: ", can_bang, " SAK: ", can_sak)
 
 # Ammo regeneration system
 @rpc("any_peer", "call_local", "reliable")
@@ -545,7 +570,7 @@ func _input(event: InputEvent) -> void:
 	
 	# Handle fire input (both mouse and keyboard)
 	if Input.is_action_just_pressed("fire"):
-		print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanAttack: ", can_attack)
+		print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " Ammo: ", ammo, " CanBANG: ", can_bang, " CanSAK: ", can_sak)
 		_handle_fire_sak_input()
 
 # Alternative input handler in case _input is being consumed
@@ -563,8 +588,15 @@ func _unhandled_input(event: InputEvent) -> void:
 # PHASE 1: Simplified input handler for server-authoritative attacks
 func _handle_phase1_fire_input() -> void:
 	"""Phase 1: All players can fire projectiles regardless of role"""
-	if not can_attack:
-		print("[Player] Cannot attack - can_attack is false")
+	# REFACTORED: Check role-specific abilities
+	var can_perform_attack := false
+	if role == PlayerRole.SEEKER and can_bang:
+		can_perform_attack = true
+	elif role == PlayerRole.HIDER and can_sak:
+		can_perform_attack = true
+	
+	if not can_perform_attack:
+		print("[Player] Cannot attack - role-specific ability disabled")
 		return
 	if is_in_action:
 		print("[Player] Cannot attack - already in action")
@@ -576,19 +608,19 @@ func _handle_phase1_fire_input() -> void:
 
 # Simplified input handling - just send attack request to server
 func _handle_fire_sak_input() -> void:
-	print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " CanAttack: ", can_attack, " CanSak: ", can_sak)
+	print("[Player] FIRE INPUT DETECTED! Role: ", PlayerRole.keys()[role], " CanBANG: ", can_bang, " CanSAK: ", can_sak)
 	
 	# Simple client-side check - don't spam if already in action
 	if is_in_action:
 		print("[Player] Cannot attack - already in action")
 		return
 	
-	# CLIENT-SIDE VALIDATION: Check basic permissions
+	# REFACTORED: Role-specific ability validation
 	if role == PlayerRole.HIDER and not can_sak:
 		print("[Player] ❌ CLIENT: Hider cannot SAK yet - can_sak is false")
 		return
-	elif role == PlayerRole.SEEKER and not can_attack:
-		print("[Player] ❌ CLIENT: Seeker cannot attack yet - can_attack is false") 
+	elif role == PlayerRole.SEEKER and not can_bang:
+		print("[Player] ❌ CLIENT: Seeker cannot BANG yet - can_bang is false") 
 		return
 	elif role == PlayerRole.SEEKER and ammo <= 0:
 		print("[Player] ❌ CLIENT: Seeker has no ammo - ammo: ", ammo, "/", max_ammo)
@@ -633,10 +665,10 @@ func server_request_attack() -> void:
 
 func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> void:
 	"""Server validates Seeker BANG attack"""
-	# Check if Seeker can attack in current game state
-	if not can_attack:
-		print("[Player] ❌ Server rejected Seeker attack - can_attack is false")
-		show_temporary_message.rpc_id(requester_id, "Attacks disabled - wait for your turn!")
+	# REFACTORED: Check role-specific ability
+	if not can_bang:
+		print("[Player] ❌ Server rejected Seeker attack - can_bang is false")
+		show_temporary_message.rpc_id(requester_id, "BANG attacks disabled - wait for your turn!")
 		return
 	
 	# Check ammo requirement - Seeker needs at least 1 ammo to attack
@@ -706,7 +738,9 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	
 	# Disable all interactions immediately
 	can_move = false
-	can_attack = false
+	# REFACTORED: Disable all abilities
+	can_bang = false
+	can_sak = false
 	collision_shape.disabled = true
 	melee_range.monitoring = false
 	vision_cone.monitoring = false
@@ -1081,9 +1115,9 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 		print("[Player] Server rejected fire request - already in action")
 		return
 
-	# Server validation: ensure player can attack and has full ammo
-	if not can_attack or role != PlayerRole.SEEKER:
-		print("[Player] Server rejected fire request - can_attack: ", can_attack, " role: ", PlayerRole.keys()[role])
+	# REFACTORED: Server validation with granular ability check
+	if not can_bang or role != PlayerRole.SEEKER:
+		print("[Player] Server rejected fire request - can_bang: ", can_bang, " role: ", PlayerRole.keys()[role])
 		return
 	
 	# Seeker must have at least 1 ammo to attack

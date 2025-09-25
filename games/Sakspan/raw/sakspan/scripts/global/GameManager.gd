@@ -982,13 +982,23 @@ func _set_hiders_movement(enabled: bool):
 func _set_seekers_movement(enabled: bool):
 	_set_players_movement_by_role.rpc("seeker", enabled)
 
+# REFACTORED: Granular ability control functions
+func _set_hiders_sak(enabled: bool):
+	print("[GameManager] 🗡️ SERVER: Setting hider SAK permission: ", enabled)
+	_set_players_abilities_by_role.rpc("hider", false, enabled)
+
+func _set_seekers_bang(enabled: bool):
+	print("[GameManager] 🎯 SERVER: Setting seeker BANG permission: ", enabled)
+	_set_players_abilities_by_role.rpc("seeker", enabled, false)
+
+# DEPRECATED: Legacy compatibility wrappers
 func _set_hiders_attack(enabled: bool):
-	print("[GameManager] 🗡️ SERVER: Setting hider attack permission: ", enabled)
-	_set_players_attack_by_role.rpc("hider", enabled)
+	print("[GameManager] ⚠️ DEPRECATED: _set_hiders_attack() - use _set_hiders_sak()")
+	_set_hiders_sak(enabled)
 
 func _set_seekers_attack(enabled: bool):
-	print("[GameManager] 🎯 SERVER: Setting seeker attack permission: ", enabled)
-	_set_players_attack_by_role.rpc("seeker", enabled)
+	print("[GameManager] ⚠️ DEPRECATED: _set_seekers_attack() - use _set_seekers_bang()")
+	_set_seekers_bang(enabled)
 
 func end_game(winning_team: String) -> void:
 	if not multiplayer.is_server():
@@ -1321,15 +1331,16 @@ func _set_players_movement_by_role(role_filter: String, enabled: bool):
 	else:
 		print("[GameManager] ⚠️ Movement update skipped - role filter '", role_filter, "' doesn't match local player role: ", PlayerCharacter.PlayerRole.keys()[local_player.role])
 
+# REFACTORED: Granular ability permission system
 @rpc("any_peer", "call_local", "reliable")
-func _set_players_attack_by_role(role_filter: String, enabled: bool):
-	"""Set attack ability for players by role"""
-	print("[GameManager] 📡 RPC RECEIVED: _set_players_attack_by_role(", role_filter, ", ", enabled, ") on peer ", multiplayer.get_unique_id())
+func _set_players_abilities_by_role(role_filter: String, can_bang: bool, can_sak: bool):
+	"""Set granular abilities for players by role"""
+	print("[GameManager] 📡 RPC RECEIVED: _set_players_abilities_by_role(", role_filter, ", BANG=", can_bang, ", SAK=", can_sak, ") on peer ", multiplayer.get_unique_id())
 	print("[GameManager] 🔍 DEBUG: Connected peers: ", multiplayer.get_peers())
 	print("[GameManager] 🔍 DEBUG: Is server: ", multiplayer.is_server())
 
 	var players_in_scene = get_tree().get_nodes_in_group("player")
-	print("[GameManager] 🔍 DEBUG: Evaluating attack permissions for ", players_in_scene.size(), " players")
+	print("[GameManager] 🔍 DEBUG: Evaluating ability permissions for ", players_in_scene.size(), " players")
 
 	for player in players_in_scene:
 		if not player is PlayerCharacter:
@@ -1346,12 +1357,28 @@ func _set_players_attack_by_role(role_filter: String, enabled: bool):
 		if not should_apply:
 			continue
 
-		player.can_attack = enabled
-		if player.role == PlayerCharacter.PlayerRole.HIDER:
-			player.can_sak = enabled
-			print("[GameManager] ✅ Applied attack+sak=", enabled, " to Hider (", player.player_name, ") on peer ", multiplayer.get_unique_id())
-		else:
-			print("[GameManager] ✅ Applied attack=", enabled, " to Seeker (", player.player_name, ") on peer ", multiplayer.get_unique_id())
+		# Apply role-specific abilities
+		if player.role == PlayerCharacter.PlayerRole.SEEKER:
+			player.can_bang = can_bang
+			player.can_sak = false  # Seekers never SAK
+			print("[GameManager] ✅ Applied BANG=", can_bang, " to Seeker (", player.player_name, ") on peer ", multiplayer.get_unique_id())
+		elif player.role == PlayerCharacter.PlayerRole.HIDER:
+			player.can_bang = false  # Hiders never BANG
+			player.can_sak = can_sak
+			print("[GameManager] ✅ Applied SAK=", can_sak, " to Hider (", player.player_name, ") on peer ", multiplayer.get_unique_id())
+
+# DEPRECATED: Legacy compatibility wrapper
+@rpc("any_peer", "call_local", "reliable")
+func _set_players_attack_by_role(role_filter: String, enabled: bool):
+	"""DEPRECATED: Use _set_players_abilities_by_role() instead"""
+	print("[GameManager] ⚠️ DEPRECATED: _set_players_attack_by_role() - use _set_players_abilities_by_role()")
+	# Convert legacy call to new granular system
+	if role_filter == "seeker":
+		_set_players_abilities_by_role(role_filter, enabled, false)
+	elif role_filter == "hider":
+		_set_players_abilities_by_role(role_filter, false, enabled)
+	else:
+		_set_players_abilities_by_role(role_filter, enabled, enabled)
 
 @rpc("any_peer", "call_local", "reliable")
 func _activate_seeker_blindness():
