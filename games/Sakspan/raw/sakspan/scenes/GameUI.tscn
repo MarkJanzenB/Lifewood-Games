@@ -5,70 +5,158 @@
 [node name="GameUI" type="CanvasLayer"]
 script = ExtResource("1_jkspe")
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="TopBar" type="PanelContainer" parent="."]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 80.0
+grow_horizontal = 2
+
+[node name="TopBarBG" type="ColorRect" parent="TopBar"]
+layout_mode = 2
+color = Color(0.1, 0.1, 0.15, 0.9)
+
+[node name="TopBarContent" type="HBoxContainer" parent="TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="LeftSection" type="VBoxContainer" parent="TopBar/TopBarContent"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="StatusLabel" type="Label" parent="TopBar/TopBarContent/LeftSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Preparing..."
+
+[node name="HidersLabel" type="Label" parent="TopBar/TopBarContent/LeftSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "Hiders Left: 0"
+
+[node name="CenterSection" type="VBoxContainer" parent="TopBar/TopBarContent"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CountdownLabel" type="Label" parent="TopBar/TopBarContent/CenterSection"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 32
+horizontal_alignment = 1
+
+[node name="RightSection" type="VBoxContainer" parent="TopBar/TopBarContent"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AmmoContainer" type="HBoxContainer" parent="TopBar/TopBarContent/RightSection"]
+layout_mode = 2
+size_flags_horizontal = 8
+
+[node name="AmmoIcon" type="Label" parent="TopBar/TopBarContent/RightSection/AmmoContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
+theme_override_font_sizes/font_size = 16
+text = "🔮"
+
+[node name="AmmoLabel" type="Label" parent="TopBar/TopBarContent/RightSection/AmmoContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
+theme_override_font_sizes/font_size = 16
+text = "Cursed Stones: 0"
+
+[node name="KillFeedContainer" type="VBoxContainer" parent="."]
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -350.0
+offset_top = -100.0
+offset_bottom = 100.0
+grow_horizontal = 0
+
+[node name="KillFeedBG" type="NinePatchRect" parent="KillFeedContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="KillFeedLabel" type="RichTextLabel" parent="KillFeedContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+text = "[center][color=yellow]Kill Feed[/color][/center]"
+fit_content = true
+
+[node name="SpottedIndicator" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -75.0
+offset_right = 150.0
+offset_bottom = 75.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="SpottedBG" type="NinePatchRect" parent="SpottedIndicator"]
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 20
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
-layout_mode = 2
+[node name="SpottedLabel" type="Label" parent="SpottedIndicator"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 28
+text = "⚠️ SPOTTED! ⚠️"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 4
-size_flags_vertical = 4
+[node name="GhostOverlay" type="Control" parent="."]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="Control2" type="Control" parent="MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
+[node name="GhostBG" type="ColorRect" parent="GhostOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.2, 0.4, 0.8, 0.3)
 
-[node name="StatusLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 4
-
-[node name="Control3" type="Control" parent="MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-
-[node name="KillFeedLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 6
-text = "Kill Feed Appears Here"
-
-[node name="HidersLabel" type="Label" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-text = "Hiders Left: 0"
-
-[node name="Control" type="Control" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 4
-size_flags_vertical = 6
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="AmmoLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-text = "Cursed Stones: 0"
-
-[node name="Control" type="Control" parent="MarginContainer/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-
-[node name="Control2" type="Control" parent="MarginContainer/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-
-[node name="CountdownLabel" type="Label" parent="MarginContainer"]
-layout_mode = 2
-size_flags_horizontal = 4
-theme_override_font_sizes/font_size = 50
-
-[node name="SpottedLabel" type="Label" parent="MarginContainer"]
-layout_mode = 2
-size_flags_horizontal = 4
-theme_override_colors/font_color = Color(1, 0, 0, 1)
+[node name="GhostLabel" type="Label" parent="GhostOverlay"]
+layout_mode = 0
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -60.0
+offset_right = 300.0
+offset_bottom = -20.0
+theme_override_colors/font_color = Color(0.7, 0.9, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
 theme_override_font_sizes/font_size = 20
-text = "!"
+text = "👻 SPECTATING AS GHOST"

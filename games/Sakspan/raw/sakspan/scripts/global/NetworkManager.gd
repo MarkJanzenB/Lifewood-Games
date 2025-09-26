@@ -528,18 +528,45 @@ func rpc_load_world() -> void:
 	get_tree().change_scene_to_file(target_scene)
 
 func _on_gameprep_scene_changed() -> void:
-	"""Called when GamePrep scene loads - emits all_peers_verified_and_ready for GameManager"""
-	if not multiplayer.is_server():
-		return
-	
+	"""Called when GamePrep scene loads - clients report readiness, server emits signal when all ready"""
 	var current_scene = get_tree().current_scene
 	if current_scene and current_scene.scene_file_path == GAMEPREP_SCENE_PATH:
-		print("[NetworkManager] 🎯 GamePrep scene loaded, waiting one frame...")
+		print("[NetworkManager] 🎯 GamePrep scene loaded on peer ", multiplayer.get_unique_id(), ", waiting one frame...")
 		
 		# Wait one frame to ensure scene is fully initialized
 		await get_tree().process_frame
 		
-		print("[NetworkManager] 🚀 Emitting all_peers_verified_and_ready signal for GamePrep")
+		if multiplayer.is_server():
+			# Server: Check if we need to wait for clients or can proceed immediately
+			if players.size() == 1:
+				# Single player - proceed immediately
+				print("[NetworkManager] 🚀 Single player GamePrep ready, emitting all_peers_verified_and_ready signal")
+				all_peers_verified_and_ready.emit()
+			else:
+				# Multiplayer - wait for all clients to report readiness
+				print("[NetworkManager] 🕐 Server GamePrep ready, waiting for ", players.size() - 1, " clients to report readiness")
+		else:
+			# Client: Report readiness to server
+			print("[NetworkManager] 📡 Client ", multiplayer.get_unique_id(), " reporting GamePrep readiness to server")
+			rpc_report_gameprep_ready.rpc_id(1)  # Send to server (ID 1)
+
+@rpc("any_peer", "call_local", "reliable")
+func rpc_report_gameprep_ready() -> void:
+	"""RPC called by clients to report GamePrep scene readiness to server"""
+	if not multiplayer.is_server():
+		return
+	
+	var sender_id = multiplayer.get_remote_sender_id()
+	print("[NetworkManager] 📡 Received GamePrep readiness from peer ", sender_id)
+	
+	# Add to ready list if not already there
+	if not sender_id in ready_peers:
+		ready_peers.append(sender_id)
+		print("[NetworkManager] GamePrep ready peers: ", ready_peers.size(), "/", players.size())
+	
+	# Check if all peers are ready (including server)
+	if ready_peers.size() >= players.size() - 1:  # -1 because server doesn't report via RPC
+		print("[NetworkManager] 🚀 All peers GamePrep ready, emitting all_peers_verified_and_ready signal")
 		all_peers_verified_and_ready.emit()
 
 # DEBUG FUNCTION - Remove in production

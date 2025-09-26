@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://c7s3d55ma5x4d" path="res://scenes/GameUI.tscn" id="2_game_ui"]
 
 [node name="DevWorld" type="Node2D"]
+scale = Vector2(0.717678, 0.717678)
 script = ExtResource("1_dev_world")
 
 [node name="Background" type="TextureRect" parent="."]
@@ -21,6 +22,7 @@ scale = Vector2(0.872326, 0.875423)
 size_flags_horizontal = 3
 size_flags_vertical = 3
 texture = ExtResource("2_ep40k")
+metadata/_edit_use_anchors_ = true
 
 [node name="PlayerContainer" type="Node2D" parent="."]
 position = Vector2(1992, 176)
@@ -29,7 +31,7 @@ scale = Vector2(0.430302, 0.430302)
 [node name="SpawnPoints" type="Node2D" parent="."]
 
 [node name="SafeSpawn1" type="Marker2D" parent="SpawnPoints"]
-position = Vector2(500, 500)
+position = Vector2(1757.06, -894.552)
 
 [node name="SafeSpawn2" type="Marker2D" parent="SpawnPoints"]
 position = Vector2(1568, -258)

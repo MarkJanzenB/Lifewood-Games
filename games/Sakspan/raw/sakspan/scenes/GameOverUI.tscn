@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://320ewn5tfg2t"]
 
-[ext_resource type="Script" path="res://scripts/game_over_ui.gd" id="1_wv210"]
+[ext_resource type="Script" uid="uid://q1ccdlnlqqeu" path="res://scripts/game_over_ui.gd" id="1_wv210"]
 
 [node name="GameOverUI" type="CanvasLayer"]
 visible = false
@@ -43,3 +43,18 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="CenterContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ButtonContainer" type="HBoxContainer" parent="CenterContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="ReturnToLobbyButton" type="Button" parent="CenterContainer/VBoxContainer/ButtonContainer"]
+layout_mode = 2
+text = "Return to Lobby"
+
+[node name="QuitGameButton" type="Button" parent="CenterContainer/VBoxContainer/ButtonContainer"]
+layout_mode = 2
+text = "Quit Game"

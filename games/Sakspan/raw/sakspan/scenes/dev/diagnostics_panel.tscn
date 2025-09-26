@@ -1,6 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://bvxutcwowo0p4"]
-
-[ext_resource type="Script" path="res://scripts/dev/diagnostics_panel.gd" id="1_3m1d6"]
+[gd_scene format=3 uid="uid://bvxutcwowo0p4"]
 
 [node name="DiagnosticsPanel" type="Panel"]
 anchors_preset = 1
@@ -10,7 +8,6 @@ offset_left = -400.0
 offset_top = 8.0
 offset_right = -8.0
 offset_bottom = 150.0
-script = ExtResource("1_3m1d6")
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 0

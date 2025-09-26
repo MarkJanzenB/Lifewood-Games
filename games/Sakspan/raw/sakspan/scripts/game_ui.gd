@@ -4,14 +4,23 @@ class_name GameUI
 extends CanvasLayer
 
 # --- NODE REFERENCES ---
-# Match GameUI.tscn layout precisely
-@onready var countdown_label: Label = get_node_or_null("MarginContainer/CountdownLabel")
-@onready var ammo_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer2/AmmoLabel")
-@onready var hiders_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HidersLabel")
-@onready var kill_feed_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer/KillFeedLabel")
-@onready var status_label: Label = get_node_or_null("MarginContainer/VBoxContainer/HBoxContainer/StatusLabel")
-@onready var spotted_label: Label = get_node_or_null("MarginContainer/SpottedLabel")
+# Modern GameUI layout references
+@onready var countdown_label: Label = get_node_or_null("TopBar/TopBarContent/CenterSection/CountdownLabel")
+@onready var ammo_label: Label = get_node_or_null("TopBar/TopBarContent/RightSection/AmmoContainer/AmmoLabel")
+@onready var ammo_icon: Label = get_node_or_null("TopBar/TopBarContent/RightSection/AmmoContainer/AmmoIcon")
+@onready var hiders_label: Label = get_node_or_null("TopBar/TopBarContent/LeftSection/HidersLabel")
+@onready var kill_feed_label: RichTextLabel = get_node_or_null("KillFeedContainer/KillFeedLabel")
+@onready var status_label: Label = get_node_or_null("TopBar/TopBarContent/LeftSection/StatusLabel")
+@onready var spotted_indicator: Control = get_node_or_null("SpottedIndicator")
+@onready var spotted_label: Label = get_node_or_null("SpottedIndicator/SpottedLabel")
+@onready var ghost_overlay: Control = get_node_or_null("GhostOverlay")
+@onready var ghost_label: Label = get_node_or_null("GhostOverlay/GhostLabel")
 @onready var spotted_timer: Timer = Timer.new()
+
+# Animation tweens
+var spotted_tween: Tween
+var kill_feed_tween: Tween
+var ghost_transition_tween: Tween
 
 var local_player_role: PlayerCharacter.PlayerRole = PlayerCharacter.PlayerRole.HIDER  # Default to HIDER
 
@@ -29,19 +38,43 @@ func _ready():
 	else:
 		print("[GameUI] ❌ Failed to register with GameManager")
 		
+	# Initialize timers and UI elements
 	add_child(spotted_timer)
-	spotted_timer.wait_time = 2.0
+	spotted_timer.wait_time = 3.0
 	spotted_timer.one_shot = true
-	spotted_timer.timeout.connect(func(): if spotted_label: spotted_label.visible = false)
+	spotted_timer.timeout.connect(_hide_spotted_alert_with_animation)
 	
+	# Initialize UI elements
+	_initialize_modern_ui()
+	
+	# Hide dynamic elements initially
+	if spotted_indicator:
+		spotted_indicator.visible = false
+		spotted_indicator.modulate.a = 0.0
+	if ghost_overlay:
+		ghost_overlay.visible = false
+		ghost_overlay.modulate.a = 0.0
+
+func _initialize_modern_ui():
+	"""Initialize the modern UI with proper styling and animations"""
 	if kill_feed_label: 
-		kill_feed_label.text = ""
+		kill_feed_label.text = "[center][color=yellow]Kill Feed[/color][/center]"
 	else: 
 		push_warning("[GameUI] KillFeedLabel not found")
+		
 	if status_label: 
-		status_label.text = ""
+		status_label.text = "Preparing..."
 	else: 
 		push_warning("[GameUI] StatusLabel not found")
+		
+	if ammo_label:
+		ammo_label.text = "Cursed Stones: 0"
+	if hiders_label:
+		hiders_label.text = "Hiders Left: 0"
+		
+	# Add subtle pulsing animation to ammo icon
+	if ammo_icon:
+		_start_ammo_icon_animation()
 
 func initialize(player: PlayerCharacter):
 	local_player_role = player.role
@@ -68,7 +101,8 @@ func configure_for_role(role: PlayerCharacter.PlayerRole):
 func update_ammo(count: int):
 	if local_player_role == PlayerCharacter.PlayerRole.SEEKER:
 		if ammo_label:
-			ammo_label.text = "Ammo: " + str(count)
+			ammo_label.text = "Cursed Stones: " + str(count)
+			_animate_ammo_update(count)
 
 func update_hiders_left(count: int):
 	if hiders_label:
@@ -76,63 +110,241 @@ func update_hiders_left(count: int):
 
 func show_kill_feed(message: String):
 	if kill_feed_label:
-		fade_out_label(kill_feed_label, message)
+		_show_modern_kill_feed(message)
+
+func _show_modern_kill_feed(message: String):
+	"""Show kill feed with modern styling and animation"""
+	if not kill_feed_label:
+		return
+		
+	print("[GameUI] 💀 Showing modern kill feed: ", message)
+	
+	# Format the message with BBCode
+	var formatted_message = "[center][color=yellow]Kill Feed[/color][/center]\n[center][color=red]💀 " + message + " 💀[/color][/center]"
+	
+	# Stop any existing animation
+	if kill_feed_tween:
+		kill_feed_tween.kill()
+	
+	# Set the message and prepare animation
+	kill_feed_label.text = formatted_message
+	kill_feed_label.modulate.a = 0.0
+	kill_feed_label.scale = Vector2(0.8, 0.8)
+	
+	# Create entrance animation
+	kill_feed_tween = create_tween()
+	kill_feed_tween.set_parallel(true)
+	
+	# Fade in and scale up
+	kill_feed_tween.tween_property(kill_feed_label, "modulate:a", 1.0, 0.3)
+	kill_feed_tween.tween_property(kill_feed_label, "scale", Vector2(1.1, 1.1), 0.3).set_trans(Tween.TRANS_BACK)
+	kill_feed_tween.tween_property(kill_feed_label, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.3)
+	
+	# Hold for a moment, then fade out
+	kill_feed_tween.tween_property(kill_feed_label, "modulate:a", 0.0, 0.5).set_delay(3.0)
+	kill_feed_tween.tween_property(kill_feed_label, "scale", Vector2(0.8, 0.8), 0.5).set_delay(3.0)
+	
+	# Reset to default after animation
+	kill_feed_tween.tween_callback(func(): 
+		kill_feed_label.text = "[center][color=yellow]Kill Feed[/color][/center]"
+		kill_feed_label.modulate.a = 1.0
+		kill_feed_label.scale = Vector2(1.0, 1.0)
+	).set_delay(3.5)
 
 func show_spotted(is_visible: bool):
-	print("[GameUI] 🎯 show_spotted called - is_visible: ", is_visible, " local_role: ", local_player_role, " spotted_label exists: ", spotted_label != null)
+	print("[GameUI] 🎯 show_spotted called - is_visible: ", is_visible, " local_role: ", local_player_role, " spotted_indicator exists: ", spotted_indicator != null)
 	
 	if local_player_role == PlayerCharacter.PlayerRole.HIDER:
-		if spotted_label:
+		if spotted_indicator:
 			if is_visible:
 				_show_spotted_alert_with_animation()
 			else:
 				_hide_spotted_alert_with_animation()
 		else:
-			print("[GameUI] ❌ spotted_label is null - cannot show spotted alert")
+			print("[GameUI] ❌ spotted_indicator is null - cannot show spotted alert")
 	else:
 		print("[GameUI] ⚠️ Not showing spotted alert - player is not a HIDER (role: ", local_player_role, ")")
 
 func _show_spotted_alert_with_animation():
-	"""Show spotted alert with dramatic animation"""
-	if not spotted_label:
+	"""Show modern spotted alert with dramatic animation"""
+	if not spotted_indicator or not spotted_label:
 		return
 		
-	print("[GameUI] 🚨 Showing SPOTTED alert with animation")
+	print("[GameUI] 🚨 Showing MODERN SPOTTED alert with animation")
 	
-	# Configure the spotted label
-	spotted_label.text = "⚠️ SPOTTED! ⚠️"
-	spotted_label.visible = true
-	spotted_label.modulate = Color.RED
-	spotted_label.add_theme_font_size_override("font_size", 36)
-	spotted_label.add_theme_color_override("font_shadow_color", Color.BLACK)
-	spotted_label.add_theme_constant_override("shadow_offset_x", 3)
-	spotted_label.add_theme_constant_override("shadow_offset_y", 3)
+	# Stop any existing animation
+	if spotted_tween:
+		spotted_tween.kill()
 	
-	# Start with invisible and small
-	spotted_label.modulate.a = 0.0
-	spotted_label.scale = Vector2(0.5, 0.5)
+	# Make indicator visible and reset properties
+	spotted_indicator.visible = true
+	spotted_indicator.modulate.a = 0.0
+	spotted_indicator.scale = Vector2(0.3, 0.3)
+	spotted_indicator.rotation = 0.0
 	
 	# Create dramatic entrance animation
-	var tween = create_tween()
-	tween.set_parallel(true)
+	spotted_tween = create_tween()
+	spotted_tween.set_parallel(true)
 	
 	# Fade in and scale up
-	tween.tween_property(spotted_label, "modulate:a", 1.0, 0.3)
-	tween.tween_property(spotted_label, "scale", Vector2(1.3, 1.3), 0.3)
-	tween.tween_property(spotted_label, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.3)
+	spotted_tween.tween_property(spotted_indicator, "modulate:a", 1.0, 0.3)
+	spotted_tween.tween_property(spotted_indicator, "scale", Vector2(1.2, 1.2), 0.3).set_trans(Tween.TRANS_BACK)
 	
-	# Add pulsing effect
-	tween.tween_callback(_start_spotted_pulse).set_delay(0.5)
+	# Slight rotation shake
+	spotted_tween.tween_property(spotted_indicator, "rotation", deg_to_rad(-5), 0.1)
+	spotted_tween.tween_property(spotted_indicator, "rotation", deg_to_rad(5), 0.1).set_delay(0.1)
+	spotted_tween.tween_property(spotted_indicator, "rotation", 0.0, 0.1).set_delay(0.2)
 	
-	# Auto-hide after some time
+	# Scale back to normal
+	spotted_tween.tween_property(spotted_indicator, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.3)
+	
+	# Pulsing effect
+	var pulse_tween = create_tween()
+	pulse_tween.set_loops()
+	pulse_tween.tween_property(spotted_indicator, "scale", Vector2(1.05, 1.05), 0.5)
+	pulse_tween.tween_property(spotted_indicator, "scale", Vector2(1.0, 1.0), 0.5)
+	
+	# Auto-hide after timer
 	spotted_timer.start()
 
 func _hide_spotted_alert_with_animation():
-	"""Hide spotted alert with fade out animation"""
-	if not spotted_label or not spotted_label.visible:
+	"""Hide spotted alert with smooth animation"""
+	if not spotted_indicator:
 		return
 		
-	print("[GameUI] ❌ Hiding SPOTTED alert")
+	print("[GameUI] 🔇 Hiding SPOTTED alert with animation")
+	
+	# Stop any existing animation
+	if spotted_tween:
+		spotted_tween.kill()
+	
+	# Create exit animation
+	spotted_tween = create_tween()
+	spotted_tween.set_parallel(true)
+	
+	# Fade out and scale down
+	spotted_tween.tween_property(spotted_indicator, "modulate:a", 0.0, 0.5)
+	spotted_tween.tween_property(spotted_indicator, "scale", Vector2(0.3, 0.3), 0.5).set_trans(Tween.TRANS_BACK)
+	
+	# Hide when animation completes
+	spotted_tween.tween_callback(func(): spotted_indicator.visible = false).set_delay(0.5)
+
+func _start_ammo_icon_animation():
+	"""Start subtle pulsing animation for ammo icon"""
+	if not ammo_icon:
+		return
+	
+	var ammo_tween = create_tween()
+	ammo_tween.set_loops()
+	ammo_tween.tween_property(ammo_icon, "modulate:a", 0.7, 1.0)
+	ammo_tween.tween_property(ammo_icon, "modulate:a", 1.0, 1.0)
+
+func _animate_ammo_update(count: int):
+	"""Animate ammo count changes"""
+	if not ammo_label or not ammo_icon:
+		return
+	
+	# Create a brief highlight animation
+	var highlight_tween = create_tween()
+	highlight_tween.set_parallel(true)
+	
+	# Scale pulse
+	highlight_tween.tween_property(ammo_label, "scale", Vector2(1.2, 1.2), 0.1)
+	highlight_tween.tween_property(ammo_label, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.1)
+	
+	# Color flash based on ammo count
+	var flash_color = Color.GREEN if count > 0 else Color.RED
+	highlight_tween.tween_property(ammo_label, "modulate", flash_color, 0.1)
+	highlight_tween.tween_property(ammo_label, "modulate", Color(1, 0.8, 0.2, 1), 0.2).set_delay(0.1)
+	
+	# Icon animation
+	highlight_tween.tween_property(ammo_icon, "scale", Vector2(1.3, 1.3), 0.1)
+	highlight_tween.tween_property(ammo_icon, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.1)
+
+func show_ghost_overlay():
+	"""Show ghost overlay with smooth transition"""
+	if not ghost_overlay:
+		return
+		
+	print("[GameUI] 👻 Showing ghost overlay")
+	
+	ghost_overlay.visible = true
+	ghost_overlay.modulate.a = 0.0
+	
+	if ghost_transition_tween:
+		ghost_transition_tween.kill()
+	
+	ghost_transition_tween = create_tween()
+	ghost_transition_tween.tween_property(ghost_overlay, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
+
+func hide_ghost_overlay():
+	"""Hide ghost overlay with smooth transition"""
+	if not ghost_overlay:
+		return
+		
+	print("[GameUI] 👻 Hiding ghost overlay")
+	
+	if ghost_transition_tween:
+		ghost_transition_tween.kill()
+	
+	ghost_transition_tween = create_tween()
+	ghost_transition_tween.tween_property(ghost_overlay, "modulate:a", 0.0, 1.0).set_trans(Tween.TRANS_SINE)
+	ghost_transition_tween.tween_callback(func(): ghost_overlay.visible = false).set_delay(1.0)
+
+func update_countdown(time_left, is_visible: bool = true):
+	"""Update countdown with dramatic animation - supports both int and string"""
+	if not countdown_label:
+		return
+	
+	# Handle both int and string inputs
+	var text: String
+	if time_left is int:
+		text = str(time_left)
+	else:
+		text = str(time_left)
+	
+	countdown_label.text = text
+	countdown_label.visible = is_visible
+	
+	# Create dramatic countdown animation
+	var countdown_tween = create_tween()
+	countdown_tween.set_parallel(true)
+	
+	# Scale animation
+	countdown_tween.tween_property(countdown_label, "scale", Vector2(1.5, 1.5), 0.1)
+	countdown_tween.tween_property(countdown_label, "scale", Vector2(1.0, 1.0), 0.4).set_delay(0.1)
+	
+	# Color animation based on urgency
+	var urgency_color: Color
+	if text.is_valid_int():
+		var count = text.to_int()
+		if count <= 3:
+			urgency_color = Color.RED
+		elif count <= 10:
+			urgency_color = Color.YELLOW
+		else:
+			urgency_color = Color.WHITE
+	elif text == "GO!":
+		urgency_color = Color.GREEN
+		countdown_tween.tween_property(countdown_label, "scale", Vector2(2.0, 2.0), 0.2)
+		countdown_tween.tween_callback(func(): countdown_label.visible = false).set_delay(1.0)
+	else:
+		urgency_color = Color.WHITE
+	
+	countdown_tween.tween_property(countdown_label, "modulate", urgency_color, 0.1)
+	countdown_tween.tween_property(countdown_label, "modulate", Color.WHITE, 0.4).set_delay(0.1)
+
+func show_status_message(message: String):
+	"""Show status message with animation"""
+	if not status_label:
+		return
+	
+	status_label.text = message
+	
+	# Brief highlight animation
+	var status_tween = create_tween()
+	status_tween.tween_property(status_label, "modulate", Color.CYAN, 0.2)
+	status_tween.tween_property(status_label, "modulate", Color(0.9, 0.9, 1, 1), 0.3).set_delay(0.2)
 	
 	# Stop timer
 	spotted_timer.stop()
@@ -155,45 +367,7 @@ func _start_spotted_pulse():
 	pulse_tween.tween_property(spotted_label, "modulate", Color.YELLOW, 0.5)
 	pulse_tween.tween_property(spotted_label, "modulate", Color.RED, 0.5)
 
-func update_countdown(text: String, is_visible: bool):
-	"""Enhanced dramatic countdown display"""
-	if countdown_label:
-		countdown_label.text = text
-		countdown_label.visible = is_visible
-		
-		# Make countdown more dramatic
-		if text.is_valid_int():
-			var count = text.to_int()
-			if count <= 3 and count > 0:
-				# Critical countdown - make it red and larger
-				countdown_label.modulate = Color.RED
-				countdown_label.scale = Vector2(1.5, 1.5)
-				# Add pulsing effect
-				var tween = create_tween()
-				tween.tween_property(countdown_label, "scale", Vector2(1.8, 1.8), 0.3)
-				tween.tween_property(countdown_label, "scale", Vector2(1.5, 1.5), 0.3)
-			elif count <= 10:
-				# Warning countdown - make it orange
-				countdown_label.modulate = Color.ORANGE
-				countdown_label.scale = Vector2(1.2, 1.2)
-			else:
-				# Normal countdown
-				countdown_label.modulate = Color.WHITE
-				countdown_label.scale = Vector2(1.0, 1.0)
-		elif text == "GO!":
-			# Dramatic GO! message
-			countdown_label.modulate = Color.GREEN
-			countdown_label.scale = Vector2(2.0, 2.0)
-			var tween = create_tween()
-			tween.tween_property(countdown_label, "scale", Vector2(2.5, 2.5), 0.2)
-			tween.tween_property(countdown_label, "scale", Vector2(2.0, 2.0), 0.2)
-			tween.tween_callback(func(): countdown_label.visible = false).set_delay(1.0)
-		else:
-			# Reset to normal
-			countdown_label.modulate = Color.WHITE
-			countdown_label.scale = Vector2(1.0, 1.0)
-		
-		print("[GameUI] 📡 CLIENT RECEIVED: Countdown updated to '", text, "' (Peer: ", multiplayer.get_unique_id(), ")")
+# Duplicate update_countdown function removed
 
 func update_status(text: String, is_visible: bool):
 	if status_label:
@@ -218,120 +392,16 @@ func show_dramatic_announcement(message: String):
 		tween.tween_callback(func(): fade_out_label(status_label, message)).set_delay(2.0)
 
 # Called by GameManager when the match ends - handles both signatures
-func show_game_over(param1, param2: String) -> void:
-	print("[GameUI] 🎬 show_game_over called - param1: ", param1, " param2: ", param2)
-	
-	var did_i_win = false
-	var message = param2
-	
-	# Handle different parameter types
-	if typeof(param1) == TYPE_BOOL:
-		# Called with (bool, String) - direct win/lose
-		did_i_win = param1
-	elif typeof(param1) == TYPE_STRING:
-		# Called with (String, String) - team name and message
-		var winning_team = param1
-		# Determine if local player won based on their role
-		if local_player_role == PlayerCharacter.PlayerRole.SEEKER and winning_team == "Seekers":
-			did_i_win = true
-		elif local_player_role == PlayerCharacter.PlayerRole.HIDER and winning_team == "Hiders":
-			did_i_win = true
-	
-	_create_game_over_overlay(did_i_win, message)
-
-func _create_game_over_overlay(did_i_win: bool, message: String) -> void:
-	"""Create a full-screen game over overlay"""
-	print("[GameUI] 🎨 Creating game over overlay")
-	
-	# Hide existing UI elements
-	if countdown_label: countdown_label.visible = false
-	if status_label: status_label.visible = false
-	if ammo_label: ammo_label.visible = false
-	if hiders_label: hiders_label.visible = false
-	if kill_feed_label: kill_feed_label.visible = false
-	if spotted_label: spotted_label.visible = false
-	
-	# Create full-screen overlay
-	var overlay = ColorRect.new()
-	overlay.name = "GameOverOverlay"
-	overlay.color = Color(0, 0, 0, 0.8)  # Semi-transparent black
-	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.z_index = 1000  # Ensure it's on top
-	add_child(overlay)
-	
-	# Create main container with proper centering
-	var main_container = VBoxContainer.new()
-	main_container.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	main_container.add_theme_constant_override("separation", 30)
-	main_container.custom_minimum_size = Vector2(400, 300)  # Set minimum size
-	overlay.add_child(main_container)
-	
-	# Create title label
-	var title_label = Label.new()
-	title_label.text = "GAME OVER"
-	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_label.add_theme_font_size_override("font_size", 48)
-	title_label.add_theme_color_override("font_color", Color.WHITE)
-	main_container.add_child(title_label)
-	
-	# Create result label
-	var result_label = Label.new()
-	if did_i_win:
-		result_label.text = "🎉 YOU WIN! 🎉"
-		result_label.add_theme_color_override("font_color", Color.GREEN)
-	else:
-		result_label.text = "💀 YOU LOSE 💀"
-		result_label.add_theme_color_override("font_color", Color.RED)
-	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	result_label.add_theme_font_size_override("font_size", 36)
-	main_container.add_child(result_label)
-	
-	# Create message label
-	var message_label = Label.new()
-	message_label.text = message
-	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	message_label.add_theme_font_size_override("font_size", 24)
-	message_label.add_theme_color_override("font_color", Color.WHITE)
-	message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	message_label.custom_minimum_size = Vector2(400, 0)
-	main_container.add_child(message_label)
-	
-	# Create button container
-	var button_container = HBoxContainer.new()
-	button_container.add_theme_constant_override("separation", 20)
-	main_container.add_child(button_container)
-	
-	# Create "Return to Lobby" button
-	var lobby_button = Button.new()
-	lobby_button.text = "Return to Lobby"
-	lobby_button.custom_minimum_size = Vector2(150, 50)
-	lobby_button.pressed.connect(_on_return_to_lobby_pressed)
-	button_container.add_child(lobby_button)
-	
-	# Create "Quit Game" button
-	var quit_button = Button.new()
-	quit_button.text = "Quit Game"
-	quit_button.custom_minimum_size = Vector2(150, 50)
-	quit_button.pressed.connect(_on_quit_game_pressed)
-	button_container.add_child(quit_button)
-	
-	# Add entrance animation
-	var tween = create_tween()
-	overlay.modulate.a = 0.0
-	main_container.scale = Vector2(0.5, 0.5)
-	tween.parallel().tween_property(overlay, "modulate:a", 1.0, 0.5)
-	tween.parallel().tween_property(main_container, "scale", Vector2(1.0, 1.0), 0.5)
-	tween.tween_callback(func(): print("[GameUI] ✅ Game Over overlay animation complete"))
-	
-	print("[GameUI] ✅ Game Over overlay created successfully")
+# REMOVED: Game over overlay functionality - now handled by dedicated GameOverUI scene
+# GameUI no longer creates game over overlays to maintain clean separation of concerns
 
 func _on_return_to_lobby_pressed() -> void:
 	"""Handle return to lobby button press"""
 	print("[GameUI] 🏠 Return to Lobby pressed")
 	# Let GameManager handle the transition
 	var game_manager = get_node_or_null("/root/GameManager")
-	if game_manager and game_manager.has_method("return_to_lobby"):
-		game_manager.return_to_lobby()
+	if game_manager and game_manager.has_method("reset_to_lobby"):
+		game_manager.reset_to_lobby()
 	else:
 		# Fallback: transition directly
 		get_tree().change_scene_to_file("res://scenes/multiplayer_menu.tscn")

@@ -431,7 +431,7 @@ func assign_role(new_role: PlayerRole, max_ammo: int = 0) -> void:
 @rpc("any_peer", "call_local", "reliable")
 func set_initial_state(role_int: int, ammo_count: int, p_can_move: bool, p_can_attack: bool) -> void:
 	"""Complete player initialization from server - sets role, ammo, permissions, and UI"""
-	print("[Player] 📡 RECEIVED: set_initial_state - role=", role_int, ", ammo=", ammo_count, ", move=", p_can_move, ", attack=", p_can_attack, " (Peer: ", multiplayer.get_unique_id(), ")")
+	# RPC logging reduced for production
 	
 	# Set role and group membership
 	var new_role = role_int as PlayerRole
@@ -588,11 +588,7 @@ func _input(event: InputEvent) -> void:
 			print("[Player] 👻 Ghost cannot attack!")
 			return
 	
-	# DEBUG: Test spotted alert with T key (now uses GameUI)
-	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_T and is_main_player:
-			print("[Player] 🔴 DEBUG: T pressed - testing GameUI spotted alert")
-			debug_test_gameui_spotted_alert()
+	# Debug test removed for production
 	# Only the authority handles inputs
 	if not is_multiplayer_authority(): 
 		return
@@ -856,6 +852,13 @@ func become_ghost() -> void:
 	
 	# Update ghost visibility for all players
 	_update_ghost_visibility_for_all_players.rpc()
+	
+	# Show ghost overlay in UI if this is the main player
+	if is_main_player:
+		var game_ui = _find_game_ui()
+		if game_ui and game_ui.has_method("show_ghost_overlay"):
+			game_ui.show_ghost_overlay()
+			print("[Player] 👻 Ghost overlay shown in UI")
 	
 	# Show ghost status to local player
 	if is_main_player:
@@ -1327,7 +1330,7 @@ func _request_spotted_alert(target_id: int, show: bool):
 @rpc("authority", "call_local", "reliable")
 func _trigger_spotted_alert():
 	"""RPC to trigger spotted alert on this client's GameUI"""
-	print("[Player] 📡 RECEIVED: _trigger_spotted_alert on ", player_name, " (Role: ", role, ", Main: ", is_main_player, ")")
+	# Spotted alert RPC logging reduced
 	
 	# Only show for local Hiders
 	if role != PlayerRole.HIDER or not is_main_player:
@@ -1387,7 +1390,7 @@ func _hide_spotted_alert():
 @rpc("any_peer", "call_local", "reliable")
 func set_spotted_status(is_spotted: bool) -> void:
 	"""Server-authoritative spotted status for hiders"""
-	print("[Player] 📡 RECEIVED: set_spotted_status - ", is_spotted, " for ", player_name, " (Peer: ", multiplayer.get_unique_id(), ")")
+	# Spotted status RPC logging reduced
 	
 	# Only applies to Hiders
 	if role != PlayerRole.HIDER:
@@ -1459,7 +1462,7 @@ func _on_animated_sprite_2d_animation_finished() -> void:
 		print("[Player] ✅ Reset is_in_action to false for ", player_name) 
 
 func _on_animated_sprite_2d_frame_changed() -> void:
-	print("[Player] Frame changed - Animation: ", animated_sprite.animation, " Frame: ", animated_sprite.frame, " on ", player_name)
+	# Frame change logging removed to reduce output flooding
 	
 	# SEEKER BANG: Projectile spawns on frame 2 (server-authoritative)
 	if animated_sprite.animation == "seeker_bang":
@@ -1665,32 +1668,10 @@ func _on_vision_cone_body_exited(body: Node2D) -> void:
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return  # Only hiders can be spotted
 	
-	print("[Player] 👁️ SEEKER ", player_name, " lost sight of HIDER ", target_player.player_name)
 	_hide_spotted_alert_for_player(target_player)
 
 # --- DEBUG FUNCTIONS ---
 
-func debug_test_gameui_spotted_alert():
-	"""Debug function to test GameUI spotted alert system"""
-	print("[Player] 📝 DEBUG: Testing GameUI spotted alert for ", player_name)
-	
-	# Find GameUI and test spotted alert
-	var game_ui = _find_game_ui()
-	if game_ui:
-		if game_ui.has_method("show_spotted"):
-			game_ui.show_spotted(true)
-			print("[Player] ✅ GameUI spotted alert shown")
-			# Auto-hide after 3 seconds for testing
-			get_tree().create_timer(3.0).timeout.connect(func(): game_ui.show_spotted(false))
-		elif game_ui.has_node("MarginContainer/SpottedLabel"):
-			var spotted_label = game_ui.get_node("MarginContainer/SpottedLabel")
-			spotted_label.visible = true
-			print("[Player] ✅ SpottedLabel shown directly")
-			# Auto-hide after 3 seconds for testing
-			get_tree().create_timer(3.0).timeout.connect(func(): spotted_label.visible = false)
-		else:
-			print("[Player] ❌ No spotted alert method found in GameUI")
-	else:
-		print("[Player] ❌ GameUI not found for testing")
+# Debug test function removed for production
 
 # Removed direct RPC methods - using GameManager RPC system instead

@@ -245,71 +245,7 @@ func start_prep_countdown(duration: int) -> void:
 
 # _on_prep_countdown_tick() - REMOVED: Logic moved to _on_master_clock_tick() for state-based handling
 
-# DEBUG FUNCTIONS - Remove in production
-func debug_start_role_assignment() -> void:
-	"""Manual trigger for role assignment - for testing only"""
-	if not multiplayer.is_server():
-		print("[GameManager] DEBUG: Only server can start role assignment")
-		return
-	
-	print("[GameManager] 🔧 DEBUG: Manually triggering role assignment...")
-	start_role_assignment()
-
-func debug_test_signal_handler() -> void:
-	"""Test the signal handler directly - for testing only"""
-	print("[GameManager] 🔧 DEBUG: Testing signal handler directly...")
-	_on_all_peers_ready()
-
-func debug_test_rpc_calls() -> void:
-	"""Test RPC calls directly - for testing only"""
-	if not multiplayer.is_server():
-		print("[GameManager] DEBUG: Only server can send RPCs")
-		return
-	
-	print("[GameManager] 🔧 DEBUG: Testing RPC calls...")
-	rpc_update_seeker_info.rpc("TestSeeker", "TestCharacter")
-	update_countdown_ui.rpc(3)
-	show_announcement_to_all.rpc("Test announcement!")
-	update_hiders_count_rpc.rpc(2)
-	broadcast_kill_feed_message_rpc.rpc("TestPlayer BANG'd TestVictim")
-
-func debug_test_complete_system() -> void:
-	"""Test complete system integration - for testing only"""
-	if not multiplayer.is_server():
-		print("[GameManager] DEBUG: Only server can test complete system")
-		return
-	
-	print("[GameManager] 🔧 DEBUG: Testing complete system integration...")
-	
-	# Test player state initialization
-	var players = get_tree().get_nodes_in_group("player")
-	for player in players:
-		if player.has_method("set_initial_state"):
-			player.set_initial_state.rpc(1, 3, true, true)  # Test seeker state
-			print("[GameManager] 📡 DEBUG: Sent set_initial_state to ", player.name)
-	
-	# Test UI updates
-	update_countdown_ui.rpc(10)
-	show_announcement_to_all.rpc("DEBUG: Complete system test!")
-	update_hiders_count_rpc.rpc(3)
-	broadcast_kill_feed_message_rpc.rpc("DEBUG: TestSeeker BANG'd TestHider")
-	
-	print("[GameManager] ✅ DEBUG: Complete system test executed")
-
-func debug_test_dev_world_init() -> void:
-	"""Test dev_world initialization directly - for testing only"""
-	if not multiplayer.is_server():
-		print("[GameManager] DEBUG: Only server can test dev_world initialization")
-		return
-	
-	print("[GameManager] 🔧 DEBUG: Testing dev_world initialization directly...")
-	
-	var current_scene = get_tree().current_scene
-	if current_scene and current_scene.scene_file_path == "res://scenes/dev/dev_world.tscn":
-		print("[GameManager] 🌍 DEBUG: In dev_world scene, calling initialize_game_world()...")
-		initialize_game_world()
-	else:
-		print("[GameManager] ⚠️ DEBUG: Not in dev_world scene. Current: ", current_scene.scene_file_path if current_scene else "null")
+# Debug functions removed for production
 
 func _transition_to_dev_world() -> void:
 	"""Transition from GamePrep to dev_world scene"""
@@ -467,13 +403,7 @@ func _remove_seeker_blindness() -> void:
 # NetworkManager is now the SOLE authority for player spawning
 # GameManager only manages game logic, not world creation
 
-# Debug helper function for troubleshooting scene tree issues
-func _debug_print_scene_tree(node: Node, depth: int) -> void:
-	if depth > 3: return  # Limit depth to avoid spam
-	var indent = "  ".repeat(depth)
-	print("[GameManager] 🔍 ", indent, node.name, " (", node.get_class(), ")")
-	for child in node.get_children():
-		_debug_print_scene_tree(child, depth + 1)
+# Debug helper function removed for production
 
 # REMOVED: Old _on_scene_changed function replaced with robust _on_tree_changed approach
 
@@ -753,10 +683,6 @@ func _process(delta: float) -> void:
 		return
 		
 	match game_state:
-		GameState.STARTING:
-			_handle_starting_state(delta)
-		GameState.IN_PROGRESS:
-			_handle_in_progress_state(delta)
 		GameState.GAME_OVER:
 			_handle_game_over_state()
 
@@ -1077,26 +1003,15 @@ func _show_game_over_announcement(winning_team: String) -> void:
 	_show_game_over_scene(winning_team, message)
 
 func _show_game_over_scene(winning_team: String, message: String) -> void:
-	"""Load and show the GameOver scene"""
-	print("[GameManager] 🎬 Loading GameOver scene for: ", winning_team, " on peer: ", multiplayer.get_unique_id())
+	"""Load and show the dedicated GameOverUI scene"""
+	print("[GameManager] 🎬 Loading GameOverUI scene for: ", winning_team, " on peer: ", multiplayer.get_unique_id())
 	
 	# Safety check: ensure we have a valid scene tree
 	if not get_tree() or not get_tree().current_scene:
 		print("[GameManager] ⚠️ No valid scene tree, cannot show GameOver UI")
 		return
 	
-	# PRIORITY: Try GameUI first (more reliable)
-	if game_ui_instance and game_ui_instance.has_method("show_game_over"):
-		# Ensure GameUI knows the local player's role
-		var local_player = _get_local_player()
-		if local_player and game_ui_instance.has_method("set_local_player_role"):
-			game_ui_instance.set_local_player_role(local_player.role)
-			
-		game_ui_instance.show_game_over(winning_team, message)
-		print("[GameManager] ✅ PRIMARY: GameOver shown in GameUI")
-		return
-	
-	# FALLBACK: Try to load the separate GameOver scene
+	# PRIORITY: Use dedicated GameOverUI scene (cleaner separation)
 	var game_over_scene_path = "res://scenes/GameOverUI.tscn"
 	if ResourceLoader.exists(game_over_scene_path):
 		var game_over_scene = load(game_over_scene_path)
@@ -1130,25 +1045,25 @@ func _show_game_over_scene(winning_team: String, message: String) -> void:
 			else:
 				print("[GameManager] Unknown node type for z-ordering: ", game_over_instance.get_class())
 			
-			# Configure the game over UI with multiple fallback methods
-			var configured = false
+			# Configure the GameOverUI with proper data
+			var local_player = _get_local_player()
+			var did_i_win = false
+			
+			# Determine if local player won
+			if local_player:
+				if local_player.role == PlayerCharacter.PlayerRole.SEEKER and winning_team == "Seekers":
+					did_i_win = true
+				elif local_player.role == PlayerCharacter.PlayerRole.HIDER and winning_team == "Hiders":
+					did_i_win = true
+			
+			# Use the new show_game_over method
 			if game_over_instance.has_method("show_game_over"):
-				game_over_instance.show_game_over(winning_team, message)
-				configured = true
-			elif game_over_instance.has_method("set_winner"):
-				game_over_instance.set_winner(winning_team)
-				configured = true
-			elif game_over_instance.has_method("display_winner"):
-				game_over_instance.display_winner(winning_team)
-				configured = true
-			elif game_over_instance.has_method("setup"):
-				game_over_instance.setup(winning_team, message)
-				configured = true
+				game_over_instance.show_game_over(did_i_win, message, local_player)
+				print("[GameManager] ✅ GameOverUI configured with show_game_over method")
+			else:
+				print("[GameManager] ⚠️ GameOverUI missing show_game_over method")
 			
-			if not configured:
-				print("[GameManager] ⚠️ GameOver UI has no known configuration method")
-			
-			print("[GameManager] ✅ GameOver scene loaded and displayed")
+			print("[GameManager] ✅ GameOverUI scene loaded and displayed")
 			return
 	
 	print("[GameManager] ❌ Failed to load GameOver scene from: ", game_over_scene_path)
@@ -1243,15 +1158,7 @@ func change_game_state(new_state: GameState) -> void:
 # --- LEGACY ROLE ASSIGNMENT REMOVED ---
 # _assign_roles() - Now handled in GamePrep phase with apply_roles_to_players()
 
-#region State Handlers
-func _handle_starting_state(delta: float) -> void:
-	# This would handle the countdown logic
-	# When countdown reaches 0, start the game
-	pass
-
-func _handle_in_progress_state(delta: float) -> void:
-	# Main game loop logic
-	pass
+# State handlers removed - using master clock system instead
 
 func _handle_game_over_state() -> void:
 	"""Handle game over state - stop all timers and disable interactions"""
