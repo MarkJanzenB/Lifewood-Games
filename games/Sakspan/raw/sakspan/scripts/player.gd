@@ -1332,9 +1332,9 @@ func _trigger_spotted_alert():
 	"""RPC to trigger spotted alert on this client's GameUI"""
 	# Spotted alert RPC logging reduced
 	
-	# Only show for local Hiders
-	if role != PlayerRole.HIDER or not is_main_player:
-		print("[Player] ⚠️ Spotted alert ignored - not main hider player")
+	# Only show for local Hiders (the player who has authority over this character)
+	if role != PlayerRole.HIDER or not is_multiplayer_authority():
+		print("[Player] ⚠️ Spotted alert ignored - not local hider player (role: ", PlayerRole.keys()[role], ", authority: ", is_multiplayer_authority(), ")")
 		return
 	
 	# Find GameUI and show spotted alert
@@ -1368,8 +1368,8 @@ func _trigger_spotted_alert():
 @rpc("authority", "call_local", "reliable")
 func _hide_spotted_alert():
 	"""RPC to hide spotted alert on this client's GameUI"""
-	# Only for local Hiders
-	if role != PlayerRole.HIDER or not is_main_player:
+	# Only for local Hiders (the player who has authority over this character)
+	if role != PlayerRole.HIDER or not is_multiplayer_authority():
 		return
 	
 	# Find GameUI and hide spotted alert
@@ -1611,7 +1611,7 @@ func request_sak_attack_rpc(target_player_id: int) -> void:
 	# Note: Elimination will happen in _on_animated_sprite_2d_frame_changed() at frame 2
 
 # This RPC is sent FROM the server TO all clients
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func spawn_projectile_on_clients_rpc(spawn_pos: Vector2, spawn_rot: float, aim_direction: Vector2 = Vector2.ZERO) -> void:
 	"""Server commands all clients to spawn projectile at specified position/rotation"""
 	print("[Player] 🚀 CLIENT: Spawning projectile at ", spawn_pos, " with rotation ", spawn_rot)

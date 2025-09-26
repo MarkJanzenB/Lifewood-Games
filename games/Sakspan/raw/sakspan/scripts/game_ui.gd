@@ -115,12 +115,13 @@ func show_kill_feed(message: String):
 func _show_modern_kill_feed(message: String):
 	"""Show kill feed with modern styling and animation"""
 	if not kill_feed_label:
+		print("[GameUI] ❌ Kill feed label not found!")
 		return
 		
 	print("[GameUI] 💀 Showing modern kill feed: ", message)
 	
-	# Format the message with BBCode
-	var formatted_message = "[center][color=yellow]Kill Feed[/color][/center]\n[center][color=red]💀 " + message + " 💀[/color][/center]"
+	# Format the message with BBCode for better visibility
+	var formatted_message = "[center][color=yellow]⚔️ ELIMINATION ⚔️[/color][/center]\n[center][color=red]💀 " + message + " 💀[/color][/center]"
 	
 	# Stop any existing animation
 	if kill_feed_tween:
@@ -377,19 +378,52 @@ func update_status(text: String, is_visible: bool):
 			status_label.visible = false
 
 func show_dramatic_announcement(message: String):
-	"""Show a dramatic announcement with enhanced visual effects"""
-	if status_label:
-		status_label.text = message
-		status_label.visible = true
-		status_label.modulate = Color.YELLOW
-		status_label.scale = Vector2(1.5, 1.5)
+	"""Show a dramatic centered announcement with enhanced visual effects"""
+	print("[GameUI] 🎭 Showing DRAMATIC ANNOUNCEMENT: ", message)
+	
+	# Create a centered announcement overlay if it doesn't exist
+	var announcement_overlay = get_node_or_null("AnnouncementOverlay")
+	if not announcement_overlay:
+		announcement_overlay = Control.new()
+		announcement_overlay.name = "AnnouncementOverlay"
+		announcement_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		announcement_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(announcement_overlay)
 		
-		# Create dramatic entrance effect
-		var tween = create_tween()
-		tween.tween_property(status_label, "scale", Vector2(1.8, 1.8), 0.3)
-		tween.tween_property(status_label, "scale", Vector2(1.5, 1.5), 0.3)
-		tween.tween_property(status_label, "modulate", Color.WHITE, 1.0)
-		tween.tween_callback(func(): fade_out_label(status_label, message)).set_delay(2.0)
+		# Create centered label
+		var announcement_label = Label.new()
+		announcement_label.name = "AnnouncementLabel"
+		announcement_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+		announcement_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		announcement_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		announcement_label.add_theme_font_size_override("font_size", 48)
+		announcement_label.add_theme_color_override("font_color", Color.YELLOW)
+		announcement_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+		announcement_label.add_theme_constant_override("shadow_offset_x", 4)
+		announcement_label.add_theme_constant_override("shadow_offset_y", 4)
+		announcement_overlay.add_child(announcement_label)
+	
+	var announcement_label = announcement_overlay.get_node("AnnouncementLabel")
+	announcement_label.text = message
+	announcement_overlay.visible = true
+	announcement_label.modulate.a = 0.0
+	announcement_label.scale = Vector2(0.5, 0.5)
+	
+	# Create DRAMATIC entrance effect
+	var tween = create_tween()
+	tween.set_parallel(true)
+	
+	# Explosive entrance
+	tween.tween_property(announcement_label, "modulate:a", 1.0, 0.3).set_trans(Tween.TRANS_BACK)
+	tween.tween_property(announcement_label, "scale", Vector2(1.2, 1.2), 0.3).set_trans(Tween.TRANS_BACK)
+	
+	# Settle and glow
+	tween.tween_property(announcement_label, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.3)
+	tween.tween_property(announcement_label, "modulate", Color.WHITE, 0.5).set_delay(0.5)
+	
+	# Hold for dramatic effect, then fade out
+	tween.tween_property(announcement_label, "modulate:a", 0.0, 1.0).set_delay(3.0)
+	tween.tween_callback(func(): announcement_overlay.visible = false).set_delay(4.0)
 
 # Called by GameManager when the match ends - handles both signatures
 # REMOVED: Game over overlay functionality - now handled by dedicated GameOverUI scene

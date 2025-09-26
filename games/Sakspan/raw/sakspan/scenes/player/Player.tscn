@@ -375,7 +375,7 @@ animations = [{
 radius = 25.0
 
 [node name="Player" type="CharacterBody2D"]
-scale = Vector2(3.3384, 3.3384)
+scale = Vector2(5.17567, 5.17567)
 collision_mask = 37
 input_pickable = true
 script = ExtResource("1_player_script")
@@ -394,7 +394,9 @@ debug_color = Color(1, 1, 1, 0.42)
 light_mask = 2
 scale = Vector2(0.987101, 0.958576)
 sprite_frames = SubResource("SpriteFrames_ibah8")
-animation = &"idle"
+animation = &"seeker_bang"
+frame = 3
+frame_progress = 1.0
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(1.33333, -0.666667)

@@ -8,14 +8,13 @@ extends CanvasLayer
 @onready var player_info_label: Label = $CenterContainer/VBoxContainer/PlayerInfoLabel
 @onready var winning_team_label: Label = $CenterContainer/VBoxContainer/WinningTeamLabel
 @onready var return_to_lobby_button: Button = $CenterContainer/VBoxContainer/ButtonContainer/ReturnToLobbyButton
-@onready var quit_game_button: Button = $CenterContainer/VBoxContainer/ButtonContainer/QuitGameButton
+
+var button_pressed: bool = false  # Prevent multiple rapid presses
 
 func _ready():
 	# Connect button signals
 	if return_to_lobby_button:
 		return_to_lobby_button.pressed.connect(_on_return_to_lobby_pressed)
-	if quit_game_button:
-		quit_game_button.pressed.connect(_on_quit_game_pressed)
 
 func show_game_over(did_i_win: bool, winning_text: String, local_player: PlayerCharacter = null):
 	"""Show the game over screen with proper styling"""
@@ -63,15 +62,26 @@ func _animate_entrance():
 	tween.tween_property(center_container, "scale", Vector2(1.0, 1.0), 0.5)
 
 func _on_return_to_lobby_pressed():
-	"""Handle return to lobby button press"""
+	"""Handle return to lobby button press with debounce"""
+	if button_pressed:
+		print("[GameOverUI] Button already pressed, ignoring duplicate")
+		return
+	
+	button_pressed = true
+	return_to_lobby_button.disabled = true
+	return_to_lobby_button.text = "Returning..."
+	
 	print("[GameOverUI] Return to Lobby pressed")
 	if GameManager:
 		GameManager.reset_to_lobby()
+	
+	# Re-enable after delay to prevent spam
+	await get_tree().create_timer(2.0).timeout
+	if is_instance_valid(return_to_lobby_button):
+		return_to_lobby_button.disabled = false
+		return_to_lobby_button.text = "Return to Lobby"
+		button_pressed = false
 
-func _on_quit_game_pressed():
-	"""Handle quit game button press"""
-	print("[GameOverUI] Quit Game pressed")
-	get_tree().quit()
 
 # Legacy method for compatibility
 func show_screen(local_player: PlayerCharacter, did_i_win: bool, winning_text: String):

@@ -646,8 +646,16 @@ func start_ammo_cooldown(duration: float = 5.0) -> void:
 	ammo_cooldown_timer.start(duration)
 
 func reset_to_lobby() -> void:
-	"""Reset the game state back to the lobby."""
-	game_state = GameState.LOBBY
+	"""Reset the game state and return all players to the lobby."""
+	print("[GameManager] 🔄 Resetting to lobby...")
+	
+	# Only server can command the reset
+	if not multiplayer.is_server():
+		print("[GameManager] 📡 Client requesting lobby reset from server")
+		rpc_request_lobby_reset.rpc_id(1)  # Send request to server
+		return
+	
+	print("[GameManager] 🏠 SERVER: Executing lobby reset...")
 	
 	# Stop singleton-level timers (these persist but should be stopped)
 	if master_clock and is_instance_valid(master_clock):
@@ -660,14 +668,49 @@ func reset_to_lobby() -> void:
 	# Clean up scene-specific timers
 	_cleanup_scene_timers()
 	
-	# Reset player ready states
-	for player_id in players:
-		players[player_id]["ready"] = false
+	# Reset game state
+	current_state = GameState.LOBBY
+	game_state = GameState.LOBBY
 	
-	# Emit signal to update UI
-	game_state_changed.emit(game_state)
+	# Reset NetworkManager player states (unlock characters)
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
+		for player_id in network_manager.players:
+			network_manager.players[player_id]["ready"] = false
+			# Reset character selection (unlock all players)
+			network_manager.players[player_id]["char_index"] = -1
+		
+		# Emit player list change to update UI
+		network_manager.player_list_changed.emit(network_manager.players)
+		print("[GameManager] ✅ Reset all player character selections")
+	
+	# Transition all clients back to lobby scene
+	print("[GameManager] 🚀 Commanding all clients to return to lobby scene")
+	rpc_return_to_lobby_scene.rpc()
 	
 	print("[GameManager] ✅ Successfully reset to lobby - all timers stopped/cleaned")
+
+@rpc("any_peer", "call_local", "reliable")
+func rpc_request_lobby_reset() -> void:
+	"""RPC for clients to request lobby reset from server"""
+	if not multiplayer.is_server():
+		return
+	
+	var sender_id = multiplayer.get_remote_sender_id()
+	print("[GameManager] 📡 Received lobby reset request from peer ", sender_id)
+	
+	# Execute the lobby reset
+	reset_to_lobby()
+
+@rpc("authority", "call_local", "reliable")
+func rpc_return_to_lobby_scene() -> void:
+	"""RPC to command all clients to return to lobby scene"""
+	print("[GameManager] 📡 RPC RECEIVED: Returning to lobby scene on peer ", multiplayer.get_unique_id())
+	
+	# Transition to lobby scene
+	var lobby_scene_path = "res://scenes/UI/Multiplayer/lobby_wait_room_menu.tscn"
+	print("[GameManager] 🏠 Transitioning to lobby scene: ", lobby_scene_path)
+	get_tree().change_scene_to_file(lobby_scene_path)
 
 var _last_countdown_value: int = -1
 
@@ -828,13 +871,11 @@ func _execute_phase_effects(effects: Array):
 
 # Show announcements for the phase
 func _show_phase_announcements(announcements: Array):
-	"""Show announcements to players"""
+	"""Show dramatic announcements to players"""
 	for announcement in announcements:
+		print("[GameManager] 🎯 DRAMATIC ANNOUNCEMENT: ", announcement)
 		_show_announcement.rpc(announcement)
-
-# REMOVED: Legacy phase functions - replaced with direct _execute_phase_transition() calls
-# All phase transitions now use the unified configuration-driven system
-
+		await get_tree().process_frame  # Wait one frame to ensure announcement is shown
 # --- LEGACY PHASE TIMER CALLBACK REMOVED ---
 # _on_phase_timer_timeout() - Replaced by master clock system
 

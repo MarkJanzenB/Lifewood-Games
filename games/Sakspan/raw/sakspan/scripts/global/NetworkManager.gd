@@ -519,6 +519,11 @@ func rpc_load_world() -> void:
 	game_scene_loaded = false
 	emit_signal("game_started", players)
 	
+	# CRITICAL: Reset ready_peers for new game session
+	if multiplayer.is_server():
+		ready_peers.clear()
+		print("[NetworkManager] 🔄 Cleared ready_peers for new GamePrep session")
+	
 	# PHASE 2: Load GamePrep scene first for role assignment
 	var target_scene: String = GAMEPREP_SCENE_PATH
 	print("[NetworkManager] 📡 Switching to GamePrep scene: ", target_scene)
