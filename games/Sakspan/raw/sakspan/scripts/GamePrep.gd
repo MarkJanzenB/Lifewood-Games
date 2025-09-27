@@ -6,6 +6,9 @@ extends Control
 @onready var countdown_value_label: Label = $CenterContainer/VBoxContainer/CountdownContainer/CountdownValueLabel
 @onready var status_label: Label = $CenterContainer/VBoxContainer/StatusLabel
 
+# Flag to prevent duplicate readiness reports
+var _readiness_reported: bool = false
+
 func _ready():
 	print("[GamePrep] GamePrep scene loaded for peer ", multiplayer.get_unique_id())
 	
@@ -25,7 +28,36 @@ func _ready():
 	else:
 		print("[GamePrep] ❌ GameManager singleton not found!")
 	
-	# Remove server-side initialization from GamePrep - this should be handled by NetworkManager signal
+	# CRITICAL FIX: Report readiness to NetworkManager after scene is fully loaded
+	# Wait one frame to ensure scene is fully initialized
+	await get_tree().process_frame
+	
+	# Report readiness to NetworkManager
+	var network_manager = NetworkManager
+	if network_manager:
+		if multiplayer.is_server():
+			# Server: Check if we need to wait for clients or can proceed immediately
+			if network_manager.players.size() == 1:
+				# Single player - server can proceed immediately
+				print("[GamePrep] Single player - server proceeding with role assignment")
+				if game_manager and game_manager.has_method("start_role_assignment"):
+					game_manager.start_role_assignment()
+			else:
+				# Multiplayer - server waits for all clients to report readiness
+				print("[GamePrep] Server ready, waiting for ", network_manager.players.size() - 1, " clients")
+		else:
+			# Client: Report readiness to server (only once)
+			if not _readiness_reported:
+				print("[GamePrep] Client ", multiplayer.get_unique_id(), " reporting readiness to server")
+				if network_manager.has_method("rpc_report_gameprep_ready"):
+					network_manager.rpc_report_gameprep_ready.rpc_id(1)  # Send to server (ID 1)
+					_readiness_reported = true
+				else:
+					print("[GamePrep] ❌ NetworkManager missing rpc_report_gameprep_ready method!")
+			else:
+				print("[GamePrep] ⚠️ Readiness already reported - skipping duplicate")
+	else:
+		print("[GamePrep] ❌ NetworkManager singleton not found!")
 
 # Called when GameManager broadcasts the seeker information
 func _on_seeker_revealed(seeker_name: String, seeker_character: String):

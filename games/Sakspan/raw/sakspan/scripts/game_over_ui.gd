@@ -71,16 +71,17 @@ func _on_return_to_lobby_pressed():
 	return_to_lobby_button.disabled = true
 	return_to_lobby_button.text = "Returning..."
 	
-	print("[GameOverUI] Return to Lobby pressed")
+	print("[GameOverUI] Return to Multiplayer Menu pressed")
 	if GameManager:
-		GameManager.reset_to_lobby()
+		GameManager.reset_to_multiplayer_menu()
 	
 	# Re-enable after delay to prevent spam
-	await get_tree().create_timer(2.0).timeout
-	if is_instance_valid(return_to_lobby_button):
-		return_to_lobby_button.disabled = false
-		return_to_lobby_button.text = "Return to Lobby"
-		button_pressed = false
+	if get_tree():
+		await get_tree().create_timer(2.0).timeout
+		if is_instance_valid(return_to_lobby_button):
+			return_to_lobby_button.disabled = false
+			return_to_lobby_button.text = "Return to Multiplayer Menu"
+			button_pressed = false
 
 
 # Legacy method for compatibility

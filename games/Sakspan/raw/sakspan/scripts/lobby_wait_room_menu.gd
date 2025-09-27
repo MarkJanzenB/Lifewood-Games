@@ -48,15 +48,24 @@ var _my_peer_id: int
 var _my_temp_selection_index: int = -1
 
 func _ready():
+	# Wait for the scene to be fully in the tree before accessing singletons
+	await get_tree().process_frame
+	
+	# Ensure multiplayer object exists
+	if not multiplayer:
+		print("[LobbyWaitRoom] WARNING: multiplayer object is null - creating default")
+		# This shouldn't happen, but let's be safe
+		return
+	
 	# Start background music
 	MusicManager.force_start_main_theme()
 	
 	# Add to group so LobbySync can find us
 	add_to_group("lobby_wait_room")
 	
-	var game_manager = get_node_or_null("/root/GameManager")
-	if game_manager and game_manager.has_method("reset_to_lobby"):
-		game_manager.reset_to_lobby()
+	# Now safe to access singletons since we're in the tree
+	# NOTE: Removed automatic reset_to_lobby() call to prevent infinite loop
+	# The lobby should only reset when explicitly requested (e.g., from game over)
 	
 	# Safety: ensure fullscreen background never intercepts mouse
 	var bg := get_node_or_null("../lobby_wait_room_background") as Control
@@ -99,19 +108,27 @@ func _ready():
 		lock_in_button.pressed.connect(_on_lock_in_button_pressed)
 	if leave_lobby_button:
 		leave_lobby_button.pressed.connect(_on_leave_lobby_button_pressed)
-	# Default focus to Lock In for immediate keyboard navigation
-	if lock_in_button:
+	
+	# Default focus to Lock In for immediate keyboard navigation (after scene is ready)
+	if lock_in_button and is_inside_tree():
 		lock_in_button.grab_focus()
 
 	# Initialize from NetworkManager by default; may be overridden via _initialize_lobby
-	lobby_data = (get_node_or_null("/root/NetworkManager") as Node).my_lobby_data if get_node_or_null("/root/NetworkManager") else {}
-	is_host = multiplayer.is_server()
+	var nm = get_node_or_null("/root/NetworkManager")
+	lobby_data = nm.my_lobby_data if nm else {}
+	
+	# Safe check for multiplayer peer before calling is_server()
+	if multiplayer and multiplayer.has_multiplayer_peer():
+		is_host = multiplayer.is_server()
+	else:
+		is_host = false
+		print("[LobbyWaitRoom] No multiplayer peer available - defaulting to non-host mode")
 	if lobby_name_label:
-		var nm := String(lobby_data.get("name", ""))
-		if nm.is_empty():
+		var lobby_name := String(lobby_data.get("name", ""))
+		if lobby_name.is_empty():
 			lobby_name_label.text = _compose_lobby_title("Loading...")
 		else:
-			lobby_name_label.text = _compose_lobby_title(nm)
+			lobby_name_label.text = _compose_lobby_title(lobby_name)
 
 	# Ensure a label exists above the character grid to show selections
 	selection_label = root_vbox.get_node_or_null("SelectionNameLabel") as Label
@@ -217,8 +234,11 @@ func _on_character_selected(idx: int):
 		selection_label.text = "You selected: %s (press LOCK IN to confirm)" % cname
 	
 	print("[LobbyWaitRoom] Selected character index=", idx, " (", CHARACTER_NAMES[idx], ")")
-	print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
-	print("[LobbyWaitRoom] Is server: ", multiplayer.is_server())
+	if multiplayer and multiplayer.has_multiplayer_peer():
+		print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
+		print("[LobbyWaitRoom] Is server: ", multiplayer.is_server())
+	else:
+		print("[LobbyWaitRoom] No multiplayer peer - offline mode")
 
 # This function now correctly uses the custom "set_selected" method on your buttons.
 func _update_character_grid_highlight():
@@ -239,7 +259,7 @@ func _update_character_grid_lock(players: Dictionary):
 			picked.append(idx)
 			picked_by[idx] = String(players[id].get("name", str(id)))
 			
-	var my_id: int = multiplayer.get_unique_id()
+	var my_id: int = multiplayer.get_unique_id() if (multiplayer and multiplayer.has_multiplayer_peer()) else 1
 	var my_char: int = -1
 	if players.has(my_id):
 		my_char = int(players[my_id].get("char_index", -1))
@@ -338,10 +358,13 @@ func _on_lock_in_button_pressed():
 		var character_name = CHARACTER_NAMES[selected_char_index] if selected_char_index < CHARACTER_NAMES.size() else "Unknown"
 		print("[LobbyWaitRoom] === LOCK IN BUTTON PRESSED ===")
 		print("[LobbyWaitRoom] Locking in character: ", character_name, " (index ", selected_char_index, ")")
-		print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
-		print("[LobbyWaitRoom] Is server: ", multiplayer.is_server())
-		print("[LobbyWaitRoom] Multiplayer peer: ", multiplayer.multiplayer_peer)
-		print("[LobbyWaitRoom] Connected peers: ", multiplayer.get_peers())
+		if multiplayer and multiplayer.has_multiplayer_peer():
+			print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
+			print("[LobbyWaitRoom] Is server: ", multiplayer.is_server())
+			print("[LobbyWaitRoom] Multiplayer peer: ", multiplayer.multiplayer_peer)
+			print("[LobbyWaitRoom] Connected peers: ", multiplayer.get_peers())
+		else:
+			print("[LobbyWaitRoom] No multiplayer peer - offline mode")
 		print("[LobbyWaitRoom] Current NetworkManager players before lock-in: ", NetworkManager.players)
 		
 		print("[LobbyWaitRoom] Calling NetworkManager.request_char_selection(", selected_char_index, ")")
@@ -436,8 +459,11 @@ func _input(event: InputEvent) -> void:
 func _on_player_list_changed(players: Dictionary):
 	print("[LobbyWaitRoom] === PLAYER LIST CHANGED ===")
 	print("[LobbyWaitRoom] Player list changed: ", players)
-	print("[LobbyWaitRoom] Called on: ", "Host" if multiplayer.is_server() else "Client")
-	print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
+	if multiplayer and multiplayer.has_multiplayer_peer():
+		print("[LobbyWaitRoom] Called on: ", "Host" if multiplayer.is_server() else "Client")
+		print("[LobbyWaitRoom] My player ID: ", multiplayer.get_unique_id())
+	else:
+		print("[LobbyWaitRoom] Called on: Offline mode")
 	print("[LobbyWaitRoom] Signal source: ", get_stack()[1] if get_stack().size() > 1 else "Unknown")
 	
 	# Debug: Print each player's character selection status
@@ -446,10 +472,13 @@ func _on_player_list_changed(players: Dictionary):
 		var name = players[id].get("name", "Unknown")
 		var is_host = players[id].get("is_host", false)
 		var status = "Selecting..." if char_index == -1 else CHARACTER_NAMES[char_index] + " ✓"
-		var is_me = (id == multiplayer.get_unique_id())
+		var is_me = (multiplayer and multiplayer.has_multiplayer_peer()) and (id == multiplayer.get_unique_id())
 		print("[LobbyWaitRoom] Player ", id, " (", name, ") ", "[HOST] " if is_host else "", "[ME] " if is_me else "", "char_index: ", char_index, " -> ", status)
 	
 	# Update local state if this is our character selection
+	if not (multiplayer and multiplayer.has_multiplayer_peer()):
+		return  # Skip if no multiplayer peer
+		
 	var my_id = multiplayer.get_unique_id()
 	if players.has(my_id):
 		var my_char_index = int(players[my_id].get("char_index", -1))

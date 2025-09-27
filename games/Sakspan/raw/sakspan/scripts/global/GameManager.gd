@@ -188,12 +188,92 @@ func _initialize_singleton_timers():
 	
 	print("[GameManager] ✅ Singleton-level timers initialized")
 
+func _setup_lighting_system():
+	"""Initialize the Among Us style lighting system"""
+	print("[GameManager] 🔦 Setting up Among Us style lighting...")
+	
+	# Initialize lighting on all clients via RPC
+	_initialize_lighting_on_all_clients.rpc()
+	
+	print("[GameManager] ✅ Lighting system initialization requested for all clients")
+
+@rpc("authority", "call_local", "reliable")
+func _initialize_lighting_on_all_clients():
+	"""RPC to initialize lighting system on all clients"""
+	print("[GameManager] 🔦 Initializing lighting on peer: ", multiplayer.get_unique_id())
+	
+	# Create lighting manager on each client
+	var existing_lighting = get_node_or_null("LightingManager")
+	if existing_lighting:
+		existing_lighting.queue_free()
+	
+	var lighting_manager = preload("res://scripts/LightingManager.gd").new()
+	lighting_manager.name = "LightingManager"
+	add_child(lighting_manager)
+	
+	print("[GameManager] ✅ Lighting system initialized on peer: ", multiplayer.get_unique_id())
+
+# SPOTTED ANNOUNCEMENT SYSTEM
+@rpc("authority", "call_local", "reliable")
+func show_announcement_to_client(announcement_text: String, color: Color = Color.WHITE, duration: float = 3.0):
+	"""Show announcement to a specific client"""
+	print("[GameManager] 📢 Showing announcement to client: ", announcement_text)
+	
+	# Find the GameUI and show the announcement
+	var game_ui = _find_game_ui()
+	if game_ui and game_ui.has_method("show_announcement"):
+		game_ui.show_announcement(announcement_text, color, duration)
+		print("[GameManager] ✅ Announcement sent to GameUI")
+	else:
+		print("[GameManager] ⚠️ GameUI not found or missing show_announcement method")
+
+func _find_game_ui() -> Node:
+	"""Find the GameUI node in the current scene"""
+	var current_scene = get_tree().current_scene
+	if not current_scene:
+		return null
+	
+	# Try different possible paths for GameUI
+	var possible_paths = [
+		"GameUI",
+		"UI/GameUI", 
+		"CanvasLayer/GameUI",
+		"UILayer/GameUI"
+	]
+	
+	for path in possible_paths:
+		var ui_node = current_scene.get_node_or_null(path)
+		if ui_node:
+			return ui_node
+	
+	# If not found by path, search recursively
+	return _find_node_recursive(current_scene, "GameUI")
+
+func _find_node_recursive(node: Node, target_name: String) -> Node:
+	"""Recursively search for a node by name"""
+	if node.name == target_name:
+		return node
+	
+	for child in node.get_children():
+		var result = _find_node_recursive(child, target_name)
+		if result:
+			return result
+	
+	return null
+
 # PHASE 2: GamePrep Role Assignment System
+var _role_assignment_started: bool = false
+
 func start_role_assignment() -> void:
 	"""Called by GamePrep scene to begin role assignment and countdown"""
 	if not multiplayer.is_server():
 		return
 	
+	if _role_assignment_started:
+		print("[GameManager] ⚠️ Role assignment already started - ignoring duplicate call")
+		return
+		
+	_role_assignment_started = true
 	print("[GameManager] 🎭 Starting role assignment in GamePrep scene...")
 	
 	# Get all connected players from NetworkManager
@@ -293,6 +373,9 @@ func initialize_game_world() -> void:
 		return
 	
 	print("[GameManager] 🏠 SERVER: Initializing game world...")
+	
+	# Initialize Among Us style lighting system
+	_setup_lighting_system()
 	
 	# Initialize game timers for this scene
 	_initialize_timers()
@@ -645,14 +728,22 @@ func start_ammo_cooldown(duration: float = 5.0) -> void:
 		
 	ammo_cooldown_timer.start(duration)
 
+var _resetting_to_lobby: bool = false
+
 func reset_to_lobby() -> void:
 	"""Reset the game state and return all players to the lobby."""
+	if _resetting_to_lobby:
+		print("[GameManager] ⚠️ Already resetting to lobby - ignoring duplicate call")
+		return
+		
+	_resetting_to_lobby = true
 	print("[GameManager] 🔄 Resetting to lobby...")
 	
 	# Only server can command the reset
 	if not multiplayer.is_server():
 		print("[GameManager] 📡 Client requesting lobby reset from server")
 		rpc_request_lobby_reset.rpc_id(1)  # Send request to server
+		_resetting_to_lobby = false
 		return
 	
 	print("[GameManager] 🏠 SERVER: Executing lobby reset...")
@@ -689,6 +780,82 @@ func reset_to_lobby() -> void:
 	rpc_return_to_lobby_scene.rpc()
 	
 	print("[GameManager] ✅ Successfully reset to lobby - all timers stopped/cleaned")
+	
+	# Reset the flag after a short delay to allow scene transition
+	await get_tree().create_timer(0.5).timeout
+	_resetting_to_lobby = false
+	_role_assignment_started = false  # Reset role assignment flag for next game
+
+func reset_to_multiplayer_menu() -> void:
+	"""Reset the game state and return all players to the multiplayer menu."""
+	print("[GameManager] 🔄 Resetting to multiplayer menu...")
+	
+	# Only server can command the reset
+	if not multiplayer.is_server():
+		print("[GameManager] 📡 Client requesting multiplayer menu reset from server")
+		rpc_request_multiplayer_menu_reset.rpc_id(1)  # Send request to server
+		return
+	
+	print("[GameManager] 🏠 SERVER: Executing multiplayer menu reset...")
+	
+	# Stop singleton-level timers (these persist but should be stopped)
+	if master_clock and is_instance_valid(master_clock):
+		master_clock.stop()
+	if main_timer and is_instance_valid(main_timer):
+		main_timer.stop()
+	if ammo_cooldown_timer and is_instance_valid(ammo_cooldown_timer):
+		ammo_cooldown_timer.stop()
+	
+	# Clean up scene-specific timers
+	_cleanup_scene_timers()
+	
+	# Reset game state
+	current_state = GameState.LOBBY
+	game_state = GameState.LOBBY
+	
+	# Reset NetworkManager player states (unlock characters)
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
+		network_manager.request_players_resync()
+	
+	# Transition all clients back to multiplayer menu
+	print("[GameManager] 🚀 Commanding all clients to return to multiplayer menu")
+	rpc_return_to_multiplayer_menu.rpc()
+	
+	# Clean up multiplayer peer after scene transition
+	await get_tree().process_frame  # Wait for RPC to be sent
+	_cleanup_multiplayer_peer()
+	
+	print("[GameManager] ✅ Successfully reset to multiplayer menu - all timers stopped/cleaned")
+
+func _cleanup_multiplayer_peer():
+	"""Clean up multiplayer peer to allow creating new lobbies"""
+	print("[GameManager] 🧹 Cleaning up multiplayer peer...")
+	
+	if multiplayer and multiplayer.multiplayer_peer:
+		# Close the current peer connection
+		multiplayer.multiplayer_peer.close()
+		multiplayer.multiplayer_peer = null
+		print("[GameManager] ✅ Multiplayer peer cleaned up")
+	
+	# Also clean up NetworkManager state
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
+		network_manager.players.clear()
+		network_manager.my_lobby_data.clear()
+		print("[GameManager] ✅ NetworkManager state cleaned up")
+
+@rpc("any_peer", "call_local", "reliable")
+func rpc_request_multiplayer_menu_reset() -> void:
+	"""RPC for clients to request multiplayer menu reset from server"""
+	if not multiplayer.is_server():
+		return
+	
+	var sender_id = multiplayer.get_remote_sender_id()
+	print("[GameManager] 📡 Received multiplayer menu reset request from peer ", sender_id)
+	
+	# Execute the multiplayer menu reset
+	reset_to_multiplayer_menu()
 
 @rpc("any_peer", "call_local", "reliable")
 func rpc_request_lobby_reset() -> void:
@@ -708,9 +875,22 @@ func rpc_return_to_lobby_scene() -> void:
 	print("[GameManager] 📡 RPC RECEIVED: Returning to lobby scene on peer ", multiplayer.get_unique_id())
 	
 	# Transition to lobby scene
-	var lobby_scene_path = "res://scenes/UI/Multiplayer/lobby_wait_room_menu.tscn"
+	var lobby_scene_path = "res://scenes/UI/Lobby_Wait_Room/lobby_wait_room_menu.tscn"
 	print("[GameManager] 🏠 Transitioning to lobby scene: ", lobby_scene_path)
 	get_tree().change_scene_to_file(lobby_scene_path)
+
+@rpc("authority", "call_local", "reliable")
+func rpc_return_to_multiplayer_menu() -> void:
+	"""RPC to command all clients to return to multiplayer menu"""
+	print("[GameManager] 📡 RPC RECEIVED: Returning to multiplayer menu on peer ", multiplayer.get_unique_id())
+	
+	# Clean up multiplayer peer before scene transition
+	_cleanup_multiplayer_peer()
+	
+	# Transition to multiplayer menu scene
+	var multiplayer_menu_path = "res://scenes/UI/Multiplayer/multiplayer_menu.tscn"
+	print("[GameManager] 🏠 Transitioning to multiplayer menu: ", multiplayer_menu_path)
+	get_tree().change_scene_to_file(multiplayer_menu_path)
 
 var _last_countdown_value: int = -1
 
@@ -1434,6 +1614,18 @@ func show_announcement_to_all(text: String) -> void:
 	"""Broadcast global announcement to all clients"""
 	if game_ui_instance and game_ui_instance.has_method("update_status"):
 		game_ui_instance.update_status(text, true)
+
+@rpc("authority", "call_local", "reliable")
+func show_spotted_alert_to_client(show: bool) -> void:
+	"""Show/hide spotted alert to specific client"""
+	print("[GameManager] 📡 RPC: Spotted alert ", "shown" if show else "hidden", " on client ", multiplayer.get_unique_id())
+	
+	# Find GameUI and show/hide spotted alert
+	if game_ui_instance and game_ui_instance.has_method("show_spotted"):
+		game_ui_instance.show_spotted(show)
+		print("[GameManager] ✅ Spotted alert ", "shown" if show else "hidden", " via GameUI.show_spotted()")
+	else:
+		print("[GameManager] ❌ GameUI not found or missing show_spotted method")
 
 func _initialize_hiders_count() -> void:
 	"""Initialize and broadcast the hiders count at game start"""

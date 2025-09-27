@@ -38,21 +38,26 @@ var role_timer: Timer = null
 var _sync_position: Vector2 = Vector2.ZERO
 var _sync_animation: String = ""
 var _sync_flip: bool = false
-var _last_animation: String = ""
 var _animation_transition_time: float = 0.0
 var current_state: PlayerState = PlayerState.ALIVE
 var hiders_in_cone: Array[PlayerCharacter] = []
 var visible_targets: Array[PlayerCharacter] = []
 var previously_visible_hiders: Array[PlayerCharacter] = []
 var is_in_action: bool = false
-var target_for_sak: PlayerCharacter = null
-var is_dying: bool = false
-var can_move: bool = false  # Controlled by GameManager
-# REFACTORED: Granular ability system - removed global can_attack
 var can_bang: bool = false  # Seeker BANG attack ability
 var can_sak: bool = false  # Hider SAK attack ability
 var max_ammo: int = 0  # Maximum ammo capacity (set by GameManager)
 
+# Missing variables that were accidentally removed
+var can_move: bool = true
+var is_dying: bool = false
+var target_for_sak: PlayerCharacter = null
+var _last_animation: String = ""
+
+# Store aim direction for projectile spawning
+var _stored_aim_direction: Vector2 = Vector2.ZERO
+
+# Ammo system - Controlled by GameManager
 # LOS (Line of Sight) system for Seeker
 var los_range: float = 150.0  # Seeker's sight range
 var los_angle: float = 60.0   # Seeker's sight cone angle (degrees)
@@ -108,6 +113,10 @@ func _ready():
 
 func _configure_multiplayer_authority():
 	# Configure based on multiplayer authority
+	if not multiplayer or not multiplayer.has_multiplayer_peer():
+		print("[Player] ⚠️ No multiplayer peer - skipping authority configuration")
+		return
+	
 	if not is_multiplayer_authority():
 		# Remote players: disable input but keep physics for movement sync
 		set_process_unhandled_input(false)
@@ -168,7 +177,16 @@ func _create_username_label():
 	username_label.name = "UsernameLabel"
 	username_label.text = player_name
 	username_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	username_label.position = Vector2(-30, -50)  # Above the player
+	username_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# Center the label properly above the player
+	username_label.anchor_left = 0.5
+	username_label.anchor_right = 0.5
+	username_label.anchor_top = 0.0
+	username_label.anchor_bottom = 0.0
+	username_label.offset_left = -50  # Half width for centering
+	username_label.offset_right = 50   # Half width for centering
+	username_label.offset_top = -60    # Above the player
+	username_label.offset_bottom = -40 # Height of label
 	username_label.add_theme_color_override("font_color", Color.WHITE)
 	username_label.add_theme_color_override("font_shadow_color", Color.BLACK)
 	username_label.add_theme_constant_override("shadow_offset_x", 1)
@@ -590,8 +608,9 @@ func _input(event: InputEvent) -> void:
 	
 	# Debug test removed for production
 	# Only the authority handles inputs
-	if not is_multiplayer_authority(): 
-		return
+	if multiplayer and multiplayer.has_multiplayer_peer():
+		if not is_multiplayer_authority(): 
+			return
 	if not is_main_player: 
 		return
 	
@@ -735,7 +754,13 @@ func _server_validate_hider_attack(requester_id: int, game_manager: Node) -> voi
 func show_temporary_message(message: String) -> void:
 	"""Show temporary message to specific client"""
 	print("[Player] Temporary message: ", message)
-	# This could be connected to UI later for better user feedback
+	
+	# Show visible announcement to the player
+	if GameManager and GameManager.has_method("show_announcement_to_client"):
+		# Show as orange warning message
+		GameManager.show_announcement_to_client.rpc_id(multiplayer.get_unique_id(), message, Color.ORANGE, 2.5)
+	else:
+		print("[Player] ⚠️ GameManager not available for announcement")
 
 # Helper function to find nearest valid SAK target
 func _find_nearest_sak_target() -> PlayerCharacter:
@@ -798,12 +823,31 @@ func play_death_animation() -> void:
 	
 	# Stop current animation and play death
 	animated_sprite.stop()
-	if animated_sprite.sprite_frames and animated_sprite.sprite_frames.has_animation("death"):
-		animated_sprite.play("death")
-		print("[Player] ✅ Death animation started for ", player_name)
-	else:
+	
+	# Try different animation names for death
+	var death_animations = ["death", "die", "eliminated", "idle"]  # fallback to idle if no death animation
+	var death_animation_found = false
+	
+	for anim_name in death_animations:
+		if animated_sprite.sprite_frames and animated_sprite.sprite_frames.has_animation(anim_name):
+			animated_sprite.play(anim_name)
+			print("[Player] ✅ Playing '", anim_name, "' animation for death sequence")
+			death_animation_found = true
+			
+			# If using idle as fallback, set a timer to become ghost
+			if anim_name == "idle":
+				_start_death_timer()
+			break
+	
+	if not death_animation_found:
 		print("[Player] ⚠️ No death animation found, becoming ghost immediately")
-		# If no death animation exists, become ghost immediately
+		become_ghost()
+
+func _start_death_timer():
+	"""Start a timer to become ghost after death animation duration"""
+	print("[Player] ⏰ Starting death timer for ", player_name)
+	await get_tree().create_timer(2.0).timeout  # 2 second death sequence
+	if is_dying:  # Only become ghost if still in dying state
 		become_ghost()
 
 func become_ghost() -> void:
@@ -871,7 +915,7 @@ func _show_ghost_status_message() -> void:
 	var message := "👻 You are now a ghost! You can only spectate - no movement or interactions."
 	show_temporary_message.rpc_id(multiplayer.get_unique_id(), message)
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func _update_ghost_visibility_for_all_players() -> void:
 	"""Update ghost visibility - only ghosts can see other ghosts"""
 	# This runs on all clients
@@ -931,6 +975,30 @@ func _disable_collision_areas() -> void:
 		vision_cone.monitoring = false
 	print("[Player] 🚫 Collision areas disabled for ", player_name)
 
+func _update_flashlight_direction(mouse_position: Vector2):
+	"""Update the flashlight direction for Among Us style lighting"""
+	if not vision_light:
+		return
+	
+	# Configure flashlight based on role and authority
+	if multiplayer and multiplayer.has_multiplayer_peer() and is_multiplayer_authority():
+		# Local player gets full brightness flashlight that reaches screen edges
+		vision_light.enabled = true
+		vision_light.energy = 4.0  # Maximum brightness to illuminate other players
+		vision_light.color = Color(1.0, 0.95, 0.8, 1.0)  # Warm white
+		
+		# Scale to reach screen edges - much larger lights
+		if role == PlayerRole.SEEKER:
+			vision_light.texture_scale = 8.0  # Seekers get massive light coverage
+		else:
+			vision_light.texture_scale = 6.0  # Hiders get large light coverage
+	else:
+		# Other players get bright lights too so they can illuminate each other
+		vision_light.enabled = true
+		vision_light.energy = 3.0  # Bright enough to illuminate other players
+		vision_light.color = Color(0.9, 0.9, 1.0, 1.0)  # Cooler, dimmer light
+		vision_light.texture_scale = 5.0  # Large coverage for other players too
+
 func reset_to_lobby_state() -> void:
 	"""Reset player to lobby state after game over"""
 	print("[Player] 🔄 Resetting ", player_name, " to lobby state")
@@ -982,7 +1050,7 @@ func reset_to_lobby_state() -> void:
 	
 	print("[Player] ✅ ", player_name, " reset to lobby state complete")
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func sync_elimination_to_all_clients(victim_id: int, attacker_id: int) -> void:
 	"""Sync elimination state to all clients for proper ghost transition"""
 	print("[Player] 📡 SYNC: Elimination sync received - victim: ", victim_id, " attacker: ", attacker_id)
@@ -1160,6 +1228,9 @@ func handle_visuals() -> void:
 	vision_cone.look_at(mouse_position)
 	animated_sprite.flip_h = (mouse_position.x < global_position.x)
 	
+	# Update flashlight direction for Among Us style lighting
+	_update_flashlight_direction(mouse_position)
+	
 	# Don't change animations during action sequences
 	if is_in_action: 
 		print("[Player] Skipping visual update - in action. Current animation: ", animated_sprite.animation)
@@ -1285,47 +1356,40 @@ func check_line_of_sight() -> void:
 # --- SPOTTED ALERT SYSTEM ---
 
 func _show_spotted_alert_for_player(target_player: PlayerCharacter):
-	"""Show spotted alert on the target player's GameUI"""
+	"""Show spotted announcement to the target player"""
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return
 	
 	var target_id = target_player.get_multiplayer_authority()
-	print("[Player] 🚨 Showing spotted alert for ", target_player.player_name, " (ID: ", target_id, ")")
+	print("[Player] 🚨 Showing spotted announcement for ", target_player.player_name, " (ID: ", target_id, ")")
 	
+	# Use the announcement system instead of UI indicator
 	if multiplayer.is_server():
-		# Server directly triggers the UI alert on the target client
-		print("[Player] 📡 SERVER: Sending UI alert to client ", target_id)
-		_trigger_spotted_alert.rpc_id(target_id)
+		# Server sends spotted announcement via GameManager to the specific client
+		print("[Player] 📡 SERVER: Sending spotted announcement via GameManager to client ", target_id)
+		if GameManager:
+			var announcement_text = "⚠️ YOU HAVE BEEN SPOTTED! ⚠️"
+			GameManager.show_announcement_to_client.rpc_id(target_id, announcement_text, Color.RED, 3.0)
 	else:
-		# Client requests server to trigger alert
-		print("[Player] 📡 CLIENT: Requesting server to show spotted alert for ", target_id)
-		_request_spotted_alert.rpc_id(1, target_id, true)
+		# Client requests server to trigger announcement
+		print("[Player] 📡 CLIENT: Requesting server to show spotted announcement for ", target_id)
+		_request_spotted_announcement.rpc_id(1, target_id, true)
 
 func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
-	"""Hide spotted alert on the target player's GameUI"""
-	if not target_player or target_player.role != PlayerRole.HIDER:
-		return
-	
-	var target_id = target_player.get_multiplayer_authority()
-	print("[Player] 🚫 Hiding spotted alert for ", target_player.player_name, " (ID: ", target_id, ")")
-	
-	if multiplayer.is_server():
-		# Server directly hides the alert on the target client
-		_hide_spotted_alert.rpc_id(target_id)
-	else:
-		# Client requests server to hide alert
-		_request_spotted_alert.rpc_id(1, target_id, false)
+	"""No longer needed - announcements are temporary and auto-hide"""
+	# Announcements automatically disappear after their duration
+	# No need to manually hide them
+	pass
 
 @rpc("any_peer", "call_remote", "reliable")
-func _request_spotted_alert(target_id: int, show: bool):
-	"""RPC to request server to handle spotted alert"""
+func _request_spotted_announcement(target_id: int, show: bool):
+	"""RPC to request server to handle spotted announcement"""
 	if not multiplayer.is_server():
 		return
 	
-	if show:
-		_trigger_spotted_alert.rpc_id(target_id)
-	else:
-		_hide_spotted_alert.rpc_id(target_id)
+	if show and GameManager:
+		var announcement_text = "⚠️ YOU HAVE BEEN SPOTTED! ⚠️"
+		GameManager.show_announcement_to_client.rpc_id(target_id, announcement_text, Color.RED, 3.0)
 
 @rpc("authority", "call_local", "reliable")
 func _trigger_spotted_alert():
@@ -1471,13 +1535,13 @@ func _on_animated_sprite_2d_frame_changed() -> void:
 			# This is called during the animation, so we spawn the projectile directly
 			# The server validation already happened in request_fire_projectile_rpc
 			if multiplayer.is_server() and role == PlayerRole.SEEKER:
-				# Calculate aim direction (stored from the original request)
-				var aim_direction = (get_global_mouse_position() - global_position).normalized()
+				# Use the stored aim direction from the client's original request
+				var aim_direction = _stored_aim_direction
 				var projectile_rotation = aim_direction.angle()
 				
 				# Spawn projectile on all clients
 				spawn_projectile_on_clients_rpc.rpc(muzzle.global_position, projectile_rotation, aim_direction)
-				print("[Player] 🚀 SERVER: Projectile spawned from BANG animation frame 2")
+				print("[Player] 🚀 SERVER: Projectile spawned from BANG animation frame 2 with stored direction: ", aim_direction)
 				
 	# HIDER SAK: Elimination happens on frame 2
 	if animated_sprite.animation == "hider_sak":
@@ -1517,18 +1581,21 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 
 	print("[Player] 🎯 SERVER: Seeker attack authorized - starting BANG animation")
 	
+	# Store the aim direction from the client for use in animation frame 2
+	_stored_aim_direction = aim_direction
+	print("[Player] 🎯 SERVER: Stored aim direction: ", _stored_aim_direction)
+	
 	# Reduce ammo and sync to all clients
 	ammo -= 1
 	set_ammo.rpc(ammo) # Sync ammo change to all clients
 	print("[Player] 🔄 Ammo reduced to: ", ammo, "/", max_ammo)
 	
-	# Start ammo regeneration if not at max capacity
-	if ammo < max_ammo and GameManager:
+	# Start ammo regeneration ONLY when ammo reaches 0
+	if ammo == 0 and GameManager:
 		GameManager._start_ammo_regeneration()
-		print("[Player] 🔄 Started ammo regeneration - current: ", ammo, "/", max_ammo)
-	
-	# Store aim direction for use in animation frame 2
-	# (We'll use get_global_mouse_position() in the frame handler)
+		print("[Player] 🔄 Started ammo regeneration - ammo depleted: ", ammo, "/", max_ammo)
+	else:
+		print("[Player] 🔄 Ammo remaining: ", ammo, "/", max_ammo, " - no regeneration needed")
 	
 	# Command all clients to play the BANG animation
 	play_attack_animation.rpc("seeker_bang")

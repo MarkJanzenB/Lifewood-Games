@@ -568,11 +568,13 @@ func rpc_report_gameprep_ready() -> void:
 	if not sender_id in ready_peers:
 		ready_peers.append(sender_id)
 		print("[NetworkManager] GamePrep ready peers: ", ready_peers.size(), "/", players.size())
-	
-	# Check if all peers are ready (including server)
-	if ready_peers.size() >= players.size() - 1:  # -1 because server doesn't report via RPC
-		print("[NetworkManager] 🚀 All peers GamePrep ready, emitting all_peers_verified_and_ready signal")
-		all_peers_verified_and_ready.emit()
+		
+		# Check if all peers are ready (including server)
+		if ready_peers.size() >= players.size() - 1:  # -1 because server doesn't report via RPC
+			print("[NetworkManager] 🚀 All peers GamePrep ready, emitting all_peers_verified_and_ready signal")
+			all_peers_verified_and_ready.emit()
+	else:
+		print("[NetworkManager] ⚠️ Peer ", sender_id, " already reported readiness - ignoring duplicate")
 
 # DEBUG FUNCTION - Remove in production
 func debug_emit_gameprep_ready() -> void:

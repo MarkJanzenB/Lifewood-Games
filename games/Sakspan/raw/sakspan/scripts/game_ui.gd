@@ -377,9 +377,19 @@ func update_status(text: String, is_visible: bool):
 		else:
 			status_label.visible = false
 
+func show_announcement(message: String, color: Color = Color.WHITE, duration: float = 3.0):
+	"""Show announcement - wrapper for show_dramatic_announcement"""
+	print("[GameUI] 📢 Showing announcement: ", message, " color: ", color, " duration: ", duration)
+	show_dramatic_announcement_with_color(message, color, duration)
+
 func show_dramatic_announcement(message: String):
 	"""Show a dramatic centered announcement with enhanced visual effects"""
 	print("[GameUI] 🎭 Showing DRAMATIC ANNOUNCEMENT: ", message)
+	show_dramatic_announcement_with_color(message, Color.YELLOW, 3.0)
+
+func show_dramatic_announcement_with_color(message: String, color: Color = Color.YELLOW, duration: float = 3.0):
+	"""Show a dramatic centered announcement with custom color and duration"""
+	print("[GameUI] 🎭 Showing DRAMATIC ANNOUNCEMENT: ", message, " with color: ", color)
 	
 	# Create a centered announcement overlay if it doesn't exist
 	var announcement_overlay = get_node_or_null("AnnouncementOverlay")
@@ -390,10 +400,11 @@ func show_dramatic_announcement(message: String):
 		announcement_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(announcement_overlay)
 		
-		# Create centered label
+		# Create perfectly centered label
 		var announcement_label = Label.new()
 		announcement_label.name = "AnnouncementLabel"
-		announcement_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+		# Use full rect preset and center alignment for perfect centering
+		announcement_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		announcement_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		announcement_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		announcement_label.add_theme_font_size_override("font_size", 48)
@@ -409,6 +420,9 @@ func show_dramatic_announcement(message: String):
 	announcement_label.modulate.a = 0.0
 	announcement_label.scale = Vector2(0.5, 0.5)
 	
+	# Set the custom color
+	announcement_label.add_theme_color_override("font_color", color)
+	
 	# Create DRAMATIC entrance effect
 	var tween = create_tween()
 	tween.set_parallel(true)
@@ -421,9 +435,9 @@ func show_dramatic_announcement(message: String):
 	tween.tween_property(announcement_label, "scale", Vector2(1.0, 1.0), 0.2).set_delay(0.3)
 	tween.tween_property(announcement_label, "modulate", Color.WHITE, 0.5).set_delay(0.5)
 	
-	# Hold for dramatic effect, then fade out
-	tween.tween_property(announcement_label, "modulate:a", 0.0, 1.0).set_delay(3.0)
-	tween.tween_callback(func(): announcement_overlay.visible = false).set_delay(4.0)
+	# Hold for custom duration, then fade out
+	tween.tween_property(announcement_label, "modulate:a", 0.0, 1.0).set_delay(duration)
+	tween.tween_callback(func(): announcement_overlay.visible = false).set_delay(duration + 1.0)
 
 # Called by GameManager when the match ends - handles both signatures
 # REMOVED: Game over overlay functionality - now handled by dedicated GameOverUI scene
