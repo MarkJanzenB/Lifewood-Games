@@ -981,7 +981,10 @@ func become_ghost() -> void:
 	# Notify GameManager for win condition checking (server only)
 	if multiplayer.is_server() and GameManager and GameManager.has_method("check_win_conditions"):
 		GameManager.check_win_conditions()
-		print("[Player] 👻 Forced win condition check after ghost transition")
+		# Force update hiders count in UI
+		if role == PlayerRole.HIDER:
+			GameManager._update_hiders_count()
+		print("[Player] 👻 Forced win condition check and hiders count update after ghost transition")
 	
 	# Update ghost visibility for all players
 	_update_ghost_visibility_for_all_players.rpc()
@@ -1322,6 +1325,13 @@ func _handle_ghost_visuals() -> void:
 	if animated_sprite.animation != "idle":
 		animated_sprite.play("idle")
 
+func _regenerate_ammo_instantly() -> void:
+	"""DEMO MODE: Instantly regenerate ammo after firing"""
+	if role == PlayerRole.SEEKER and ammo < max_ammo:
+		ammo = max_ammo
+		set_ammo.rpc(ammo)
+		print("[Player] 🎯 DEMO MODE: Ammo instantly regenerated to ", ammo, "/", max_ammo)
+
 func _handle_walking_sound() -> void:
 	"""Handle walking sound effects based on player movement"""
 	if not walking_sound or not is_instance_valid(walking_sound):
@@ -1492,6 +1502,20 @@ func check_line_of_sight() -> void:
 		visible_targets = currently_visible_players
 
 # --- SPOTTED ALERT SYSTEM ---
+
+@rpc("any_peer", "call_local", "reliable")
+func request_spotted_alert(target_player_id: int) -> void:
+	"""Client requests server to show spotted alert for target player"""
+	if not multiplayer.is_server():
+		return
+	
+	print("[Player] 🚨 Server received spotted alert request for player ID: ", target_player_id)
+	
+	# Find the target player and show spotted alert
+	for player in get_tree().get_nodes_in_group("player"):
+		if player.get_multiplayer_authority() == target_player_id:
+			_show_spotted_alert_for_player(player)
+			break
 
 func _show_spotted_alert_for_player(target_player: PlayerCharacter):
 	"""Show spotted announcement to the target player - SIMPLIFIED"""
@@ -1811,12 +1835,9 @@ func request_fire_projectile_rpc(aim_direction: Vector2 = Vector2.ZERO) -> void:
 	set_ammo.rpc(ammo) # Sync ammo change to all clients
 	print("[Player] 🔄 Ammo reduced to: ", ammo, "/", max_ammo)
 	
-	# Start ammo regeneration ONLY when ammo reaches 0
-	if ammo == 0 and GameManager:
-		GameManager._start_ammo_regeneration()
-		print("[Player] 🔄 Started ammo regeneration - ammo depleted: ", ammo, "/", max_ammo)
-	else:
-		print("[Player] 🔄 Ammo remaining: ", ammo, "/", max_ammo, " - no regeneration needed")
+	# DEMO MODE: Instantly regenerate ammo for presentation
+	print("[Player] 🎯 DEMO MODE: Instantly regenerating ammo for presentation")
+	call_deferred("_regenerate_ammo_instantly")
 	
 	# Command all clients to play the BANG animation
 	play_attack_animation.rpc("seeker_bang")
@@ -1985,7 +2006,13 @@ func _on_vision_cone_body_entered(body: Node2D) -> void:
 	set_meta(last_alert_key, current_time)  # Record alert time
 	
 	print("[Player] 🚨 SEEKER ", player_name, " spotted HIDER ", target_player.player_name, " - IMMEDIATE ALERT!")
-	_show_spotted_alert_for_player(target_player)
+	
+	# Send spotted alert request to server (works for all clients)
+	if multiplayer.is_server():
+		_show_spotted_alert_for_player(target_player)
+	else:
+		# Client sends request to server to show spotted alert
+		request_spotted_alert.rpc_id(1, target_player.get_multiplayer_authority())
 
 func _on_vision_cone_body_exited(body: Node2D) -> void:
 	"""Handle when a player exits seeker's vision cone - ENHANCED VERSION"""

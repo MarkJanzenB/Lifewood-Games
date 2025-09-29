@@ -1028,7 +1028,7 @@ var phase_configs = {
 		"announcements": []
 	},
 	GameState.HIDER_HEADSTART: {
-		"name": "Hider Head Start",
+		"name": "Seeker has been cursed with Blindness, and cant move! Hide!!!",
 		"duration": 10,
 		"next_phase": GameState.SEEKER_RELEASED,
 		"permissions": {
@@ -1041,7 +1041,7 @@ var phase_configs = {
 		"announcements": []
 	},
 	GameState.SEEKER_RELEASED: {
-		"name": "Seeker Released",
+		"name": "Seeker's curse has been released",
 		"duration": 5,
 		"next_phase": GameState.IN_PROGRESS,
 		"permissions": {
@@ -1054,7 +1054,7 @@ var phase_configs = {
 		"announcements": ["The Seeker is on the move!"]
 	},
 	GameState.IN_PROGRESS: {
-		"name": "Full Gameplay",
+		"name": "Hiders kan now Attack the seeker",
 		"duration": -1,  # No countdown, game continues until win condition
 		"next_phase": null,
 		"permissions": {
