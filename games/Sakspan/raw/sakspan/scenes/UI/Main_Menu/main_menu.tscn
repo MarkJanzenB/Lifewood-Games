@@ -249,6 +249,22 @@ theme_override_styles/pressed = SubResource("StyleBoxFlat_tbmy8")
 theme_override_styles/normal = SubResource("StyleBoxFlat_wu84c")
 text = "Start Game"
 
+[node name="how_to_play_button" type="Button" parent="CenterContainer/MenuVBox/ButtonsVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.0
+theme_override_colors/font_hover_color = Color(0, 0.43734, 0, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(0, 0.439216, 0, 1)
+theme_override_fonts/font = ExtResource("3_2dxyy")
+theme_override_font_sizes/font_size = 40
+theme_override_styles/focus = SubResource("StyleBoxFlat_oa1go")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_rtw2f")
+theme_override_styles/hover = SubResource("StyleBoxFlat_8ln24")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_tbmy8")
+theme_override_styles/normal = SubResource("StyleBoxFlat_wu84c")
+text = "How to Play"
+
 [node name="options_button" type="Button" parent="CenterContainer/MenuVBox/ButtonsVBox"]
 layout_mode = 2
 size_flags_vertical = 3

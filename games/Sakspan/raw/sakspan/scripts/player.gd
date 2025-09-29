@@ -48,8 +48,7 @@ var can_bang: bool = false  # Seeker BANG attack ability
 var can_sak: bool = false  # Hider SAK attack ability
 var max_ammo: int = 0  # Maximum ammo capacity (set by GameManager)
 
-# Spotted alert tracking
-var spotted_players: Dictionary = {}  # Track which players are spotted and their fade timers
+# Simplified spotted tracking - removed complex dictionary system
 var currently_spotted: Array[int] = []  # Track which players are currently being spotted (no spam)
 
 # Missing variables that were accidentally removed
@@ -69,6 +68,9 @@ var is_in_shadow: bool = false  # When true, player is hidden in shadows
 var shadow_detection_timer: Timer = null
 var light_level_threshold: float = 0.4  # Below this light level = in shadow (more sensitive)
 var shadow_check_interval: float = 0.1  # Check shadow status every 0.1 seconds
+
+# Simplified spotted system - removed complex cleanup
+# spotted_state_clean and spotted_cleanup_timer removed
 
 # Ammo system - Controlled by GameManager
 # LOS (Line of Sight) system for Seeker
@@ -109,6 +111,8 @@ func _ready():
 	
 	# Initialize shadow detection system
 	_setup_shadow_detection()
+	
+	# Spotted cleanup system removed - using simpler approach
 	
 	# Configure multiplayer authority
 	_configure_multiplayer_authority()
@@ -1391,29 +1395,22 @@ func check_line_of_sight() -> void:
 # --- SPOTTED ALERT SYSTEM ---
 
 func _show_spotted_alert_for_player(target_player: PlayerCharacter):
-	"""Show spotted announcement to the target player"""
+	"""Show spotted announcement to the target player - SIMPLIFIED"""
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return
 	
 	var target_id = target_player.get_multiplayer_authority()
-	print("[Player] 🚨 Showing spotted announcement for ", target_player.player_name, " (ID: ", target_id, ")")
 	
-	# Use the announcement system instead of UI indicator
-	if multiplayer.is_server():
-		# Server sends spotted announcement via GameManager to the specific client
-		print("[Player] 📡 SERVER: Sending spotted announcement via GameManager to client ", target_id)
-		if GameManager:
-			var announcement_text = "⚠️ YOU HAVE BEEN SPOTTED! ⚠️"
-			GameManager.show_announcement_to_client.rpc_id(target_id, announcement_text, Color.RED, 3.0)
-	else:
-		# Client requests server to trigger announcement
-		print("[Player] 📡 CLIENT: Requesting server to show spotted announcement for ", target_id)
-		_request_spotted_announcement.rpc_id(1, target_id, true)
+	# Only server handles spotted alerts to avoid RPC complexity
+	if multiplayer.is_server() and GameManager:
+		var announcement_text = "⚠️ YOU HAVE BEEN SPOTTED! ⚠️"
+		GameManager.show_announcement_to_client.rpc_id(target_id, announcement_text, Color.RED, 2.0)
+		print("[Player] 🚨 Server sent spotted alert to ", target_player.player_name)
 
 func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
-	"""No longer needed - announcements are temporary and auto-hide"""
+	"""Simplified - announcements auto-hide, no manual cleanup needed"""
 	# Announcements automatically disappear after their duration
-	# No need to manually hide them
+	pass
 	pass
 
 # --- SEEKER BLINDNESS SYSTEM ---
@@ -1546,25 +1543,13 @@ func _show_shadow_indicator(show: bool) -> void:
 		else:
 			animated_sprite.modulate = Color.WHITE  # Normal color
 
-@rpc("any_peer", "call_remote", "reliable")
-func _request_spotted_announcement(target_id: int, show: bool):
-	"""RPC to request server to handle spotted announcement"""
-	if not multiplayer.is_server():
-		return
-	
-	if show and GameManager:
-		var announcement_text = "⚠️ YOU HAVE BEEN SPOTTED! ⚠️"
-		GameManager.show_announcement_to_client.rpc_id(target_id, announcement_text, Color.RED, 3.0)
+# --- SIMPLIFIED SPOTTED SYSTEM ---
+# Removed complex cleanup system that was causing issues
+# Spotted alerts now handled entirely by GameManager announcements
 
-@rpc("authority", "call_local", "reliable")
-func _trigger_spotted_alert():
-	"""RPC to trigger spotted alert on this client's GameUI"""
-	# Spotted alert RPC logging reduced
-	
-	# Only show for local Hiders (the player who has authority over this character)
-	if role != PlayerRole.HIDER or not is_multiplayer_authority():
-		print("[Player] ⚠️ Spotted alert ignored - not local hider player (role: ", PlayerRole.keys()[role], ", authority: ", is_multiplayer_authority(), ")")
-		return
+# Removed _request_spotted_announcement RPC - using direct server calls only
+
+# Removed _trigger_spotted_alert RPC - using GameManager announcements instead
 	
 	# Find GameUI and show spotted alert
 	var game_ui = _find_game_ui()
@@ -1920,14 +1905,13 @@ func _on_vision_cone_body_entered(body: Node2D) -> void:
 	var last_alert_key = "last_alert_" + str(target_id)
 	if has_meta(last_alert_key):
 		var last_alert_time = get_meta(last_alert_key, 0)
-		if current_time - last_alert_time < 1000:  # 1 second cooldown
-			print("[Player] ⏱️ SEEKER ", player_name, " - HIDER ", target_player.player_name, " alert on cooldown")
+		if current_time - last_alert_time < 1500:  # 1.5 second cooldown (reduced for smoother gameplay)
+			print("[Player] ⏱️ SEEKER ", player_name, " - HIDER ", target_player.player_name, " spotted alert on cooldown")
 			return
 	
 	# Cancel any existing fade timer for this player
 	if spotted_players.has(target_id) and spotted_players[target_id] != null:
 		spotted_players[target_id].queue_free()
-	
 	# Mark player as currently spotted and show alert immediately
 	currently_spotted.append(target_id)
 	spotted_players[target_id] = null  # No timer while in vision cone
@@ -1937,7 +1921,7 @@ func _on_vision_cone_body_entered(body: Node2D) -> void:
 	_show_spotted_alert_for_player(target_player)
 
 func _on_vision_cone_body_exited(body: Node2D) -> void:
-	"""Handle when a player exits seeker's vision cone"""
+	"""Handle when a player exits seeker's vision cone - ENHANCED VERSION"""
 	# CRITICAL: Ghosts cannot spot anyone
 	if current_state == PlayerState.GHOST:
 		return
@@ -1945,26 +1929,42 @@ func _on_vision_cone_body_exited(body: Node2D) -> void:
 	if role != PlayerRole.SEEKER:
 		return  # Only seekers can spot players
 	
+	# CRITICAL: Blinded seekers don't process vision cone exits
+	if is_blinded:
+		return
+	
 	var target_player = body as PlayerCharacter
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return  # Only hiders can be spotted
 	
 	var target_id = target_player.get_multiplayer_authority()
 	
+	# ENHANCED: Validate target player is still valid
+	if not is_instance_valid(target_player):
+		print("[Player] ⚠️ Target player invalid during vision cone exit")
+		return
+	
 	# Remove from currently spotted list (allows re-spotting if they re-enter)
 	if target_id in currently_spotted:
 		currently_spotted.erase(target_id)
 	
-	# Start 1-second fade delay timer
+	# ENHANCED: Cancel any existing timer for this player first
+	if spotted_players.has(target_id) and spotted_players[target_id] != null:
+		if is_instance_valid(spotted_players[target_id]):
+			spotted_players[target_id].queue_free()
+		spotted_players.erase(target_id)
+	
+	# Start 1-second fade delay timer with enhanced error handling
 	var fade_timer = Timer.new()
 	fade_timer.wait_time = 1.0
 	fade_timer.one_shot = true
-	fade_timer.timeout.connect(_on_spotted_fade_timeout.bind(target_player))
+	fade_timer.timeout.connect(_on_spotted_fade_timeout_enhanced.bind(target_id, target_player.player_name))
 	add_child(fade_timer)
 	fade_timer.start()
 	
 	# Store the timer so it can be cancelled if player re-enters vision cone
 	spotted_players[target_id] = fade_timer
+	spotted_state_clean = false  # Mark state as potentially dirty
 	
 	print("[Player] ⏰ SEEKER ", player_name, " - HIDER ", target_player.player_name, " left vision cone, 1-second fade delay started")
 

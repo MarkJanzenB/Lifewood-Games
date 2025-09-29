@@ -4,6 +4,7 @@ extends Control
 
 @onready var single_click_effect: AudioStreamPlayer = get_node_or_null("single_click_effect")
 @onready var start_button: Button = get_node_or_null("CenterContainer/MenuVBox/ButtonsVBox/start_game_button")
+@onready var how_to_play_button: Button = get_node_or_null("CenterContainer/MenuVBox/ButtonsVBox/how_to_play_button")
 @onready var options_button: Button = get_node_or_null("CenterContainer/MenuVBox/ButtonsVBox/options_button")
 @onready var quit_button: Button = get_node_or_null("CenterContainer/MenuVBox/ButtonsVBox/quit_button")
 
@@ -31,6 +32,11 @@ func _ready() -> void:
 		start_button.pressed.connect(_on_start_game_button_pressed)
 	else:
 		push_warning("[MainMenu] 'start_game_button' not found.")
+	
+	if how_to_play_button:
+		how_to_play_button.pressed.connect(_on_how_to_play_button_pressed)
+	else:
+		push_warning("[MainMenu] 'how_to_play_button' not found.")
 		
 	if options_button:
 		options_button.pressed.connect(_on_options_button_pressed)
@@ -50,6 +56,12 @@ func _on_start_game_button_pressed() -> void:
 	# If you have a different "main game" scene or a lobby scene that isn't the multiplayer setup,
 	# you might want to change this path.
 	SceneChanger.change_scene_to_file("res://scenes/UI/Multiplayer/multiplayer_menu.tscn")
+
+func _on_how_to_play_button_pressed() -> void:
+	_play_click()
+	print("How to Play Button Pressed!")
+	# Navigate to the How to Play screen
+	SceneChanger.change_scene_to_file("res://scenes/UI/HowToPlay/how_to_play.tscn")
 
 func _on_options_button_pressed() -> void:
 	_play_click()

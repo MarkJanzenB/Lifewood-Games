@@ -84,7 +84,7 @@ func _initialize_timers():
 	
 	if not ammo_regen_timer:
 		ammo_regen_timer = Timer.new()
-		ammo_regen_timer.wait_time = 0.5  # 0.5 seconds per stone regeneration
+		ammo_regen_timer.wait_time = 2.0  # 2.0 seconds per stone regeneration
 		ammo_regen_timer.one_shot = false
 		ammo_regen_timer.timeout.connect(_on_ammo_regen_timer_timeout)
 		add_child(ammo_regen_timer)
@@ -116,9 +116,7 @@ func _exit_tree():
 # REMOVED: Duplicate check_win_conditions function - using the enhanced version below
 
 
-# References (Statically Typed)
-@onready var network_manager: Node = get_node_or_null("/root/NetworkManager")
-@onready var world: Node2D = get_node_or_null("/root/World")
+# References (Statically Typed) - Access directly when needed to avoid @onready timing issues
 
 func _ready() -> void:
 	# This function runs ONCE when the app starts.
@@ -836,6 +834,45 @@ func reset_to_multiplayer_menu() -> void:
 	
 	print("[GameManager] ✅ Successfully reset to multiplayer menu - all timers stopped/cleaned")
 
+func _cleanup_game_over_ui():
+	"""Clean up all game over UI elements"""
+	print("[GameManager] 🧹 Cleaning up game over UI...")
+	
+	# Remove all game over UI instances
+	var game_over_uis = get_tree().get_nodes_in_group("game_over_ui")
+	for ui in game_over_uis:
+		if is_instance_valid(ui):
+			ui.queue_free()
+	
+	# Also check for any CanvasLayer nodes that might be game over screens
+	var canvas_layers = get_tree().get_nodes_in_group("canvas_layer")
+	for layer in canvas_layers:
+		if is_instance_valid(layer) and layer.name.to_lower().contains("gameover"):
+			layer.queue_free()
+
+func _cleanup_all_game_instances():
+	"""Clean up all game instances and reset states"""
+	print("[GameManager] 🧹 Cleaning up all game instances...")
+	
+	# Stop all timers
+	_cleanup_scene_timers()
+	
+	# Reset all players to clean state
+	var players = get_tree().get_nodes_in_group("player")
+	for player in players:
+		if is_instance_valid(player):
+			player.queue_free()
+	
+	# Clear any remaining game state
+	total_players = 0
+	max_ammo_capacity = 0
+	
+	# Reset flags
+	players_disabled = false
+	sak_delay_active = false
+	_resetting_to_lobby = false
+	_role_assignment_started = false
+
 func _cleanup_multiplayer_peer():
 	"""Clean up multiplayer peer to allow creating new lobbies"""
 	print("[GameManager] 🧹 Cleaning up multiplayer peer...")
@@ -892,13 +929,24 @@ func rpc_return_to_multiplayer_menu() -> void:
 	"""RPC to command all clients to return to multiplayer menu"""
 	print("[GameManager] 📡 RPC RECEIVED: Returning to multiplayer menu on peer ", multiplayer.get_unique_id())
 	
+	# CRITICAL: Clean up game over UI first
+	_cleanup_game_over_ui()
+	
+	# CRITICAL: Reset all player states and clean up scene
+	_cleanup_all_game_instances()
+	
 	# Clean up multiplayer peer before scene transition
 	_cleanup_multiplayer_peer()
+	
+	# Wait a frame to ensure cleanup is complete
+	await get_tree().process_frame
 	
 	# Transition to multiplayer menu scene
 	var multiplayer_menu_path = "res://scenes/UI/Multiplayer/multiplayer_menu.tscn"
 	print("[GameManager] 🏠 Transitioning to multiplayer menu: ", multiplayer_menu_path)
-	get_tree().change_scene_to_file(multiplayer_menu_path)
+	
+	# Use call_deferred to ensure scene change happens after current frame
+	get_tree().call_deferred("change_scene_to_file", multiplayer_menu_path)
 
 var _last_countdown_value: int = -1
 
@@ -921,7 +969,8 @@ func _process(delta: float) -> void:
 func _initialize_server() -> void:
 	print("[GameManager] Initializing server...")
 	# Register existing players if any
-	if network_manager.players.size() > 0:
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager and network_manager.players.size() > 0:
 		for id in network_manager.players:
 			_on_player_connected(id)
 	
@@ -1079,7 +1128,7 @@ func _start_ammo_regeneration():
 	if ammo_regen_timer and not ammo_regen_timer.is_stopped():
 		ammo_regen_timer.stop()
 	ammo_regen_timer.start()
-	print("[GameManager] 🔄 Ammo regeneration started - 1 stone per 0.5 seconds")
+	print("[GameManager] 🔄 Ammo regeneration started - 1 stone per 2.0 seconds")
 
 # Ammo regeneration callback
 func _on_ammo_regen_timer_timeout():
@@ -1493,7 +1542,8 @@ func _on_player_connected(player_id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	
-	var player_data = network_manager.players.get(str(player_id), {})
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	var player_data = network_manager.players.get(str(player_id), {}) if network_manager else {}
 	players[player_id] = {
 		"name": player_data.get("name", "Player" + str(player_id)),
 		"ready": false,

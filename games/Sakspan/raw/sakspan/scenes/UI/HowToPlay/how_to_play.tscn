@@ -1,0 +1,439 @@
+[gd_scene load_steps=5 format=3 uid="uid://bvw8nnsbqns55"]
+
+[ext_resource type="Script" path="res://scripts/how_to_play.gd" id="1_how_to_play"]
+[ext_resource type="FontFile" uid="uid://5mu6qad8821h" path="res://fonts/Free Royalty.otf" id="2_font"]
+[ext_resource type="Texture2D" uid="uid://b1kpl8oqm7fao" path="res://fonts/main_menu_background2.png" id="3_background"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_active"]
+bg_color = Color(0.2, 0.6, 0.2, 0.8)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.8, 0.4, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+
+[node name="HowToPlay" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_how_to_play")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("3_background")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="ColorRect" type="ColorRect" parent="Background"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.7)
+
+[node name="MainContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 50.0
+offset_top = 50.0
+offset_right = -50.0
+offset_bottom = -100.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="MainContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 48
+text = "HOW TO PLAY SAKSPAN"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="MainContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 20
+text = "The Ultimate Multiplayer Hide-and-Seek Experience"
+horizontal_alignment = 1
+
+[node name="TabContainer" type="TabContainer" parent="MainContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/font_selected_color = Color(1, 1, 1, 1)
+theme_override_colors/font_unselected_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+theme_override_styles/tab_selected = SubResource("StyleBoxFlat_tab_active")
+
+[node name="Overview" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "🎯 Overview"
+
+[node name="OverviewContent" type="VBoxContainer" parent="MainContainer/TabContainer/Overview"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="GameOverview" type="Label" parent="MainContainer/TabContainer/Overview/OverviewContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🎯 GAME OVERVIEW
+
+Sakspan is a thrilling multiplayer hide-and-seek game where players are divided into two roles: Hiders and Seekers. The goal is simple - Hiders must survive by avoiding detection, while Seekers must eliminate all Hiders to win!
+
+🎮 OBJECTIVE
+• Hiders: Survive by staying hidden and avoiding the Seeker
+• Seeker: Hunt down and eliminate all Hiders before time runs out
+• Use strategy, teamwork, and the environment to achieve victory
+
+🌟 KEY FEATURES
+• Real-time multiplayer action
+• Dynamic shadow hiding system
+• Vision cone detection mechanics
+• Strategic combat with BANG and SAK attacks
+• Multiple game phases for varied gameplay"
+autowrap_mode = 3
+
+[node name="Roles" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "👥 Roles"
+
+[node name="RolesContent" type="VBoxContainer" parent="MainContainer/TabContainer/Roles"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="SeekerInfo" type="Label" parent="MainContainer/TabContainer/Roles/RolesContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🔍 SEEKER (1 player)
+• Hunt down all Hiders to win the game
+• Armed with stone projectiles (BANG attacks)
+• Has a vision cone with light that reveals nearby areas
+• Can spot Hiders within their vision cone
+• Ammo regenerates over time (2 seconds per stone)
+• Cannot see during the Hider Head Start phase
+• Must manage ammo carefully and use strategy"
+autowrap_mode = 3
+
+[node name="HiderInfo" type="Label" parent="MainContainer/TabContainer/Roles/RolesContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.4, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🫥 HIDERS (All other players)
+• Survive until the end to win as a team
+• Use stealth and hiding spots to avoid detection
+• Can perform SAK attacks to eliminate the Seeker
+• Must stay hidden and use shadows strategically
+• Work together to outlast the Seeker
+• Only need one Hider to survive for team victory
+• Can coordinate attacks and distractions"
+autowrap_mode = 3
+
+[node name="GamePhases" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "⏰ Phases"
+
+[node name="PhasesContent" type="VBoxContainer" parent="MainContainer/TabContainer/GamePhases"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="Phase1" type="Label" parent="MainContainer/TabContainer/GamePhases/PhasesContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 0.4, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "1️⃣ HIDER HEAD START (10 seconds)
+• Hiders can move freely to find hiding spots
+• Seeker is BLINDED and cannot see or spot anyone
+• Use this time wisely to find strategic positions
+• Look for shadow areas and good cover
+• Plan escape routes and hiding strategies"
+autowrap_mode = 3
+
+[node name="Phase2" type="Label" parent="MainContainer/TabContainer/GamePhases/PhasesContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.6, 0.4, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "2️⃣ SEEKER RELEASED (5 seconds)
+• Seeker's vision is restored
+• Countdown before full gameplay begins
+• Final moments to get into position
+• Seeker can start moving and looking around
+• Hiders should finalize their hiding spots"
+autowrap_mode = 3
+
+[node name="Phase3" type="Label" parent="MainContainer/TabContainer/GamePhases/PhasesContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 1, 0.4, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "3️⃣ FULL GAMEPLAY
+• All abilities are active
+• Seeker can hunt and attack with BANG
+• Hiders can use SAK attacks for elimination
+• Game continues until win condition is met
+• Strategic gameplay with all mechanics enabled"
+autowrap_mode = 3
+
+[node name="Mechanics" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "⚙️ Mechanics"
+
+[node name="MechanicsContent" type="VBoxContainer" parent="MainContainer/TabContainer/Mechanics"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="VisionSystem" type="Label" parent="MainContainer/TabContainer/Mechanics/MechanicsContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 14
+text = "👁️ VISION SYSTEM
+• Seekers have a cone of vision with light
+• Only players within the vision cone can be spotted
+• Walls and obstacles block line of sight
+• Spotted players receive an alert warning
+• Vision cone follows mouse movement"
+autowrap_mode = 3
+
+[node name="ShadowHiding" type="Label" parent="MainContainer/TabContainer/Mechanics/MechanicsContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 14
+text = "🌑 SHADOW HIDING
+• Players in dark areas are hidden from detection
+• Shadows provide complete protection from spotting
+• Light sources can expose hidden players
+• Strategic positioning in shadows is key to survival
+• Shadow indicator shows when you're hidden"
+autowrap_mode = 3
+
+[node name="CombatSystem" type="Label" parent="MainContainer/TabContainer/Mechanics/MechanicsContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 14
+text = "🎯 COMBAT SYSTEM
+• BANG Attacks: Seeker's ranged stone projectiles
+• SAK Attacks: Hider's close-range elimination ability
+• Line of sight required for all attacks
+• Shadow-hidden players cannot be attacked
+• Ammo and ability cooldowns add strategy"
+autowrap_mode = 3
+
+[node name="Controls" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "🎮 Controls"
+
+[node name="ControlsContent" type="VBoxContainer" parent="MainContainer/TabContainer/Controls"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="MovementControls" type="Label" parent="MainContainer/TabContainer/Controls/ControlsContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "⌨️ MOVEMENT CONTROLS
+• WASD or Arrow Keys: Move your character
+• Mouse Movement: Control vision cone direction (Seeker)
+• Smooth movement in all directions
+• Use movement to avoid detection or hunt targets"
+autowrap_mode = 3
+
+[node name="AttackControls" type="Label" parent="MainContainer/TabContainer/Controls/ControlsContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🎯 ATTACK CONTROLS
+• Left Click or Space: Attack (BANG/SAK)
+• Mouse: Aim your attacks
+• Seeker: Left Click to fire stone projectiles
+• Hider: Left Click for SAK attacks (close range)
+• Attacks require line of sight to target
+• Ammo/abilities have cooldown periods"
+autowrap_mode = 3
+
+[node name="Strategy" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "🧠 Strategy"
+
+[node name="StrategyContent" type="VBoxContainer" parent="MainContainer/TabContainer/Strategy"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="HiderStrategy" type="Label" parent="MainContainer/TabContainer/Strategy/StrategyContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.4, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🫥 FOR HIDERS:
+• Use the 10-second head start to find optimal hiding spots
+• Stay in shadows and dark areas to avoid detection
+• Use walls and obstacles to break line of sight
+• Coordinate with other Hiders for team survival
+• Wait for the right moment to use SAK attacks
+• Move carefully to avoid making noise or being seen
+• Create distractions to help teammates escape"
+autowrap_mode = 3
+
+[node name="SeekerStrategy" type="Label" parent="MainContainer/TabContainer/Strategy/StrategyContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🔍 FOR SEEKERS:
+• Use your vision cone strategically to sweep areas
+• Learn the map layout to predict hiding spots
+• Manage your ammo carefully (2 seconds per stone)
+• Use light to expose players hiding in shadows
+• Be patient and methodical in your search
+• Remember that walls block your vision and attacks
+• Listen for movement sounds and visual cues"
+autowrap_mode = 3
+
+[node name="Victory" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "🏆 Victory"
+
+[node name="WinContent" type="VBoxContainer" parent="MainContainer/TabContainer/Victory"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="SeekerVictory" type="Label" parent="MainContainer/TabContainer/Victory/WinContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🔍 SEEKER VICTORY
+• Eliminate ALL Hiders using BANG attacks
+• Only one Hider needs to survive for Hiders to win
+• Must be strategic with limited ammo
+• Use vision cone effectively to track targets"
+autowrap_mode = 3
+
+[node name="HiderVictory" type="Label" parent="MainContainer/TabContainer/Victory/WinContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.4, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🫥 HIDER VICTORY
+• At least one Hider survives until the end
+• Alternatively, eliminate the Seeker using SAK attacks
+• Teamwork is essential for Hider success
+• Coordinate to protect each other"
+autowrap_mode = 3
+
+[node name="EliminationSystem" type="Label" parent="MainContainer/TabContainer/Victory/WinContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "👻 ELIMINATION SYSTEM
+• Eliminated players become ghosts and can spectate
+• Ghosts cannot interact with the game
+• Game continues until win condition is met
+• Eliminated players can watch and learn strategies"
+autowrap_mode = 3
+
+[node name="Multiplayer" type="ScrollContainer" parent="MainContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_name = "🌐 Multiplayer"
+
+[node name="MultiplayerContent" type="VBoxContainer" parent="MainContainer/TabContainer/Multiplayer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="HostingGame" type="Label" parent="MainContainer/TabContainer/Multiplayer/MultiplayerContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🏠 HOSTING A GAME
+• Click 'Start Game' from main menu
+• Choose 'Host Lobby' to create a room
+• Set your room name and wait for players to join
+• Game starts automatically when enough players join"
+autowrap_mode = 3
+
+[node name="JoiningGame" type="Label" parent="MainContainer/TabContainer/Multiplayer/MultiplayerContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "🔗 JOINING A GAME
+• Click 'Start Game' from main menu
+• Choose 'Join Lobby' to find available rooms
+• Select a room from the list and join
+• Wait in the lobby until the host starts the game"
+autowrap_mode = 3
+
+[node name="PlayerRequirements" type="Label" parent="MainContainer/TabContainer/Multiplayer/MultiplayerContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 16
+text = "👥 PLAYER REQUIREMENTS
+• Minimum 2 players required
+• Maximum depends on map size
+• One player automatically becomes the Seeker
+• All other players become Hiders"
+autowrap_mode = 3
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -60.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(0.2, 0.8, 0.2, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 24
+text = "Back to Menu"
