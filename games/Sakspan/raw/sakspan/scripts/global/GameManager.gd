@@ -192,17 +192,25 @@ func _setup_lighting_system():
 	"""Initialize the Among Us style lighting system"""
 	print("[GameManager] 🔦 Setting up Among Us style lighting...")
 	
-	# Initialize lighting on all clients via RPC
-	_initialize_lighting_on_all_clients.rpc()
+	initialize_lighting_system.rpc()
 	
 	print("[GameManager] ✅ Lighting system initialization requested for all clients")
 
 @rpc("authority", "call_local", "reliable")
-func _initialize_lighting_on_all_clients():
-	"""RPC to initialize lighting system on all clients"""
-	print("[GameManager] 🔦 Initializing lighting on peer: ", multiplayer.get_unique_id())
+func initialize_lighting_system() -> void:
+	"""Initialize Among Us style lighting system on all clients"""
+	print("[GameManager] 🔦 Checking for existing lighting system on peer: ", multiplayer.get_unique_id())
 	
-	# Create lighting manager on each client
+	# Check if lighting manager already exists in the scene (e.g., dev_world)
+	var scene_lighting = get_tree().get_first_node_in_group("lighting_manager")
+	if not scene_lighting:
+		scene_lighting = get_node_or_null("/root/DevWorld/LightingManager")
+	
+	if scene_lighting:
+		print("[GameManager] ✅ Found existing LightingManager in scene: ", scene_lighting.get_path())
+		return
+	
+	# Create lighting manager on each client if not found in scene
 	var existing_lighting = get_node_or_null("LightingManager")
 	if existing_lighting:
 		existing_lighting.queue_free()
@@ -1822,6 +1830,8 @@ func _activate_seeker_blindness():
 	var local_player = _get_local_player()
 	if local_player and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
 		print("[GameManager] Activating Seeker blindness")
+		# Activate player blindness (disables vision cone and spotting)
+		local_player.set_seeker_blindness(true)
 		# Add blindness overlay to Seeker's UI
 		_create_blindness_overlay()
 
@@ -1831,6 +1841,8 @@ func _deactivate_seeker_blindness():
 	var local_player = _get_local_player()
 	if local_player and local_player.role == PlayerCharacter.PlayerRole.SEEKER:
 		print("[GameManager] Deactivating Seeker blindness")
+		# Deactivate player blindness (restores vision cone and spotting)
+		local_player.set_seeker_blindness(false)
 		# Remove blindness overlay
 		_remove_blindness_overlay()
 

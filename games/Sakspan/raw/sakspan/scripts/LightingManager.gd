@@ -17,22 +17,20 @@ signal lighting_initialized
 
 func _ready():
 	print("[LightingManager] Initializing Among Us style lighting system...")
+	
+	# Add to group for easy discovery
+	add_to_group("lighting_manager")
+	
 	call_deferred("_setup_global_lighting")
 
 func _setup_global_lighting():
-	"""Setup the global darkness overlay"""
-	# Create global darkness overlay
-	canvas_modulate = CanvasModulate.new()
-	canvas_modulate.color = global_darkness_color
-	canvas_modulate.name = "GlobalDarkness"
+	"""Setup the global lighting system (darkness disabled for 2D light occlusion)"""
+	# DISABLED: Global darkness overlay - user will use 2D light occlusion instead
+	# canvas_modulate = CanvasModulate.new()
+	# canvas_modulate.color = global_darkness_color
+	# canvas_modulate.name = "GlobalDarkness"
 	
-	# Add to the current scene
-	var current_scene = get_tree().current_scene
-	if current_scene:
-		current_scene.add_child(canvas_modulate)
-		print("[LightingManager] ✅ Global darkness applied")
-	else:
-		print("[LightingManager] ❌ Could not find current scene")
+	print("[LightingManager] ✅ Global darkness disabled - using 2D light occlusion instead")
 	
 	# Setup player lighting
 	_setup_player_lighting()

@@ -71,19 +71,20 @@ anchor_left = 1.0
 anchor_top = 0.5
 anchor_right = 1.0
 anchor_bottom = 0.5
-offset_left = -800.0
-offset_top = -266.0
-offset_right = -450.0
-offset_bottom = -66.0
+offset_left = -400.0
+offset_top = -300.0
+offset_right = -20.0
+offset_bottom = -100.0
 grow_horizontal = 0
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="KillFeedBG" type="NinePatchRect" parent="KillFeedContainer"]
+[node name="KillFeedBG" type="ColorRect" parent="KillFeedContainer"]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 6
+color = Color(0.1, 0.1, 0.15, 0.8)
 
 [node name="KillFeedLabel" type="RichTextLabel" parent="KillFeedContainer"]
 layout_mode = 2

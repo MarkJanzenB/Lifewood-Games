@@ -48,6 +48,10 @@ var can_bang: bool = false  # Seeker BANG attack ability
 var can_sak: bool = false  # Hider SAK attack ability
 var max_ammo: int = 0  # Maximum ammo capacity (set by GameManager)
 
+# Spotted alert tracking
+var spotted_players: Dictionary = {}  # Track which players are spotted and their fade timers
+var currently_spotted: Array[int] = []  # Track which players are currently being spotted (no spam)
+
 # Missing variables that were accidentally removed
 var can_move: bool = true
 var is_dying: bool = false
@@ -56,6 +60,15 @@ var _last_animation: String = ""
 
 # Store aim direction for projectile spawning
 var _stored_aim_direction: Vector2 = Vector2.ZERO
+
+# Seeker blindness system
+var is_blinded: bool = false  # When true, seeker cannot see anything
+
+# Shadow hiding system
+var is_in_shadow: bool = false  # When true, player is hidden in shadows
+var shadow_detection_timer: Timer = null
+var light_level_threshold: float = 0.4  # Below this light level = in shadow (more sensitive)
+var shadow_check_interval: float = 0.1  # Check shadow status every 0.1 seconds
 
 # Ammo system - Controlled by GameManager
 # LOS (Line of Sight) system for Seeker
@@ -87,13 +100,15 @@ func _ready():
 	if GameManager:
 		GameManager.game_state_changed.connect(_on_game_state_changed)
 	
-	# Connect vision cone signals for spotted mechanic
 	if vision_cone:
 		vision_cone.body_entered.connect(_on_vision_cone_body_entered)
 		vision_cone.body_exited.connect(_on_vision_cone_body_exited)
 		print("[Player] ✅ Vision cone signals connected for ", player_name)
 	else:
-		print("[Player] ⚠️ Vision cone not found for ", player_name)
+		print("[Player] ⚠️ No vision cone found for ", player_name)
+	
+	# Initialize shadow detection system
+	_setup_shadow_detection()
 	
 	# Configure multiplayer authority
 	_configure_multiplayer_authority()
@@ -723,8 +738,23 @@ func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> vo
 		show_temporary_message.rpc_id(requester_id, "No ammo! (" + str(ammo) + "/" + str(max_ammo) + ")")
 		return
 	
+	# CRITICAL: Validate line of sight - seeker must have a hider in vision cone AND not hidden in shadows
+	var attackable_targets = []
+	for target in visible_targets:
+		if not target.is_player_hidden_in_shadows():
+			attackable_targets.append(target)
+	
+	if attackable_targets.is_empty():
+		if visible_targets.is_empty():
+			print("[Player] ❌ Server rejected Seeker attack - no hiders in line of sight")
+			show_temporary_message.rpc_id(requester_id, "No targets in sight!")
+		else:
+			print("[Player] ❌ Server rejected Seeker attack - all targets hidden in shadows")
+			show_temporary_message.rpc_id(requester_id, "Targets hidden in shadows!")
+		return
+	
 	# Execute BANG attack
-	print("[Player] 🎯 Server authorizing Seeker BANG attack - ammo: ", ammo, "/", max_ammo)
+	print("[Player] 🎯 Server authorizing Seeker BANG attack - ammo: ", ammo, "/", max_ammo, " targets in sight: ", visible_targets.size())
 	var aim_direction = (get_global_mouse_position() - global_position).normalized()
 	request_fire_projectile_rpc.rpc_id(1, aim_direction)
 
@@ -802,11 +832,14 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	is_in_action = false
 	target_for_sak = null
 	
+	# Immediately become ghost for win condition checking
+	become_ghost()
+	
 	# Notify GameManager of elimination (server-side only)
 	if multiplayer.is_server() and GameManager:
 		GameManager.player_eliminated.emit(self, attacker)
 	
-	# Play death animation on all clients
+	# Play death animation on all clients (visual only)
 	play_death_animation.rpc()
 	
 	print("[Player] 🎬 Death sequence initiated for ", player_name)
@@ -865,10 +898,12 @@ func become_ghost() -> void:
 	# Start floating animation for ghosts
 	_start_ghost_floating_animation()
 	
-	# Change vision light to cyan for ghosts (if they have one)
+	# Disable vision cone and light for ghosts
+	if vision_cone:
+		vision_cone.monitoring = false  # Disable vision cone detection
+		vision_cone.visible = false     # Hide vision cone visually
 	if vision_light:
-		vision_light.color = Color.CYAN
-		vision_light.energy = 0.3  # Dimmer light for ghosts
+		vision_light.enabled = false    # Disable flashlight completely
 	
 	# Configure ghost collision layers
 	# Layer 1: Normal players (disable)
@@ -1381,6 +1416,136 @@ func _hide_spotted_alert_for_player(target_player: PlayerCharacter):
 	# No need to manually hide them
 	pass
 
+# --- SEEKER BLINDNESS SYSTEM ---
+
+func set_seeker_blindness(blinded: bool) -> void:
+	"""Enable/disable seeker blindness (called by GameManager during head start)"""
+	if role != PlayerRole.SEEKER:
+		return  # Only affects seekers
+	
+	is_blinded = blinded
+	
+	# Control vision cone light visibility
+	if vision_cone:
+		var point_light = vision_cone.get_node_or_null("PointLight2D")
+		if point_light:
+			point_light.visible = not blinded
+			point_light.enabled = not blinded
+	
+	if blinded:
+		print("[Player] 👁️‍🗨️ SEEKER ", player_name, " is now BLINDED - vision disabled")
+	else:
+		print("[Player] 👁️ SEEKER ", player_name, " vision RESTORED - can now hunt!")
+
+@rpc("any_peer", "call_local")
+func activate_seeker_blindness_rpc() -> void:
+	"""RPC to activate seeker blindness"""
+	set_seeker_blindness(true)
+
+@rpc("any_peer", "call_local")
+func deactivate_seeker_blindness_rpc() -> void:
+	"""RPC to deactivate seeker blindness"""
+	set_seeker_blindness(false)
+
+# --- SHADOW HIDING SYSTEM ---
+
+func _setup_shadow_detection() -> void:
+	"""Initialize the shadow detection timer"""
+	shadow_detection_timer = Timer.new()
+	shadow_detection_timer.wait_time = shadow_check_interval
+	shadow_detection_timer.timeout.connect(_check_shadow_status)
+	shadow_detection_timer.autostart = true
+	add_child(shadow_detection_timer)
+	print("[Player] 🌑 Shadow detection system initialized for ", player_name)
+
+func _check_shadow_status() -> void:
+	"""Check if player is currently in shadow by sampling light levels"""
+	if not is_multiplayer_authority():
+		return  # Only check for local player
+	
+	var current_light_level = _sample_light_level_at_position(global_position)
+	var was_in_shadow = is_in_shadow
+	is_in_shadow = current_light_level < light_level_threshold
+	
+	# Debug logging when shadow status changes
+	if was_in_shadow != is_in_shadow:
+		if is_in_shadow:
+			print("[Player] 🌑 ", player_name, " entered SHADOW (light: ", current_light_level, ")")
+			_show_shadow_indicator(true)
+		else:
+			print("[Player] ☀️ ", player_name, " left shadow (light: ", current_light_level, ")")
+			_show_shadow_indicator(false)
+
+func _sample_light_level_at_position(pos: Vector2) -> float:
+	"""Sample the light level at a specific position using Godot's lighting system"""
+	# Get the current viewport
+	var viewport = get_viewport()
+	if not viewport:
+		return 1.0  # Assume full light if no viewport
+	
+	# Use the CanvasModulate to determine base lighting
+	var canvas_modulate = get_node_or_null("/root/DevWorld/CanvasModulate")
+	var base_light_level = 1.0
+	
+	if canvas_modulate:
+		# Get the modulate color - darker colors mean less light
+		var modulate_color = canvas_modulate.color
+		base_light_level = (modulate_color.r + modulate_color.g + modulate_color.b) / 3.0
+	
+	# Check if player is near any light sources (other players' vision cones)
+	var light_boost = _calculate_nearby_light_influence(pos)
+	
+	# Combine base lighting with nearby light sources
+	var total_light = min(1.0, base_light_level + light_boost)
+	
+	return total_light
+
+func _calculate_nearby_light_influence(pos: Vector2) -> float:
+	"""Calculate light influence from nearby players' vision cones"""
+	var light_influence = 0.0
+	
+	# Get all players in the scene
+	var players = get_tree().get_nodes_in_group("player")
+	
+	for player in players:
+		if player == self:
+			continue  # Skip self
+		
+		var other_player = player as PlayerCharacter
+		if not other_player or other_player.current_state != PlayerState.ALIVE:
+			continue
+		
+		# Check if other player has an active vision cone light
+		if other_player.vision_cone:
+			var point_light = other_player.vision_cone.get_node_or_null("PointLight2D")
+			if point_light and point_light.enabled and point_light.visible:
+				# Calculate distance to light source
+				var distance = pos.distance_to(other_player.global_position)
+				var light_range = point_light.texture_scale * 100.0  # Approximate light range
+				
+				if distance < light_range:
+					# Light influence decreases with distance
+					var influence = (1.0 - (distance / light_range)) * point_light.energy * 0.3
+					light_influence += influence
+	
+	return light_influence
+
+func is_player_hidden_in_shadows() -> bool:
+	"""Check if this player is currently hidden in shadows"""
+	return is_in_shadow
+
+func _show_shadow_indicator(show: bool) -> void:
+	"""Show/hide visual indicator when player is in shadows"""
+	if not is_multiplayer_authority():
+		return  # Only show for local player
+	
+	# Slightly darken the player sprite when in shadows
+	if animated_sprite:
+		if show:
+			animated_sprite.modulate = Color(0.6, 0.6, 0.8, 1.0)  # Darker, bluish tint
+		else:
+			animated_sprite.modulate = Color.WHITE  # Normal color
+
 @rpc("any_peer", "call_remote", "reliable")
 func _request_spotted_announcement(target_id: int, show: bool):
 	"""RPC to request server to handle spotted announcement"""
@@ -1706,9 +1871,19 @@ func _on_vision_cone_body_entered(body: Node2D) -> void:
 	"""Handle when a player enters seeker's vision cone"""
 	print("[Player] 👁️ Vision cone body entered - ", body.name, " detected by ", player_name, " (Role: ", role, ")")
 	
+	# CRITICAL: Ghosts cannot spot anyone and cannot be spotted
+	if current_state == PlayerState.GHOST:
+		print("[Player] 👻 Ghost ignoring vision detection")
+		return
+	
 	if role != PlayerRole.SEEKER:
 		print("[Player] ⚠️ Not a seeker, ignoring vision detection")
 		return  # Only seekers can spot players
+	
+	# CRITICAL: Blinded seekers cannot spot anyone during head start
+	if is_blinded:
+		print("[Player] 👁️‍🗨️ SEEKER ", player_name, " is BLINDED - cannot spot anyone during head start")
+		return
 	
 	var target_player = body as PlayerCharacter
 	if not target_player:
@@ -1723,11 +1898,50 @@ func _on_vision_cone_body_entered(body: Node2D) -> void:
 		print("[Player] ⚠️ Target is not alive, state: ", target_player.current_state)
 		return  # Don't spot dead/ghost players
 	
-	print("[Player] 🚨 SEEKER ", player_name, " spotted HIDER ", target_player.player_name, " - TRIGGERING ALERT!")
+	var target_id = target_player.get_multiplayer_authority()
+	
+	# CRITICAL: Check line of sight - walls block spotting
+	if not _has_line_of_sight(target_player):
+		print("[Player] 🚫 SEEKER ", player_name, " - HIDER ", target_player.player_name, " blocked by wall, no spotting")
+		return
+	
+	# CRITICAL: Check if target is hidden in shadows
+	if target_player.is_player_hidden_in_shadows():
+		print("[Player] 🌑 SEEKER ", player_name, " - HIDER ", target_player.player_name, " hidden in shadows, no spotting")
+		return
+	
+	# CRITICAL: Prevent spam - only trigger spotted alert once per entry
+	if target_id in currently_spotted:
+		print("[Player] 🔄 SEEKER ", player_name, " - HIDER ", target_player.player_name, " already spotted, preventing spam")
+		return
+	
+	# CRITICAL: Additional spam protection - check if alert was recently shown
+	var current_time = Time.get_ticks_msec()
+	var last_alert_key = "last_alert_" + str(target_id)
+	if has_meta(last_alert_key):
+		var last_alert_time = get_meta(last_alert_key, 0)
+		if current_time - last_alert_time < 1000:  # 1 second cooldown
+			print("[Player] ⏱️ SEEKER ", player_name, " - HIDER ", target_player.player_name, " alert on cooldown")
+			return
+	
+	# Cancel any existing fade timer for this player
+	if spotted_players.has(target_id) and spotted_players[target_id] != null:
+		spotted_players[target_id].queue_free()
+	
+	# Mark player as currently spotted and show alert immediately
+	currently_spotted.append(target_id)
+	spotted_players[target_id] = null  # No timer while in vision cone
+	set_meta(last_alert_key, current_time)  # Record alert time
+	
+	print("[Player] 🚨 SEEKER ", player_name, " spotted HIDER ", target_player.player_name, " - IMMEDIATE ALERT!")
 	_show_spotted_alert_for_player(target_player)
 
 func _on_vision_cone_body_exited(body: Node2D) -> void:
 	"""Handle when a player exits seeker's vision cone"""
+	# CRITICAL: Ghosts cannot spot anyone
+	if current_state == PlayerState.GHOST:
+		return
+	
 	if role != PlayerRole.SEEKER:
 		return  # Only seekers can spot players
 	
@@ -1735,7 +1949,82 @@ func _on_vision_cone_body_exited(body: Node2D) -> void:
 	if not target_player or target_player.role != PlayerRole.HIDER:
 		return  # Only hiders can be spotted
 	
+	var target_id = target_player.get_multiplayer_authority()
+	
+	# Remove from currently spotted list (allows re-spotting if they re-enter)
+	if target_id in currently_spotted:
+		currently_spotted.erase(target_id)
+	
+	# Start 1-second fade delay timer
+	var fade_timer = Timer.new()
+	fade_timer.wait_time = 1.0
+	fade_timer.one_shot = true
+	fade_timer.timeout.connect(_on_spotted_fade_timeout.bind(target_player))
+	add_child(fade_timer)
+	fade_timer.start()
+	
+	# Store the timer so it can be cancelled if player re-enters vision cone
+	spotted_players[target_id] = fade_timer
+	
+	print("[Player] ⏰ SEEKER ", player_name, " - HIDER ", target_player.player_name, " left vision cone, 1-second fade delay started")
+
+func _has_line_of_sight(target_player: PlayerCharacter) -> bool:
+	"""Check if there's a clear line of sight to the target player (not blocked by walls)"""
+	if not target_player:
+		print("[Player] 🚫 Line of sight check failed - no target player")
+		return false
+	
+	var space_state = get_world_2d().direct_space_state
+	if not space_state:
+		print("[Player] 🚫 Line of sight check failed - no space state")
+		return false
+	
+	var from_pos = global_position
+	var to_pos = target_player.global_position
+	
+	print("[Player] 🔍 Line of sight check from ", from_pos, " to ", to_pos)
+	
+	var query = PhysicsRayQueryParameters2D.create(from_pos, to_pos)
+	
+	# Check collision with walls (layer 4) and obstacles (layer 5)
+	# Godot layers are 1-indexed, but bit masks are 0-indexed
+	query.collision_mask = (1 << (4-1)) | (1 << (5-1))  # Layer 4 (walls) and Layer 5 (obstacles)
+	query.exclude = [self, target_player]  # Don't collide with self or target
+	query.collide_with_areas = false  # Don't collide with Area2D nodes
+	query.collide_with_bodies = true  # Only collide with StaticBody2D/RigidBody2D
+	
+	var result = space_state.intersect_ray(query)
+	
+	# Debug the raycast result
+	if result.is_empty():
+		print("[Player] ✅ Line of sight CLEAR - no obstacles detected")
+		return true
+	else:
+		var collider = result.get("collider", null)
+		var collider_name = collider.name if collider else "unknown"
+		var collision_point = result.get("position", Vector2.ZERO)
+		print("[Player] 🚫 Line of sight BLOCKED by: ", collider_name, " at ", collision_point)
+		return false
+
+func _on_spotted_fade_timeout(target_player: PlayerCharacter) -> void:
+	"""Called when the 1-second fade delay expires"""
+	if not target_player:
+		return
+	
+	var target_id = target_player.get_multiplayer_authority()
+	
+	# Remove from all tracking arrays
+	if target_id in currently_spotted:
+		currently_spotted.erase(target_id)
+	
+	if spotted_players.has(target_id):
+		if spotted_players[target_id] != null:
+			spotted_players[target_id].queue_free()
+		spotted_players.erase(target_id)
+	
+	# Hide the spotted alert
 	_hide_spotted_alert_for_player(target_player)
+	print("[Player] 🔄 SEEKER ", player_name, " - HIDER ", target_player.player_name, " spotted alert faded after 1-second delay")
 
 # --- DEBUG FUNCTIONS ---
 
