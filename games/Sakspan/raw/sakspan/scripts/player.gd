@@ -81,6 +81,16 @@ var spotted_targets: Array[PlayerCharacter] = []  # Currently spotted Hiders
 # Username display
 var username_label: Label = null
 
+# Audio nodes for sound effects
+var walking_sound: AudioStreamPlayer
+var rock_throw_sound: AudioStreamPlayer  
+var sak_sound: AudioStreamPlayer
+var death_sound: AudioStreamPlayer
+
+# Walking sound management
+var is_walking_sound_playing: bool = false
+var last_velocity_magnitude: float = 0.0
+
 # Spotted alert now handled by GameUI - no overhead icons needed
 
 # Collision layers:
@@ -111,6 +121,9 @@ func _ready():
 	
 	# Initialize shadow detection system
 	_setup_shadow_detection()
+	
+	# Setup audio nodes for sound effects
+	_setup_audio_nodes()
 	
 	# Spotted cleanup system removed - using simpler approach
 	
@@ -220,6 +233,44 @@ func update_username_display():
 		username_label.text = player_name
 		username_label.text = player_name if player_name != "" else "Player"
 		print("[Player] Updated username display to: ", username_label.text)
+
+func _setup_audio_nodes():
+	"""Setup AudioStreamPlayer nodes for gameplay sound effects"""
+	print("[Player] Setting up audio nodes for ", player_name)
+	
+	# Walking sound effect
+	walking_sound = AudioStreamPlayer.new()
+	walking_sound.name = "WalkingSound"
+	walking_sound.bus = "SFX"  # Use SFX bus from AudioManager
+	walking_sound.stream = preload("res://assets/sound_effects/walking_sound.mp3")
+	walking_sound.volume_db = -10.0  # Slightly quieter for ambient walking
+	add_child(walking_sound)
+	
+	# Rock throw sound effect (for seekers)
+	rock_throw_sound = AudioStreamPlayer.new()
+	rock_throw_sound.name = "RockThrowSound"
+	rock_throw_sound.bus = "SFX"
+	rock_throw_sound.stream = preload("res://assets/sound_effects/rock-throw.mp3")
+	rock_throw_sound.volume_db = -5.0  # Prominent attack sound
+	add_child(rock_throw_sound)
+	
+	# SAK attack sound effect (for hiders)
+	sak_sound = AudioStreamPlayer.new()
+	sak_sound.name = "SakSound" 
+	sak_sound.bus = "SFX"
+	sak_sound.stream = preload("res://assets/sound_effects/sak_effect.mp3")
+	sak_sound.volume_db = -5.0  # Prominent attack sound
+	add_child(sak_sound)
+	
+	# Death sound effect
+	death_sound = AudioStreamPlayer.new()
+	death_sound.name = "DeathSound"
+	death_sound.bus = "SFX"
+	death_sound.stream = preload("res://assets/sound_effects/death_sound_effect.mp3")
+	death_sound.volume_db = -3.0  # Clear death feedback
+	add_child(death_sound)
+	
+	print("[Player] ✅ Audio nodes created for ", player_name)
 
 func set_is_main_player(value: bool):
 	is_main_player = value
@@ -402,6 +453,9 @@ func _physics_process(delta: float):
 	# Only the multiplayer authority simulates input and movement
 	if is_multiplayer_authority():
 		handle_movement()
+		# Handle walking sound effects for all players
+		_handle_walking_sound()
+		
 		# Ghosts have limited interactions
 		if current_state == PlayerState.GHOST:
 			_handle_ghost_visuals()
@@ -811,6 +865,11 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	print("[Player] 💀 Eliminating ", player_name, " - starting death sequence")
 	is_dying = true
 	
+	# Play death sound effect
+	if death_sound and is_instance_valid(death_sound):
+		death_sound.play()
+		print("[Player] 🎵 Playing death sound for ", player_name)
+	
 	# Disable all interactions immediately
 	can_move = false
 	# REFACTORED: Disable all abilities
@@ -1174,6 +1233,11 @@ func execute_fire_projectile() -> void:
 	print("[Player] Executing fire projectile - ", player_name)
 	is_in_action = true
 	
+	# Play rock throw sound effect
+	if rock_throw_sound and is_instance_valid(rock_throw_sound):
+		rock_throw_sound.play()
+		print("[Player] 🎵 Playing rock throw sound for ", player_name)
+	
 	# Force stop current animation and play seeker_bang
 	animated_sprite.stop()
 	animated_sprite.play("seeker_bang")
@@ -1194,6 +1258,11 @@ func execute_sak_attack(target: PlayerCharacter) -> void:
 	print("[Player] Executing SAK attack - ", player_name, " -> ", target.player_name)
 	target_for_sak = target
 	is_in_action = true
+	
+	# Play SAK attack sound effect
+	if sak_sound and is_instance_valid(sak_sound):
+		sak_sound.play()
+		print("[Player] 🎵 Playing SAK sound for ", player_name)
 	
 	# Force stop current animation and play hider_sak
 	animated_sprite.stop()
@@ -1252,6 +1321,33 @@ func _handle_ghost_visuals() -> void:
 	# Ghosts always use idle animation
 	if animated_sprite.animation != "idle":
 		animated_sprite.play("idle")
+
+func _handle_walking_sound() -> void:
+	"""Handle walking sound effects based on player movement"""
+	if not walking_sound or not is_instance_valid(walking_sound):
+		return
+		
+	var current_velocity_magnitude = velocity.length()
+	var movement_threshold = 10.0  # Minimum velocity to trigger walking sound
+	
+	# Check if player is moving
+	if current_velocity_magnitude > movement_threshold:
+		# Start walking sound if not already playing
+		if not is_walking_sound_playing:
+			is_walking_sound_playing = true
+			# Adjust volume for ghosts (quieter)
+			if current_state == PlayerState.GHOST:
+				walking_sound.volume_db = -15.0  # Quieter for ghosts
+			else:
+				walking_sound.volume_db = -10.0  # Normal volume
+			walking_sound.play()
+	else:
+		# Stop walking sound if player stopped moving
+		if is_walking_sound_playing:
+			is_walking_sound_playing = false
+			walking_sound.stop()
+	
+	last_velocity_magnitude = current_velocity_magnitude
 
 func handle_visuals() -> void:
 	var mouse_position = get_global_mouse_position()

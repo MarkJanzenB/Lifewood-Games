@@ -56,6 +56,9 @@ var game_over_timer: Timer
 var players_disabled: bool = false
 # phase_timer removed - replaced by master clock system
 
+# Audio for game over sound effect
+var game_over_sound: AudioStreamPlayer
+
 # Working game mechanics variables
 var current_state: GameState = GameState.LOBBY
 var game_state: GameState = GameState.LOBBY  # Legacy compatibility - kept in sync with current_state
@@ -137,6 +140,9 @@ func _ready() -> void:
 	# Initialize singleton-level timers that persist across scene transitions
 	_initialize_singleton_timers()
 	
+	# Setup game over sound effect
+	_setup_game_over_audio()
+	
 	print("[GameManager] GameManager singleton is ready and listening for NetworkManager ready signal.")
 	
 	# Connect all timer signals ONCE in _ready() - no more dynamic connections
@@ -185,6 +191,17 @@ func _initialize_singleton_timers():
 		add_child(ammo_cooldown_timer)
 	
 	print("[GameManager] ✅ Singleton-level timers initialized")
+
+func _setup_game_over_audio():
+	"""Setup game over sound effect"""
+	if not game_over_sound:
+		game_over_sound = AudioStreamPlayer.new()
+		game_over_sound.name = "GameOverSound"
+		game_over_sound.bus = "SFX"  # Use SFX bus from AudioManager
+		game_over_sound.stream = preload("res://assets/sound_effects/game_over.mp3")
+		game_over_sound.volume_db = -5.0  # Clear game over sound
+		add_child(game_over_sound)
+		print("[GameManager] ✅ Game over sound effect initialized")
 
 func _setup_lighting_system():
 	"""Initialize the Among Us style lighting system"""
@@ -1268,6 +1285,11 @@ func _show_game_over_announcement(winning_team: String) -> void:
 		message = "🏁 GAME OVER: " + winning_team + " wins!"
 	
 	print("[GameManager] 📢 ", message)
+	
+	# Play game over sound effect
+	if game_over_sound and is_instance_valid(game_over_sound):
+		game_over_sound.play()
+		print("[GameManager] 🎵 Playing game over sound")
 	
 	# Ensure game state is set to GAME_OVER on all clients
 	if current_state != GameState.GAME_OVER:
