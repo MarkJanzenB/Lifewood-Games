@@ -743,8 +743,12 @@ func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> vo
 		return
 	
 	# CRITICAL: Validate line of sight - seeker must have a hider in vision cone AND not hidden in shadows
+	print("[Player] 🔍 DEBUG: visible_targets count: ", visible_targets.size())
+	print("[Player] 🔍 DEBUG: hiders_in_cone count: ", hiders_in_cone.size())
+	
 	var attackable_targets = []
 	for target in visible_targets:
+		print("[Player] 🔍 DEBUG: Checking target ", target.player_name, " - hidden in shadows: ", target.is_player_hidden_in_shadows())
 		if not target.is_player_hidden_in_shadows():
 			attackable_targets.append(target)
 	
@@ -1550,34 +1554,6 @@ func _show_shadow_indicator(show: bool) -> void:
 # Removed _request_spotted_announcement RPC - using direct server calls only
 
 # Removed _trigger_spotted_alert RPC - using GameManager announcements instead
-	
-	# Find GameUI and show spotted alert
-	var game_ui = _find_game_ui()
-	if game_ui:
-		print("[Player] 📝 Found GameUI: ", game_ui.name, " - Setting up spotted alert")
-		
-		# Ensure GameUI knows the local player's role
-		if game_ui.has_method("set_local_player_role"):
-			game_ui.set_local_player_role(role)
-			print("[Player] 📝 Set GameUI local player role to: ", PlayerRole.keys()[role])
-		
-		# Wait a frame to ensure role is set
-		await get_tree().process_frame
-		
-		# Try multiple methods to show spotted alert
-		if game_ui.has_method("show_spotted"):
-			game_ui.show_spotted(true)
-			print("[Player] ✅ Spotted alert shown via GameUI.show_spotted()")
-		elif game_ui.has_node("MarginContainer/SpottedLabel"):
-			var spotted_label = game_ui.get_node("MarginContainer/SpottedLabel")
-			spotted_label.visible = true
-			spotted_label.text = "⚠️ SPOTTED! ⚠️"
-			spotted_label.modulate = Color.RED
-			print("[Player] ✅ Spotted alert shown via SpottedLabel visibility")
-		else:
-			print("[Player] ❌ No spotted alert method found in GameUI")
-	else:
-		print("[Player] ❌ GameUI not found for spotted alert")
 
 @rpc("authority", "call_local", "reliable")
 func _hide_spotted_alert():
@@ -1909,12 +1885,8 @@ func _on_vision_cone_body_entered(body: Node2D) -> void:
 			print("[Player] ⏱️ SEEKER ", player_name, " - HIDER ", target_player.player_name, " spotted alert on cooldown")
 			return
 	
-	# Cancel any existing fade timer for this player
-	if spotted_players.has(target_id) and spotted_players[target_id] != null:
-		spotted_players[target_id].queue_free()
 	# Mark player as currently spotted and show alert immediately
 	currently_spotted.append(target_id)
-	spotted_players[target_id] = null  # No timer while in vision cone
 	set_meta(last_alert_key, current_time)  # Record alert time
 	
 	print("[Player] 🚨 SEEKER ", player_name, " spotted HIDER ", target_player.player_name, " - IMMEDIATE ALERT!")
@@ -1948,25 +1920,8 @@ func _on_vision_cone_body_exited(body: Node2D) -> void:
 	if target_id in currently_spotted:
 		currently_spotted.erase(target_id)
 	
-	# ENHANCED: Cancel any existing timer for this player first
-	if spotted_players.has(target_id) and spotted_players[target_id] != null:
-		if is_instance_valid(spotted_players[target_id]):
-			spotted_players[target_id].queue_free()
-		spotted_players.erase(target_id)
-	
-	# Start 1-second fade delay timer with enhanced error handling
-	var fade_timer = Timer.new()
-	fade_timer.wait_time = 1.0
-	fade_timer.one_shot = true
-	fade_timer.timeout.connect(_on_spotted_fade_timeout_enhanced.bind(target_id, target_player.player_name))
-	add_child(fade_timer)
-	fade_timer.start()
-	
-	# Store the timer so it can be cancelled if player re-enters vision cone
-	spotted_players[target_id] = fade_timer
-	spotted_state_clean = false  # Mark state as potentially dirty
-	
-	print("[Player] ⏰ SEEKER ", player_name, " - HIDER ", target_player.player_name, " left vision cone, 1-second fade delay started")
+	# SIMPLIFIED: No more fade timers - spotted alerts are handled by GameManager announcements
+	print("[Player] 👁️ SEEKER ", player_name, " - HIDER ", target_player.player_name, " left vision cone")
 
 func _has_line_of_sight(target_player: PlayerCharacter) -> bool:
 	"""Check if there's a clear line of sight to the target player (not blocked by walls)"""
@@ -2013,18 +1968,12 @@ func _on_spotted_fade_timeout(target_player: PlayerCharacter) -> void:
 	
 	var target_id = target_player.get_multiplayer_authority()
 	
-	# Remove from all tracking arrays
+	# Remove from tracking array
 	if target_id in currently_spotted:
 		currently_spotted.erase(target_id)
 	
-	if spotted_players.has(target_id):
-		if spotted_players[target_id] != null:
-			spotted_players[target_id].queue_free()
-		spotted_players.erase(target_id)
-	
-	# Hide the spotted alert
-	_hide_spotted_alert_for_player(target_player)
-	print("[Player] 🔄 SEEKER ", player_name, " - HIDER ", target_player.player_name, " spotted alert faded after 1-second delay")
+	# Spotted alerts are now handled by GameManager announcements (auto-fade)
+	print("[Player] 🔄 SEEKER ", player_name, " - HIDER ", target_player.player_name, " no longer spotted")
 
 # --- DEBUG FUNCTIONS ---
 
