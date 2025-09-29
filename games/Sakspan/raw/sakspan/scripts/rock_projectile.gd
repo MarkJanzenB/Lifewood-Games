@@ -25,6 +25,7 @@ func _physics_process(delta: float) -> void:
 		print("[RockProjectile] Moving - Position: ", global_position, " Speed: ", SPEED)
 
 func _on_body_entered(body: Node2D) -> void:
+	print("[RockProjectile] 💥 Collision detected with: ", body.name, " (", body.get_class(), ")")
 	var was_hit_processed = false
 
 	# Hit detection for living players
@@ -42,11 +43,14 @@ func _on_body_entered(body: Node2D) -> void:
 				
 				was_hit_processed = true
 
-	if body.is_in_group("walls"):
-		print("[RockProjectile] Rock hit wall")
+	# Hit detection for walls and obstacles (StaticBody2D, RigidBody2D, etc.)
+	if body.is_in_group("walls") or body is StaticBody2D or body is RigidBody2D:
+		print("[RockProjectile] 🧱 Rock hit obstacle: ", body.name)
 		was_hit_processed = true
-		
+	
+	# Destroy projectile on any collision
 	if was_hit_processed:
+		print("[RockProjectile] 🗑️ Destroying projectile")
 		queue_free()
 
 func _on_visible_on_screen_notifier_2d_screen_exited() -> void:

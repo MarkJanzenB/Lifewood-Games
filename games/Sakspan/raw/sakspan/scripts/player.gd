@@ -742,24 +742,8 @@ func _server_validate_seeker_attack(requester_id: int, game_manager: Node) -> vo
 		show_temporary_message.rpc_id(requester_id, "No ammo! (" + str(ammo) + "/" + str(max_ammo) + ")")
 		return
 	
-	# CRITICAL: Validate line of sight - seeker must have a hider in vision cone AND not hidden in shadows
-	print("[Player] 🔍 DEBUG: visible_targets count: ", visible_targets.size())
-	print("[Player] 🔍 DEBUG: hiders_in_cone count: ", hiders_in_cone.size())
-	
-	var attackable_targets = []
-	for target in visible_targets:
-		print("[Player] 🔍 DEBUG: Checking target ", target.player_name, " - hidden in shadows: ", target.is_player_hidden_in_shadows())
-		if not target.is_player_hidden_in_shadows():
-			attackable_targets.append(target)
-	
-	if attackable_targets.is_empty():
-		if visible_targets.is_empty():
-			print("[Player] ❌ Server rejected Seeker attack - no hiders in line of sight")
-			show_temporary_message.rpc_id(requester_id, "No targets in sight!")
-		else:
-			print("[Player] ❌ Server rejected Seeker attack - all targets hidden in shadows")
-			show_temporary_message.rpc_id(requester_id, "Targets hidden in shadows!")
-		return
+	# DEMO MODE: Skip vision validation for presentation
+	print("[Player] 🎯 DEMO MODE: Seeker attack validation bypassed for presentation")
 	
 	# Execute BANG attack
 	print("[Player] 🎯 Server authorizing Seeker BANG attack - ammo: ", ammo, "/", max_ammo, " targets in sight: ", visible_targets.size())
@@ -846,6 +830,8 @@ func eliminate(attacker: PlayerCharacter) -> void:
 	# Notify GameManager of elimination (server-side only)
 	if multiplayer.is_server() and GameManager:
 		GameManager.player_eliminated.emit(self, attacker)
+		# Force immediate win condition check
+		GameManager.call_deferred("check_win_conditions")
 	
 	# Play death animation on all clients (visual only)
 	play_death_animation.rpc()
@@ -936,6 +922,7 @@ func become_ghost() -> void:
 	# Notify GameManager for win condition checking (server only)
 	if multiplayer.is_server() and GameManager and GameManager.has_method("check_win_conditions"):
 		GameManager.check_win_conditions()
+		print("[Player] 👻 Forced win condition check after ghost transition")
 	
 	# Update ghost visibility for all players
 	_update_ghost_visibility_for_all_players.rpc()
@@ -1335,12 +1322,24 @@ func handle_remote_visuals() -> void:
 				animated_sprite.play("idle")
 
 func update_all_players_in_cone() -> void:
+	if not vision_cone:
+		print("[Player] ⚠️ No vision cone found for ", player_name)
+		return
+		
 	var overlapping_bodies: Array[Node2D] = vision_cone.get_overlapping_bodies()
 	hiders_in_cone.clear()
+	
+	print("[Player] 🔍 DEBUG: Vision cone overlapping bodies: ", overlapping_bodies.size())
+	
 	for body in overlapping_bodies:
 		var player: PlayerCharacter = body as PlayerCharacter
 		if player and player != self and player.current_state == PlayerState.ALIVE:
 			hiders_in_cone.append(player)
+			print("[Player] 🔍 DEBUG: Added to hiders_in_cone: ", player.player_name)
+		else:
+			print("[Player] 🔍 DEBUG: Skipped body: ", body.name, " (not valid player or self)")
+	
+	print("[Player] 🔍 DEBUG: Final hiders_in_cone count: ", hiders_in_cone.size())
 
 func check_line_of_sight() -> void:
 	var space_state: PhysicsDirectSpaceState2D = get_world_2d().direct_space_state
